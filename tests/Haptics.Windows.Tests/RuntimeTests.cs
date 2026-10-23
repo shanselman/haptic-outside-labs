@@ -69,6 +69,16 @@ public class RuntimeTests
     }
 
     [Fact]
+    public async Task WorkerStartupDoesNotCountAgainstQueryTimeout()
+    {
+        // 40 ms is far less than a cold .NET process start; the first query must still succeed.
+        using var c = new UiaClient(LabExe(), [UiaWorker.Arg], new UiaClientOptions { TimeoutMs = 40 });
+        var ping = await c.QueryAsync(0, 0, "ping");
+        Assert.True(ping.Ok, ping.ClientStatus ?? ping.Error);
+        Assert.Equal(0, c.Stats.Timeouts);
+    }
+
+    [Fact]
     public async Task FaultCommandsAreRefusedWithoutOptIn()
     {
         using var c = new UiaClient(LabExe(), [UiaWorker.Arg], new UiaClientOptions { TimeoutMs = 2000 });

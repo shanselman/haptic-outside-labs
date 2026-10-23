@@ -53,7 +53,7 @@ Requirements: Windows 11 (haptics API needs build 26100+ with Universal API Cont
 ```powershell
 git clone https://github.com/shanselman/haptic-outside-labs
 cd haptic-outside-labs
-dotnet test                      # 63 tests: evidence rules, policy, golden traces, schemas, safety scans, UIA worker
+dotnet test                      # 64 tests: evidence rules, policy, golden traces, schemas, safety scans, UIA worker
 .\scripts\run-lab.ps1            # opens the Haptics Lab dashboard
 ```
 

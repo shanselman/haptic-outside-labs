@@ -26,6 +26,9 @@ public sealed class UiaResponse
     public ElementSnapshot? Snapshot { get; set; }
     public int WorkerPid { get; set; }
 
+    /// <summary>Worker start-up handshake (id 0). Not a query response.</summary>
+    public bool Ready { get; set; }
+
     /// <summary>Client-side: request was superseded, timed out, or the worker restarted.</summary>
     public string? ClientStatus { get; set; }
 }
@@ -57,6 +60,9 @@ public static class UiaWorker
         var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
         var cache = BuildCacheRequest();
         var pid = Environment.ProcessId;
+
+        // Announce readiness so process start-up never counts against a query's deadline.
+        output.WriteLine(JsonSerializer.Serialize(new UiaResponse { Id = 0, Ok = true, Ready = true, WorkerPid = pid }, HapticsJson.Compact));
         while (input.ReadLine() is { } line)
         {
             UiaRequest? req;
@@ -253,6 +259,7 @@ public static class UiaWorker
 public sealed class UiaClientOptions
 {
     public double TimeoutMs { get; init; } = 250;
+    public double StartupTimeoutMs { get; init; } = 15_000;
     public bool AllowFaultInjection { get; init; }
     public bool IncludeAutomationId { get; init; }
     public double QuarantineMs { get; init; } = 10_000;
@@ -281,6 +288,8 @@ public sealed class UiaClient : IDisposable
     private (long Id, string Cmd, int X, int Y, double PointerTs, int FgPid)? _pending;
     private long _requests, _responses, _superseded, _timeouts, _restartCount, _quarantined, _late, _starts;
     private bool _disposed;
+    private bool _workerReady;
+    private double _workerStartedAt;
 
     public UiaClient(string exe, string[] baseArgs, UiaClientOptions? options = null)
     {
@@ -392,9 +401,9 @@ public sealed class UiaClient : IDisposable
             return;
         }
 
-        if (!EnsureProcessLocked())
+        if (!EnsureProcessLocked() || !_workerReady)
         {
-            return;
+            return; // Pending request stays queued (latest-wins) until the worker says it is ready.
         }
 
         _pending = null;
@@ -451,6 +460,8 @@ public sealed class UiaClient : IDisposable
         {
             var p = Process.Start(psi) ?? throw new InvalidOperationException("Process.Start returned null");
             _proc = p;
+            _workerReady = false;
+            _workerStartedAt = now;
             _starts++;
             _restartCount = Math.Max(0, _starts - 1);
             _restarts.Enqueue(now);
@@ -483,6 +494,20 @@ public sealed class UiaClient : IDisposable
 
                 if (resp is null)
                 {
+                    continue;
+                }
+
+                if (resp.Ready)
+                {
+                    lock (_gate)
+                    {
+                        if (ReferenceEquals(p, _proc))
+                        {
+                            _workerReady = true;
+                            PumpLocked();
+                        }
+                    }
+
                     continue;
                 }
 
@@ -530,6 +555,27 @@ public sealed class UiaClient : IDisposable
                 return;
             }
 
+            if (_proc is { HasExited: true } && !_workerReady)
+            {
+                Diagnostic?.Invoke("uia-worker-exited-before-ready");
+                KillLocked();
+                PumpLocked();
+                return;
+            }
+
+            if (_proc is not null && !_workerReady && MonotonicClock.Instance.NowMs - _workerStartedAt > _opt.StartupTimeoutMs)
+            {
+                Diagnostic?.Invoke($"uia-worker-start-timeout after {_opt.StartupTimeoutMs}ms; killing worker");
+                KillLocked();
+                if (_pending is { } stuck)
+                {
+                    _pending = null;
+                    CompleteWaiter(stuck.Id, new UiaResponse { Id = stuck.Id, Ok = false, Error = "worker-start-timeout", ClientStatus = "worker-start-timeout" });
+                }
+
+                return;
+            }
+
             if (_outstanding is { } o && MonotonicClock.Instance.NowMs - o.SentAt > _opt.TimeoutMs)
             {
                 _timeouts++;
@@ -558,6 +604,7 @@ public sealed class UiaClient : IDisposable
 
     private void KillLocked()
     {
+        _workerReady = false;
         if (_proc is null)
         {
             return;
