@@ -18,7 +18,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
     private readonly NumericUpDown _controls = new() { Minimum = 3, Maximum = 30, Value = 6, Width = 60 };
     private readonly NumericUpDown _intensity = new() { Minimum = 0.05m, Maximum = 1m, Increment = 0.05m, DecimalPlaces = 2, Value = 1m, Width = 60 };
     private readonly ComboBox _target = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
-    private readonly CheckBox _nativeConfirmed = new() { Text = "I have felt this mouse's native haptics (e.g. Windows Snap) at the current intensity setting", AutoSize = true };
+    private readonly CheckBox _nativeConfirmed = new() { Text = "I have felt this device's native haptics (e.g. Snap on a mouse, a click on the touchpad) at the current intensity", AutoSize = true };
     private readonly Button _start = new() { Text = "Start blinded trials", AutoSize = true };
     private readonly Panel _pad = new() { BackColor = Color.FromArgb(36, 40, 52), Dock = DockStyle.Fill, Cursor = Cursors.Cross };
     private readonly Label _padText = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, Font = Ui.Big };
@@ -57,8 +57,8 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         _intensity.Value = (decimal)Math.Clamp(opt.Double("intensity", 1.0), 0.05, 1.0);
 
         var intro = Ui.Text(
-            "Hold the TARGET haptic mouse (not the touchpad). Move it inside the dark pad. After a random delay the pad flashes NOW: " +
-            "a pulse may or may not have been sent. Answer honestly (buttons, or keys F / N / U). Half the trials are silent controls.", width: 860);
+            $"Use ONLY the target haptic device ({(opt.Get("target") ?? "mouse").ToLowerInvariant()}). Glide it inside the dark pad (on a touchpad: glide, don't press). After a random delay the pad flashes NOW: " +
+            "a pulse may or may not have been sent. Answer honestly (keys F / N / U, or the buttons). About a third of the trials are silent controls.", width: 860);
         var setup = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8) };
         setup.Controls.AddRange([
             intro,

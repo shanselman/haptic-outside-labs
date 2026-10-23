@@ -94,9 +94,9 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _baseline.MaximumSize = new Size(880, 0);
 
         var intro = Ui.Text(
-            "1) Start: move the TARGET mouse over the pad below for a second (captures its controller for R3 arms and identifies the device). " +
+            "1) Start: glide the TARGET device (mouse or touchpad, as selected) over the pad below for a second. This captures its controller for the R3 arms and identifies the device. " +
             "2) Begin: this window minimizes and a small non-activating panel appears bottom-right. Click into another app (e.g. Notepad) and keep " +
-            "moving the mouse over it. When the panel says NOW, judge, then click Felt / Not felt / Unsure on the panel. The panel never takes focus.", width: 900);
+            "moving the pointer over it with the same device. When the panel says NOW, judge, then click Felt / Not felt / Unsure on the panel. The panel never takes focus.", width: 900);
         var setup = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8) };
         setup.Controls.AddRange([
             intro, Ui.Text("Routes:"), _arms, Ui.Text("Waveform:"), _waveform, Ui.Text("Intensity:"), _intensity,
