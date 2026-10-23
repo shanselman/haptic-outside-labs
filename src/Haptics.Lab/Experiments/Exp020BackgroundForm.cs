@@ -50,6 +50,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
     private ScheduledTrial? _pending;
     private double _armedAt, _delay, _foreignSince = -1, _lastSample;
     private long _targetDevice;
+    private bool _targetLocked;
     private Rectangle _panelBounds;
 
     private TrialRecord? _awaiting;
@@ -192,9 +193,12 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             return;
         }
 
+        var m0 = _session!.Result.Method;
         lock (_primeDevices)
         {
-            _targetDevice = TargetDevice == "any" || _primeDevices.Count == 0 ? 0 : _primeDevices.MaxBy(kv => kv.Value).Key;
+            _targetLocked = TargetDevice != "any" && _primeDevices.Count > 0;
+            _targetDevice = _targetLocked ? _primeDevices.MaxBy(kv => kv.Value).Key : 0;
+            m0["primeRawDevices"] = _primeDevices.ToDictionary(kv => kv.Key == 0 ? "no-handle" : RawInputDevices.Describe(kv.Key).VidPid ?? "unknown", kv => kv.Value);
         }
 
         var seed = _opt.Int("seed", Random.Shared.Next());
@@ -208,7 +212,12 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         m["rawWindowKind"] = _window.SelectedItem;
         m["rawThreadId"] = _raw!.ThreadId;
         m["targetDevice"] = TargetDevice;
-        m["targetRawDevice"] = _targetDevice == 0 ? null : RawInputDevices.Describe(_targetDevice);
+        m["targetRawDevice"] = !_targetLocked ? "any" : _targetDevice == 0 ? "no-handle (precision touchpad or synthetic)" : RawInputDevices.Describe(_targetDevice);
+        if (_targetLocked && _targetDevice == 0)
+        {
+            _session.Result.Limitations.Add("Trial device delivered raw input without a device handle (typical of precision touchpads). " +
+                "Such events cannot be distinguished from synthetic input by hDevice alone; no synthetic input source was running, and the raw-thread device type is recorded per trial.");
+        }
         m["capturedController"] = _captured is null ? null : new
         {
             deviceType = _captured.DeviceType.ToString(),
@@ -274,7 +283,9 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             _rawCounts[key] = _rawCounts.GetValueOrDefault(key) + 1;
         }
 
-        if (_phase == Phase.Prime && input.DeviceHandle != 0)
+        // Count every prime-phase event, including hDevice == 0: precision touchpads may deliver mouse raw input
+        // without a device handle, and the device actually used during priming becomes the trial device.
+        if (_phase == Phase.Prime && (input.LastX != 0 || input.LastY != 0))
         {
             lock (_primeDevices)
             {
@@ -305,7 +316,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             return;
         }
 
-        if (_targetDevice != 0 && input.DeviceHandle != _targetDevice)
+        if (_targetLocked && input.DeviceHandle != _targetDevice)
         {
             return;
         }
@@ -313,7 +324,8 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         var fg = DesktopContext.Foreground().Pid;
         var (cx, cy) = DesktopContext.CursorPosition();
         var moving = input.LastX != 0 || input.LastY != 0;
-        if (fg == DesktopContext.OwnProcessId || fg == 0 || _panelBounds.Contains(cx, cy) || input.Origin != InputOrigin.HardwareRaw)
+        var provenanceOk = input.Origin == InputOrigin.HardwareRaw || (_targetLocked && _targetDevice == 0);
+        if (fg == DesktopContext.OwnProcessId || fg == 0 || _panelBounds.Contains(cx, cy) || !provenanceOk)
         {
             _foreignSince = -1;
             return;
@@ -428,7 +440,8 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             samples = _rawThreadSamples.ToList();
         }
 
-        var bgSamples = samples.Where(x => (string?)x["code"] == "Background" && (string?)x["origin"] == "HardwareRaw").ToList();
+        var handleless = _targetLocked && _targetDevice == 0;
+        var bgSamples = samples.Where(x => (string?)x["code"] == "Background" && (handleless || (string?)x["origin"] == "HardwareRaw")).ToList();
         var bgWithController = bgSamples.Count(x => x["controllerPresent"] is true);
         if (bgSamples.Count > 0)
         {

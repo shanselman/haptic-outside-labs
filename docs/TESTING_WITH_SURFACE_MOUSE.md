@@ -101,6 +101,24 @@ Add a sentence on the **promotion decision** for each hypothesis in `docs/HYPOTH
 `CONFIRMED_ON[machine fingerprint]` or `FALSIFIED_ON[…]`). Raw traces stay in `artifacts/` (git-ignored) unless
 you choose to share a sanitized copy.
 
+## Variant: the Surface Laptop haptic touchpad (no mouse needed)
+
+The same routing question applies to any haptic input device, and the Surface Laptop 8 touchpad is on Microsoft's
+supported-device list. Run the identical steps with **Target = touchpad**:
+
+```powershell
+haptics-lab run EXP-010 --target touchpad
+haptics-lab run EXP-020 --target touchpad
+```
+
+- Use only the touchpad, keep the external mouse still, and **glide** your finger. Don't press: a touchpad press makes
+  its own native haptic click.
+- In EXP-010, answer with the keyboard (**F / N / U**) rather than clicking.
+- Precision touchpads may deliver raw input **without a device handle**. EXP-020 locks onto whichever device you used
+  while priming (including a handle-less one). It records 	argetRawDevice and adds a limitation note, since handle-less
+  input can't be told apart from synthetic input by handle alone (nothing in the lab generates synthetic input).
+- A touchpad PASS answers H1/H2 for the **touchpad**, scoped to this machine. The Surface Mouse still needs its own run.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
