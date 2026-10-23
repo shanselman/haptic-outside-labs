@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/MinimalBackgroundHaptics/MinimalBackgroundHaptics.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Haptics.Core/Haptics.Core.csproj" />
     <Project Path="src/Haptics.Lab/Haptics.Lab.csproj" />

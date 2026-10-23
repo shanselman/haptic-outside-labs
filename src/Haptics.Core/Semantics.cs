@@ -74,10 +74,13 @@ public sealed record ElementSnapshot
 
 public static class SemanticVocabulary
 {
+    /// <summary>
+    /// Things you can *do*: buttons, tabs, menu/ribbon commands, toggles, links, pickers, sliders. Content rows
+    /// (ListItem, TreeItem, DataItem, HeaderItem — files, emails, grid cells) are deliberately excluded as noise.
+    /// </summary>
     public static readonly IReadOnlySet<string> InteractiveTypes = new HashSet<string>(StringComparer.Ordinal)
     {
-        "Button", "SplitButton", "MenuItem", "TabItem", "CheckBox", "RadioButton", "Hyperlink",
-        "ListItem", "TreeItem", "ComboBox", "Slider", "DataItem", "HeaderItem",
+        "Button", "SplitButton", "MenuItem", "TabItem", "CheckBox", "RadioButton", "Hyperlink", "ComboBox", "Slider",
     };
 
     public static readonly IReadOnlySet<string> GroupTypes = new HashSet<string>(StringComparer.Ordinal)

@@ -60,7 +60,7 @@ Requirements: Windows 11 (haptics API needs build 26100+ with Universal API Cont
 ```powershell
 git clone https://github.com/shanselman/haptic-outside-labs
 cd haptic-outside-labs
-dotnet test                      # 64 tests: evidence rules, policy, golden traces, schemas, safety scans, UIA worker
+dotnet test                      # 68 tests: evidence rules, policy, golden traces, schemas, safety scans, UIA worker
 .\scripts\run-lab.ps1            # opens the Haptics Lab dashboard
 ```
 
@@ -131,13 +131,18 @@ src/Haptics.Lab         haptics-lab.exe: CLI, dashboard, experiments EXP-000/010
 src/Haptics.Tray        haptics-tray.exe: the simple sample — starts On, auto-primes, all apps, intensity, exclude app, Off
 tests/                  Core tests (evidence, policy, 13 golden traces) + Windows tests (safety scans, worker containment)
 docs/                   SPEC, runbook, evidence ledger, hypotheses, research notes, design notes, privacy/threat model, ADRs
+samples/                MinimalBackgroundHaptics: the core trick in ~150 lines
 schemas/                JSON schemas for results and traces
 fixtures/browser        static HTML/ARIA page for manual Chromium/Edge checks (EXP-050)
 ```
 
 ## The sample tray
 
-`.\scripts\run-tray.ps1` starts **Haptics Everywhere** as a deliberately simple, aggressive sample:
+**Download:** grab `HapticsEverywhere-<version>-win-arm64.zip` or `-win-x64.zip` from
+[Releases](https://github.com/shanselman/haptic-outside-labs/releases). Each is self-contained (no .NET install needed),
+so unzip and run `haptics-tray.exe`. To build the zips yourself, run `.\scripts\publish.ps1`. From source, run `.\scripts\run-tray.ps1`.
+
+It's a deliberately simple, aggressive sample:
 
 - It starts **On** in every app. A small box asks you to wiggle the haptic mouse over it once: that's the "prime" that
   captures the mouse's `SimpleHapticsController` (route R3a, the one EXP-020 proved). Moving the mouse over the tray
@@ -145,6 +150,24 @@ fixtures/browser        static HTML/ARIA page for manual Chromium/Edge checks (E
 - Menu: **On**, **Intensity** (Low/Medium/Strong/Max), **Exclude '<current app>'**, **Status…**, **Quit**.
 - Loose limits (≈12 pulses/s, 200 ms re-entry, no fast-flick suppression). It stays silent over password fields and for
   password managers and sign-in UIs, and it never moves, clicks, or focuses anything.
+
+**What you feel: a tick on things you can *do*.**
+
+| You move onto… | Feel | Examples |
+|---|---|---|
+| a clickable control | **Hover** tick | buttons, split buttons, ribbon and menu commands, tabs, checkboxes, radio buttons, links, combo boxes, taskbar buttons, caption buttons |
+| a control in a *different group* | firmer **Step** (instead of the hover) | toolbar → menu, menu bar → open menu, ribbon group → ribbon group |
+| a slider's next tick, while dragging | **Step** | Edge `<input type=range>`, WPF sliders |
+| a slider's end, while dragging | **Collide** | same |
+
+Silent: windows, panes, text and documents, list, tree and grid rows (files, emails), disabled controls, passwords,
+scrolling, clicks, and Snap or PowerPoint drags (those have native haptics).
+
+**Is the one-time "prime" really needed?** Yes. EXP-020 measured it: the thread that receives *background* mouse input
+never gets a haptic controller (0 of 288 samples), so Windows rejects every pulse. A controller is only handed to a
+thread whose *own window* just got input from the mouse. After one wiggle, that controller keeps working from the
+background. [`samples/MinimalBackgroundHaptics`](samples/MinimalBackgroundHaptics/Program.cs) shows the whole trick
+in ~150 lines.
 
 The rigorous gating (consent dialog, evidence-locked On, allowlists) lives in the **lab**, where it belongs; the
 tray is the demo.

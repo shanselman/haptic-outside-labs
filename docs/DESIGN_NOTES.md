@@ -76,7 +76,10 @@ fingerprint, so a PASS on Scott's Surface Laptop says nothing about anyone else'
 
 The interpreter (`SemanticInterpreter`) emits only transitions it can defend:
 
-- `EnterControl` for enabled, on-screen, interactive control types (Button, MenuItem, TabItem, CheckBox, …).
+- `EnterControl` for enabled, on-screen controls you can *do* something with: Button, SplitButton, MenuItem (menus and
+  ribbons), TabItem, CheckBox, RadioButton, Hyperlink, ComboBox, Slider. Content rows (list/tree/grid items, headers)
+  are excluded as noise. The Windows 11 taskbar's XAML buttons are found by drilling into `Shell_TrayWnd`, because
+  `ElementFromPoint` stops at that window.
 - `CrossGroupBoundary` when the parent group (ToolBar, Menu, Tab, List…) changes → a `Step`; the hover from the same
   transition is coalesced so you feel one thing, not two.
 - `RangeStep` / `RangeLimit` for sliders **only while the primary button is physically down**, so keyboard or

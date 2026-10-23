@@ -119,6 +119,7 @@ public static class UiaWorker
                      AutomationElement.ControlTypeProperty, AutomationElement.BoundingRectangleProperty,
                      AutomationElement.IsEnabledProperty, AutomationElement.IsOffscreenProperty, AutomationElement.IsPasswordProperty,
                      AutomationElement.ProcessIdProperty, AutomationElement.NativeWindowHandleProperty, AutomationElement.FrameworkIdProperty,
+                     AutomationElement.ClassNameProperty,
                      AutomationElement.IsControlElementProperty, AutomationElement.AutomationIdProperty, AutomationElement.RuntimeIdProperty,
                      AutomationElement.IsRangeValuePatternAvailableProperty, RangeValuePattern.ValueProperty, RangeValuePattern.MinimumProperty,
                      RangeValuePattern.MaximumProperty, RangeValuePattern.SmallChangeProperty, RangeValuePattern.LargeChangeProperty,
@@ -147,6 +148,13 @@ public static class UiaWorker
                     el = p;
                     type = "Slider";
                 }
+                else if (type == "Pane" && DrillDownHosts.Contains(Get<string>(el, AutomationElement.ClassNameProperty) ?? "") &&
+                         HostedControlAt(el, req.X, req.Y, cache) is { } hosted)
+                {
+                    // ElementFromPoint stops at the taskbar's HWND and never enters its XAML island.
+                    el = hosted;
+                    type = TypeName(el);
+                }
 
                 if (SemanticVocabulary.InteractiveTypes.Contains(type))
                 {
@@ -173,6 +181,34 @@ public static class UiaWorker
         {
             return Fail(req, sw, ex.GetType().Name);
         }
+    }
+
+    /// <summary>Top-level windows whose interactive content ElementFromPoint does not reach (Windows 11 taskbars).</summary>
+    private static readonly HashSet<string> DrillDownHosts = new(StringComparer.Ordinal) { "Shell_TrayWnd", "Shell_SecondaryTrayWnd" };
+
+    private static readonly Dictionary<int, (long At, List<(AutomationElement El, System.Windows.Rect Rect)> Items)> HostCache = new();
+
+    /// <summary>Smallest interactive descendant of a drill-down host containing the point; host contents cached ~1.5 s.</summary>
+    private static AutomationElement? HostedControlAt(AutomationElement host, int x, int y, CacheRequest cache)
+    {
+        var key = Get<int>(host, AutomationElement.NativeWindowHandleProperty);
+        var now = Environment.TickCount64;
+        if (!HostCache.TryGetValue(key, out var entry) || now - entry.At > 1500)
+        {
+            var items = new List<(AutomationElement, System.Windows.Rect)>();
+            foreach (AutomationElement d in host.FindAll(TreeScope.Descendants, Condition.TrueCondition))
+            {
+                if (SemanticVocabulary.InteractiveTypes.Contains(TypeName(d)) && Get<System.Windows.Rect>(d, AutomationElement.BoundingRectangleProperty) is { IsEmpty: false } r)
+                {
+                    items.Add((d, r));
+                }
+            }
+
+            entry = (now, items);
+            HostCache[key] = entry;
+        }
+
+        return entry.Items.Where(i => i.Rect.Contains(x, y)).OrderBy(i => i.Rect.Width * i.Rect.Height).Select(i => i.El).FirstOrDefault();
     }
 
     private static UiaResponse Fail(UiaRequest req, Stopwatch sw, string error) => new()
@@ -313,7 +349,9 @@ public sealed class UiaClient : IDisposable
         var args = new List<string>();
         if (Path.GetFileNameWithoutExtension(path).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
         {
+#pragma warning disable IL3000 // Only reached when hosted by dotnet.exe, never in a single-file app.
             args.Add(System.Reflection.Assembly.GetEntryAssembly()!.Location);
+#pragma warning restore IL3000
         }
 
         args.Add(UiaWorker.Arg);

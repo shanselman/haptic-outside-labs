@@ -25,6 +25,26 @@ public class ReplayTests
     }
 
     [Fact]
+    public void ContentRowsAreSilentActionsTick()
+    {
+        string El(int t, int x, string type, string rid, int bx) =>
+            $$"""{"t":{{t}},"type":"element","req":{{t - 5}},"x":{{x}},"y":15,"pid":100,"controlType":"{{type}}","rid":"{{rid}}","bounds":[{{bx}},0,40,30]}""";
+        string Ptr(int t, int x) => $$"""{"t":{{t}},"type":"pointer","x":{{x}},"y":15,"fg":100}""";
+        var lines = new[]
+        {
+            """{"type":"process","pid":100,"name":"explorer"}""",
+            Ptr(0, 20), El(6, 20, "ListItem", "file1", 0),
+            Ptr(300, 60), El(306, 60, "TreeItem", "folder", 40),
+            Ptr(600, 100), El(606, 100, "DataItem", "row", 80),
+            Ptr(900, 140), El(906, 140, "TabItem", "tab", 120),
+            Ptr(1200, 180), El(1206, 180, "SplitButton", "ribbon", 160),
+        };
+        var o = TraceReplay.Run(lines);
+        Assert.Equal(2, o.Emitted);
+        Assert.All(o.Haptic, d => Assert.Contains(d.ControlType, new[] { "TabItem", "SplitButton" }));
+    }
+
+    [Fact]
     public void FastFlickCollapsesToAtMostOne()
     {
         var o = Run("toolbar-fast-flick.jsonl");
