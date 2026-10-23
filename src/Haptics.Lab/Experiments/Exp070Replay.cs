@@ -9,6 +9,7 @@ public static class Exp070Replay
     public static readonly IReadOnlyDictionary<string, (int Min, int Max)> Expectations = new Dictionary<string, (int, int)>
     {
         ["toolbar-slow-sweep.jsonl"] = (5, 5),
+        ["toolbar-pixel-crawl.jsonl"] = (2, 2),
         ["toolbar-fast-flick.jsonl"] = (0, 1),
         ["boundary-jitter.jsonl"] = (1, 1),
         ["same-element-stationary.jsonl"] = (1, 1),

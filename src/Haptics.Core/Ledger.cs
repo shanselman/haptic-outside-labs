@@ -123,6 +123,25 @@ public static class EvidenceLedger
         results.Any(r => r.Result.ExperimentId == "EXP-010" && r.Result.Machine.MachineFingerprint == fingerprint &&
                          r.Result.Status == ExperimentStatus.PASS && r.Result.EvidenceClass == EvidenceClass.PHYSICAL);
 
+    /// <summary>
+    /// Stricter baseline for scoring a background "not felt" as FAIL: EXP-010 must have physically passed for the
+    /// same waveform at an intensity no higher than the one being tested.
+    /// </summary>
+    public static bool ForegroundBaselinePassed(IEnumerable<LoadedResult> results, string fingerprint, string waveform, double intensity) =>
+        results.Any(r => r.Result.ExperimentId == "EXP-010" && r.Result.Machine.MachineFingerprint == fingerprint &&
+                         r.Result.Routes is { } routes &&
+                         routes.TryGetValue($"{OutputRoutes.ForegroundManager}:{waveform}", out var v) &&
+                         v.Status == ExperimentStatus.PASS && v.EvidenceClass == EvidenceClass.PHYSICAL &&
+                         MethodDouble(r.Result.Method, "intensity") is { } i && i <= intensity + 1e-9);
+
+    private static double? MethodDouble(Dictionary<string, object?> method, string key) =>
+        method.TryGetValue(key, out var o) ? o switch
+        {
+            double d => d,
+            JsonElement { ValueKind: JsonValueKind.Number } e => e.GetDouble(),
+            _ => null,
+        } : null;
+
     /// <summary>Background routes that have a physically confirmed PASS on this machine (most recent verdict wins).</summary>
     public static IReadOnlyList<string> VerifiedBackgroundRoutes(IEnumerable<LoadedResult> results, string fingerprint)
     {

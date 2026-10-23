@@ -27,7 +27,7 @@ hand has actually felt.
 |---|---|---|
 | **A1** Foreground actuation | Our own focused window can make the target mouse buzz (EXP-010) | ⏳ needs a human + Surface Mouse |
 | **A2** Background actuation | It still buzzes with *another* app in front (EXP-020, routes R2/R3a/R3b) | ⏳ needs a human + Surface Mouse — **the go/no-go** |
-| **B** Observation | Background raw input (EXP-030 ⏳) and UIA semantics (EXP-040 ✅ 23/23 fixture controls, p95 ≈ 5 ms) | partial |
+| **B** Observation | Background raw input (EXP-030 ⏳) and UIA semantics (EXP-040 ✅ 23/23 fixture controls, p95 ≈ 6 ms) | partial |
 | **C** Composition | Latency, duplicates, cost in real apps | blocked on A2 |
 | **D** Value | Do people want it on? | blocked on C |
 
@@ -41,7 +41,9 @@ so far:
 - With only *posted* (non-device) input, the UI thread's manager has **no controller** and `TrySendHapticWaveform`
   returns `false` — routing really is tied to physical device input.
 - The isolated UIA worker identified **23/23** controls in the WinForms fixture, p50 ≈ 4 ms, and the hang watchdog
-  cuts off a frozen provider in ≈ 230 ms without blocking the caller (EXP-040, EXP-043).
+  cuts off a frozen provider in ≈ 240 ms without blocking the caller (EXP-040, EXP-043).
+- WinForms `TrackBar` exposes `Slider` with ValuePattern only (no RangeValue), so slider detents correctly stay
+  silent there — the lab never reads value strings.
 
 ## Try it (5 minutes to first dashboard)
 
@@ -51,7 +53,7 @@ Requirements: Windows 11 (haptics API needs build 26100+ with Universal API Cont
 ```powershell
 git clone https://github.com/shanselman/haptic-outside-labs
 cd haptic-outside-labs
-dotnet test                      # 60 tests: evidence rules, policy, golden traces, schemas, safety scans, UIA worker
+dotnet test                      # 63 tests: evidence rules, policy, golden traces, schemas, safety scans, UIA worker
 .\scripts\run-lab.ps1            # opens the Haptics Lab dashboard
 ```
 
@@ -121,7 +123,7 @@ src/Haptics.Core        platform-neutral: evidence contracts, blinded-trial stat
 src/Haptics.Windows     Win32/WinRT adapters: raw-input message thread, guarded haptics routes, UIA worker+client, pipeline
 src/Haptics.Lab         haptics-lab.exe: CLI, dashboard, experiments EXP-000/010/020/023/030/040/043/070/081, UI fixture
 src/Haptics.Tray        haptics-tray.exe: Off / Observe-only / On (evidence-gated), consent, per-app lists, kill switch
-tests/                  Core tests (evidence, policy, 12 golden traces) + Windows tests (safety scans, worker containment)
+tests/                  Core tests (evidence, policy, 13 golden traces) + Windows tests (safety scans, worker containment)
 docs/                   SPEC, runbook, evidence ledger, hypotheses, research notes, design notes, privacy/threat model, ADRs
 schemas/                JSON schemas for results and traces
 fixtures/browser        static HTML/ARIA page for manual Chromium/Edge checks (EXP-050)

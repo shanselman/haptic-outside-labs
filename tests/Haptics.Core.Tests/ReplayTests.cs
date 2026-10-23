@@ -17,6 +17,14 @@ public class ReplayTests
     }
 
     [Fact]
+    public void SlowPixelCrawlStillProducesHovers()
+    {
+        var o = Run("toolbar-pixel-crawl.jsonl");
+        Assert.Equal(["Hover", "Hover"], o.Haptic.Select(d => d.Waveform));
+        Assert.DoesNotContain(o.Notes, n => n.EndsWith("stationary-ui-change-silent", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void FastFlickCollapsesToAtMostOne()
     {
         var o = Run("toolbar-fast-flick.jsonl");

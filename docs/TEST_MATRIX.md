@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | **Unit / evidence rules** | anywhere (CI) | `dotnet test tests/Haptics.Core.Tests` | API-true never becomes PHYSICAL; status combination; Fisher test; ledger gating per machine | anything about Windows |
 | **Policy** | anywhere (CI) | same | Off/consent/exclusions/password/disabled/stale/rate caps/cooldowns; no generic Success/Error | real latency |
-| **Golden trace replay (12 traces)** | anywhere (CI) | `haptics-lab run EXP-070` or tests | exact logical decisions for sweep, flick, jitter, stationary redraw, menus, slider detents, wheel-at-limit, late UIA, disconnect, native suppression, password, excluded app | OS delivery, UIA timing, feel |
+| **Golden trace replay (13 traces)** | anywhere (CI) | `haptics-lab run EXP-070` or tests | exact logical decisions for sweep, 1 px crawl, flick, jitter, stationary redraw, menus, slider detents, wheel-at-limit, late UIA, disconnect, native suppression, password, excluded app | OS delivery, UIA timing, feel |
 | **Static safety scan** | anywhere (CI) | `haptics-lab run EXP-081`, `SafetyTests` | no SendInput/SetCursorPos/hooks/focus/injection/settings/UIA-action APIs in compiled assemblies; mouse-only raw input; tray doesn't reference lab | reflection/dynamic calls |
 | **UIA worker containment** | Windows (CI ok) | `haptics-lab run EXP-043`, `RuntimeTests` | hang/slow/crash are cut off, restarted, never delivered late; fault commands need opt-in | real provider behaviour |
 | **Capability inventory** | target machine | `haptics-lab doctor` | API/contract/waveforms present, guards don't throw | that anything buzzes |

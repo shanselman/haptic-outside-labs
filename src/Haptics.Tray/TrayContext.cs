@@ -59,6 +59,16 @@ internal sealed class TrayContext : ApplicationContext
     private void BuildMenu()
     {
         RefreshRoute();
+        if (_mode == HapticsMode.On && !OnAvailable)
+        {
+            // Evidence changed underneath us (e.g. a newer EXP-020 verdict): fail closed.
+            SetMode(HapticsMode.ObserveOnly);
+        }
+        else
+        {
+            Apply();
+        }
+
         _menu.Items.Clear();
         _menu.Items.Add(new ToolStripLabel($"Haptics Everywhere · {_mode}") { Font = new Font(_menu.Font, FontStyle.Bold) });
         _menu.Items.Add(new ToolStripSeparator());

@@ -118,7 +118,6 @@ public sealed class InterpreterConfig
     public double GeometryHysteresisPx { get; init; } = 5;
     public double MaxSnapshotAgeMs { get; init; } = 250;
     public double SupersededDistancePx { get; init; } = 24;
-    public double StationaryTolerancePx { get; init; } = 2;
     public int RangeTicksWhenNoLargeChange { get; init; } = 10;
 }
 
@@ -135,7 +134,8 @@ public sealed class SemanticInterpreter
 {
     private readonly InterpreterConfig _cfg;
     private ElementSnapshot? _current;
-    private (int X, int Y)? _lastQuery;
+    private bool _movedSinceSnapshot;
+    private bool _hadSnapshot;
     private PointerObservation? _last;
     private double _speed;
     private int? _lastTick;
@@ -181,6 +181,15 @@ public sealed class SemanticInterpreter
             {
                 notes.Add("primary-released");
             }
+
+            if (p.X != last.X || p.Y != last.Y)
+            {
+                _movedSinceSnapshot = true;
+            }
+        }
+        else
+        {
+            _movedSinceSnapshot = true;
         }
 
         _last = p;
@@ -227,8 +236,9 @@ public sealed class SemanticInterpreter
         }
 
         var interactive = IsInteractive(s);
-        var previousQuery = _lastQuery;
-        _lastQuery = (s.QueryX, s.QueryY);
+        var moved = _movedSinceSnapshot || !_hadSnapshot;
+        _movedSinceSnapshot = false;
+        _hadSnapshot = true;
         if (_current is not null && s.ElementKey == _current.ElementKey)
         {
             _current = s;
@@ -247,8 +257,8 @@ public sealed class SemanticInterpreter
             return new InterpretResult(events, notes);
         }
 
-        // UI changed underneath a pointer that did not move: never emit a hover for that.
-        if (previousQuery is { } q && Distance(q.X, q.Y, s.QueryX, s.QueryY) <= _cfg.StationaryTolerancePx)
+        // UI changed underneath a pointer that did not move since the last snapshot: never emit a hover for that.
+        if (!moved)
         {
             _current = interactive ? s : null;
             InitRange(s);
@@ -359,7 +369,6 @@ public sealed class SemanticInterpreter
     private void ResetElement()
     {
         _current = null;
-        _lastQuery = null;
         _lastTick = null;
         _atMin = _atMax = false;
     }

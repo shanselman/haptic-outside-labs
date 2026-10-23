@@ -17,6 +17,7 @@ Each line is one event:
 | Trace | Expected haptics |
 |---|---|
 | `toolbar-slow-sweep` | 5 Hover |
+| `toolbar-pixel-crawl` | 2 Hover (1 px steps must not look stationary) |
 | `toolbar-fast-flick` | ≤ 1 (rest `fast-flick`) |
 | `boundary-jitter` | 1 (rest `hysteresis-hold`) |
 | `same-element-stationary` | 1 (redraw under a still pointer is silent) |

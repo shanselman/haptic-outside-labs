@@ -152,6 +152,57 @@ public class EvidenceTests
     }
 
     [Fact]
+    public void RunArtifactsAreImmutableAfterResult()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "hapt-run-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var a = RunArtifacts.Create("EXP-020", dir);
+            a.Trace(new { n = 1 });
+            a.WriteResult(new ExperimentResult { RunId = a.RunId, ExperimentId = "EXP-020" });
+            a.Trace(new { n = 2 });
+            Assert.Single(File.ReadAllLines(Path.Combine(dir, "trace.jsonl")));
+            Assert.Throws<InvalidOperationException>(() => a.WriteResult(new ExperimentResult { RunId = a.RunId, ExperimentId = "EXP-020" }));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void BaselineMustMatchWaveformAndIntensity()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "hapt-baseline-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var r = new ExperimentResult
+            {
+                RunId = "b", ExperimentId = "EXP-010", Status = ExperimentStatus.PASS, EvidenceClass = EvidenceClass.PHYSICAL,
+                Machine = new MachineInfo { MachineFingerprint = "me" },
+                Routes = new()
+                {
+                    [$"{OutputRoutes.ForegroundManager}:Step"] = new ArmVerdict("Step", 6, 6, 0, 0, 6, 0, 6, 0, 1, 0, 0.001, 6, 0, 0, ExperimentStatus.PASS, EvidenceClass.PHYSICAL, [], ""),
+                    [$"{OutputRoutes.ForegroundManager}:Click"] = new ArmVerdict("Click", 6, 1, 5, 0, 6, 0, 6, 0, 0.17, 0, 0.5, 6, 0, 0, ExperimentStatus.INDETERMINATE, EvidenceClass.OBSERVED, [], ""),
+                },
+            };
+            r.Method["intensity"] = 0.8;
+            Directory.CreateDirectory(Path.Combine(dir, "b"));
+            File.WriteAllText(Path.Combine(dir, "b", "result.json"), System.Text.Json.JsonSerializer.Serialize(r, HapticsJson.Indented));
+            var results = EvidenceLedger.Load(dir);
+
+            Assert.True(EvidenceLedger.ForegroundBaselinePassed(results, "me"));
+            Assert.True(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Step", 1.0));
+            Assert.False(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Step", 0.5));
+            Assert.False(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Click", 1.0));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
     public void LedgerOnlyUnlocksRoutesWithPhysicalPassOnSameMachine()
     {
         var dir = Path.Combine(Path.GetTempPath(), "hapt-ledger-" + Guid.NewGuid().ToString("N"));

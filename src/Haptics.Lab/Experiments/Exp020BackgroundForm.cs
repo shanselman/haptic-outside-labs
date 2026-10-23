@@ -87,9 +87,10 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         var fp = EnvironmentProbe.CurrentFingerprint();
         _baselinePassed = EvidenceLedger.ForegroundBaselinePassed(EvidenceLedger.Load(), fp);
         _baseline.Text = _baselinePassed
-            ? "EXP-010 foreground baseline: PASS on this machine (a 'not felt' result can be a real FAIL)."
+            ? "EXP-010 passed on this machine. A 'not felt' counts as FAIL only if EXP-010 passed for the SAME waveform at ≤ this intensity."
             : "EXP-010 foreground baseline: not passed on this machine — 'not felt' will be INDETERMINATE, not FAIL. Run EXP-010 first.";
         _baseline.ForeColor = _baselinePassed ? Color.FromArgb(16, 124, 16) : Color.FromArgb(138, 80, 0);
+        _baseline.MaximumSize = new Size(880, 0);
 
         var intro = Ui.Text(
             "1) Start: move the TARGET mouse over the pad below for a second (captures its controller for R3 arms and identifies the device). " +
@@ -170,6 +171,12 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
     private void BeginTrials()
     {
+        if (_phase != Phase.Prime)
+        {
+            return;
+        }
+
+        _begin.Enabled = false;
         var arms = _arms.CheckedItems.Cast<string>().ToList();
         var skipped = new List<string>();
         if (_captured is null)
@@ -181,6 +188,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         if (arms.Count == 0)
         {
             _status.Text = "No runnable arms (R3 arms need a captured controller).";
+            _begin.Enabled = true;
             return;
         }
 
@@ -211,6 +219,8 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         };
         m["seed"] = seed;
         m["baselinePassedOnThisMachine"] = _baselinePassed;
+        _baselinePassed = EvidenceLedger.ForegroundBaselinePassed(EvidenceLedger.Load(), _session.Result.Machine.MachineFingerprint, _waveName, _intensityValue);
+        m["baselinePassedForSameWaveformAndIntensity"] = _baselinePassed;
         m["fireConditions"] = "foreground PID != lab, cursor not over lab panel, physical (hDevice != 0) movement from the primed device for >= 400ms after a random 0.8-2.5s delay; fired inside WM_INPUT handling on the raw-input thread.";
         _session.Result.NegativeControls.Add($"{(int)_controls.Value} randomized silent controls fired under identical conditions.");
 
@@ -290,7 +300,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             }
         }
 
-        if (_pending is not { } plan)
+        if (_phase != Phase.Trials || _pending is not { } plan)
         {
             return;
         }
@@ -360,6 +370,11 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
         BeginInvoke(() =>
         {
+            if (_phase != Phase.Trials)
+            {
+                return;
+            }
+
             _awaiting = t;
             _panel?.SetMessage($"NOW — trial {plan.Index}. Did you feel a pulse?", Color.FromArgb(200, 120, 0));
             _panel?.SetAnswersEnabled(true);
@@ -369,7 +384,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
     // ---- UI thread ----
     private void OnAnswer(TrialAnswer a)
     {
-        if (_awaiting is null)
+        if (_phase != Phase.Trials || _awaiting is null)
         {
             return;
         }

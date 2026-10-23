@@ -75,8 +75,9 @@ felt nothing.
 - **EXP-030** (2 min) — `haptics-lab run EXP-030`: click into another app and use the mouse normally for 20 s.
   Confirms background raw input is attributed to the right device and the callback stays under 2 ms.
 - **Live observer** (dashboard tab) — *Observe-only*, profile *Balanced*. Hover Word's ribbon, Explorer,
-  Edge, the lab's **fixture** (Experiments → Open fixture). Watch `EnterControl → DryRun` rows. If a background
-  route passed, pick it in **Route** and switch Mode to **On** to feel it for real.
+  Edge, the lab's **fixture** (Experiments → Open fixture). Watch `EnterControl → DryRun` rows. For slider detents
+  use `fixtures\browser\index.html` in Edge (the WinForms fixture slider exposes no RangeValue, so it is
+  deliberately silent). If a background route passed, pick it in **Route** and switch Mode to **On** to feel it.
 - **Waveform playground** — feel each named waveform (foreground, not evidence).
 
 ## 4. Tray (only if EXP-020 passed)

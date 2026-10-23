@@ -152,6 +152,7 @@ public static class TraceReplay
 public sealed class RunArtifacts : IDisposable
 {
     private StreamWriter? _trace;
+    private bool _closed;
 
     private RunArtifacts(string directory, string runId)
     {
@@ -173,6 +174,11 @@ public sealed class RunArtifacts : IDisposable
 
     public void Trace(object evt)
     {
+        if (_closed)
+        {
+            return; // Never reopen (and truncate) a trace after the result was written.
+        }
+
         _trace ??= new StreamWriter(Path.Combine(RunDirectory, "trace.jsonl"), append: false) { AutoFlush = true };
         lock (_trace)
         {
@@ -189,6 +195,12 @@ public sealed class RunArtifacts : IDisposable
 
     public string WriteResult(ExperimentResult result)
     {
+        if (_closed)
+        {
+            throw new InvalidOperationException("Result already written for this run; runs are immutable.");
+        }
+
+        _closed = true;
         _trace?.Flush();
         _trace?.Dispose();
         _trace = null;
