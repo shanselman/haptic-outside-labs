@@ -10,14 +10,14 @@ and what it does **and does not** prove. Entries are appended, never rewritten. 
 | Question | Answer so far | Class |
 |---|---|---|
 | Is the haptics API present and guardable on the bench machine? | Yes | `BUILD` |
-| Does anything we send make a mouse buzz in the foreground? | **Not tested** (no Surface Mouse at the bench yet) | — |
+| Does anything we send make a mouse buzz in the foreground? | **Yes** — Surface Mouse 2nd Edition, Click and Step, 12/12 felt vs 0/6 controls (EXP-010) | `PHYSICAL` |
 | …while another app is foreground (the go/no-go)? | **Not tested** | — |
 | Can UIA identify controls under a point quickly, in an isolated worker? | Yes, on our WinForms fixture: 23/23, p95 ≈ 4.4 ms | `OBSERVED` |
 | Does a hung provider freeze us? | No: cut off at ≈ 237 ms, worker restarted, no late delivery | `OBSERVED` |
 | Do the semantic rules make the intended decisions? | Yes, 13/13 golden traces | `OBSERVED` (logic only) |
 | Do shipped assemblies avoid input-synthesis/focus/hook/injection APIs? | Yes (5 assemblies scanned) | `OBSERVED` |
 
-**No `PHYSICAL` evidence exists yet. Haptic output is UNVERIFIED.** Next: [`TESTING_WITH_SURFACE_MOUSE.md`](TESTING_WITH_SURFACE_MOUSE.md).
+**Gate A1 (foreground actuation) is physically confirmed on this machine. Gate A2 (background, the go/no-go) is still untested.** Next: [`TESTING_WITH_SURFACE_MOUSE.md`](TESTING_WITH_SURFACE_MOUSE.md).
 
 ## Bench machine
 
@@ -26,6 +26,19 @@ and what it does **and does not** prove. Entries are appended, never rewritten. 
 mouse collection and a USB mouse (VID_3434&PID_D030). No Microsoft-VID external mouse, i.e. no Surface Mouse paired yet.
 
 ## Entries
+
+### 2026-10-23 · EXP-010 · PASS [PHYSICAL] — first felt result
+
+- Run 20261023-195826-EXP-010-6c99e9, commit 2c36831, machine 10947f6a858b89f
+- Device: **Surface Mouse 2nd Edition** (Bluetooth LE, VID 045E PID 0880), target mouse; every trial's UI-thread
+  haptic device type was Mouse. Intensity 1.0; route R1 (documented GetForCurrentThread() on our focused window).
+- Blinded, seeded schedule (seed 1298865452): 6 Click + 6 Step pulses + 6 silent controls, all 18 answered, 0 invalid.
+  - R1-foreground-manager:Click: felt **6/6**, controls 0/6, one-sided Fisher p = 0.0011 → PASS
+  - R1-foreground-manager:Step: felt **6/6**, controls 0/6, p = 0.0011 → PASS
+- API accepted 12/12 sends. Input→call p50 3.9 ms; call duration p95 0.16 ms (software timestamps, not physical onset).
+- Limitation: the operator did not tick "felt native haptics first"; irrelevant here since the pulses were felt.
+- Promotion: Gate A1 → **confirmed on 10947f6a858b89f** for the Surface Mouse. This also makes a "not felt" in
+  EXP-020 (Click or Step, intensity ≤ 1.0) a genuine FAIL rather than INDETERMINATE. H1/H2 remain UNVERIFIED.
 
 ### 2026-10-23 · EXP-000 · `PASS` [BUILD]
 
@@ -98,6 +111,6 @@ mouse collection and a USB mouse (VID_3434&PID_D030). No Microsoft-VID external 
 
 | Experiment | Who | Status |
 |---|---|---|
-| EXP-010 foreground baseline | operator + Surface Mouse | `NOT_RUN` |
+| EXP-010 foreground baseline | operator + Surface Mouse | `PASS` [PHYSICAL] 2026-10-23 |
 | EXP-020 background routes R2 / R3a / R3b | operator + Surface Mouse | `NOT_RUN` |
 | EXP-030 raw input attribution | operator | `NOT_RUN` |

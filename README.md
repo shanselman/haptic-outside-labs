@@ -25,7 +25,7 @@ hand has actually felt.
 
 | Gate | What it means | State |
 |---|---|---|
-| **A1** Foreground actuation | Our own focused window can make the target mouse buzz (EXP-010) | ⏳ needs a human + Surface Mouse |
+| **A1** Foreground actuation | Our own focused window can make the target mouse buzz (EXP-010) | ✅ **PHYSICAL** — Surface Mouse 2nd Ed., 12/12 felt vs 0/6 controls |
 | **A2** Background actuation | It still buzzes with *another* app in front (EXP-020, routes R2/R3a/R3b) | ⏳ needs a human + Surface Mouse — **the go/no-go** |
 | **B** Observation | Background raw input (EXP-030 ⏳) and UIA semantics (EXP-040 ✅ 23/23 fixture controls, p95 ≈ 4–6 ms) | partial |
 | **C** Composition | Latency, duplicates, cost in real apps | blocked on A2 |

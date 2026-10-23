@@ -16,7 +16,8 @@ hypotheses:
     ifTrue: Promote R2 for this machine; tray "On" unlocks automatically.
     ifFalse: Look at H2 arms from the same session; leave the tray in Observe-only.
     ifIndeterminate: Fix setup (device, intensity, answers) and rerun with more trials.
-    history: []
+    history:
+      - "2026-10-23 EXP-010 PASS [PHYSICAL] (Surface Mouse, R1 foreground, Click+Step 12/12 vs 0/6): prerequisite met; EXP-020 next."
 
   - id: H2
     title: A controller captured in a foreground moment stays usable for background output
