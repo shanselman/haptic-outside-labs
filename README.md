@@ -27,7 +27,7 @@ hand has actually felt.
 |---|---|---|
 | **A1** Foreground actuation | Our own focused window can make the target mouse buzz (EXP-010) | ⏳ needs a human + Surface Mouse |
 | **A2** Background actuation | It still buzzes with *another* app in front (EXP-020, routes R2/R3a/R3b) | ⏳ needs a human + Surface Mouse — **the go/no-go** |
-| **B** Observation | Background raw input (EXP-030 ⏳) and UIA semantics (EXP-040 ✅ 23/23 fixture controls, p95 ≈ 6 ms) | partial |
+| **B** Observation | Background raw input (EXP-030 ⏳) and UIA semantics (EXP-040 ✅ 23/23 fixture controls, p95 ≈ 4–6 ms) | partial |
 | **C** Composition | Latency, duplicates, cost in real apps | blocked on A2 |
 | **D** Value | Do people want it on? | blocked on C |
 
@@ -40,8 +40,8 @@ so far:
   call on it fails with `RPC_E_WRONG_THREAD (0x8001010E)` (EXP-023).
 - With only *posted* (non-device) input, the UI thread's manager has **no controller** and `TrySendHapticWaveform`
   returns `false` — routing really is tied to physical device input.
-- The isolated UIA worker identified **23/23** controls in the WinForms fixture, p50 ≈ 5 ms / p95 ≈ 6 ms, and the hang watchdog
-  cuts off a frozen provider in ≈ 240 ms without blocking the caller (EXP-040, EXP-043).
+- The isolated UIA worker identified **23/23** controls in the WinForms fixture, p50 ≈ 3.5–5 ms / p95 ≈ 4.4–6 ms, and the hang watchdog
+  cuts off a frozen provider in ≈ 235 ms without blocking the caller (EXP-040, EXP-043).
 - WinForms `TrackBar` exposes `Slider` with ValuePattern only (no RangeValue), so slider detents correctly stay
   silent there — the lab never reads value strings.
 

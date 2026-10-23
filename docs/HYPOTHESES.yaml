@@ -40,7 +40,7 @@ hypotheses:
     ifTrue: Better tier (UIA) enabled in dry-run; measure real apps (EXP-041).
     ifFalse: Geometry-only or app adapters.
     history:
-      - "EXP-040 fixture: 23/23 correct, p95 ~6 ms (WinForms only). EXP-043: hang contained ~240 ms."
+      - "EXP-040 fixture: 23/23 correct, p95 4.4-6 ms (WinForms only). EXP-043: hang contained ~240 ms."
       - "WinForms TrackBar exposes no RangeValuePattern: slider rules abstain there by design."
 
   - id: H4

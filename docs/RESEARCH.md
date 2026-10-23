@@ -51,7 +51,7 @@ SimpleHapticsController: Id, SupportedFeedback, IsIntensitySupported, IsPlayCoun
 | `TryGetForThread` for a thread with no manager, thread 0, or a bogus id returns null (no throw) | `[OBSERVED]` | EXP-023 |
 | UI thread receiving only posted (non-device) clicks: device `None`, controller absent, `TrySendHapticWaveform` returns false | `[OBSERVED]` | Lab waveform playground via UI automation |
 | A WinForms window created by a background process via bare `CreateProcess` did not become topmost; `SetWindowPos(HWND_TOPMOST)` returned TRUE without setting `WS_EX_TOPMOST` | `[OBSERVED]` | EXP-040 debugging (fixture now launched via ShellExecute) |
-| UIA `ElementFromPoint` + `CacheRequest` in a worker process: 23/23 WinForms fixture controls correct; p50 ≈ 3.8 ms, p95 ≈ 6 ms | `[OBSERVED]` | EXP-040 |
+| UIA `ElementFromPoint` + `CacheRequest` in a worker process: 23/23 WinForms fixture controls correct; p50 3.5–4.9 ms, p95 4.4–6.0 ms across three runs | `[OBSERVED]` | EXP-040 |
 | WinForms `TrackBar` (msctls_trackbar32 via proxy) is a UIA `Slider` supporting only `ValuePattern`; `IsRangeValuePatternAvailable` = false | `[OBSERVED]` | EXP-040 + live probe |
 
 ## Still unknown
