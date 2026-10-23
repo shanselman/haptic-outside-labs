@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Windows-only observation and output adapters. Production-safe: passive observation only.
+       The forbidden-API scan (EXP-081 / tests) inspects this assembly's P/Invoke imports. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <RootNamespace>Haptics.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Haptics.Core\Haptics.Core.csproj" />
+  </ItemGroup>
+</Project>

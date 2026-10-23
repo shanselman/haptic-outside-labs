@@ -1,0 +1,79 @@
+schemaVersion: 1
+# Machine-readable hypothesis ledger (SPEC §13.3). The runner writes evidence into run results; changing a
+# `state` here is a deliberate, human-reviewed promotion. Record the run ids and reasoning in `history`.
+# States: UNVERIFIED | CONFIRMED_ON[<fingerprint>] | FALSIFIED_ON[<fingerprint>] | CONDITIONAL | INDETERMINATE
+hypotheses:
+  - id: H1
+    title: Background Raw Input is eligible for mouse haptic routing
+    state: UNVERIFIED
+    requiredExperiments: [EXP-010, EXP-020]
+    route: R2-raw-thread-manager
+    scope: [target-device, os-build, process-architecture]
+    falsifier: >-
+      EXP-010 passes, physical background WM_INPUT from the mouse arrives (RIM_INPUTSINK), but repeated R2 attempts on
+      the raw-input thread produce no felt pulse above silent controls.
+    apiLevelSignal: EXP-020 observations.rawThreadBackgroundSamplesWithController (OBSERVED, not proof)
+    ifTrue: Promote R2 for this machine; tray "On" unlocks automatically.
+    ifFalse: Look at H2 arms from the same session; leave the tray in Observe-only.
+    ifIndeterminate: Fix setup (device, intensity, answers) and rerun with more trials.
+    history: []
+
+  - id: H2
+    title: A controller captured in a foreground moment stays usable for background output
+    state: UNVERIFIED
+    requiredExperiments: [EXP-010, EXP-020]
+    route: [R3a-cached-controller, R3b-override-on-raw-thread]
+    scope: [target-device, os-build, controller-lifetime]
+    falsifier: >-
+      Controller captured as Mouse, but sends from the raw-input thread with another app foreground throw, are rejected,
+      or are not felt above controls.
+    ifTrue: Promote the passing R3 route; tray requires a one-time "Prime haptic mouse"; lifetime tests (EXP-082) next.
+    ifFalse: Output architecture pivot (SPEC §15) if H1 is also false.
+    history: []
+
+  - id: H3
+    title: UIA hit tests identify semantic controls on useful timescales
+    state: CONFIRMED_ON[f10947f6a858b89f]   # fixture only; see EVIDENCE_LEDGER
+    requiredExperiments: [EXP-040, EXP-043]
+    scope: [app-framework, provider, dpi]
+    falsifier: Common controls are opaque, wrong, stale, or slower than the 45 ms intent budget.
+    ifTrue: Better tier (UIA) enabled in dry-run; measure real apps (EXP-041).
+    ifFalse: Geometry-only or app adapters.
+    history:
+      - "EXP-040 fixture: 23/23 correct, p95 ~5 ms (WinForms only). EXP-043: hang contained ~230 ms."
+
+  - id: H4
+    title: UIA semantic coverage is broad across third-party apps
+    state: UNVERIFIED
+    requiredExperiments: [EXP-041, EXP-050, EXP-051, EXP-052]
+    scope: [app, app-version, accessibility-mode]
+    falsifier: Most targeted apps expose only containers or opaque panes where buttons are drawn.
+    history: []
+
+  - id: H5
+    title: Feedback can be timely and unobtrusive
+    state: UNVERIFIED
+    requiredExperiments: [EXP-070, EXP-080]
+    falsifier: Input-to-call p95 > 35 ms on cache-warm controls, late pulses, or density complaints.
+    history:
+      - "EXP-070 replay: rules produce 0 late pulses and <=4/s by construction (logic only)."
+
+  - id: H6
+    title: Automation can verify most behaviour deterministically
+    state: CONDITIONAL
+    requiredExperiments: [EXP-031]
+    falsifier: Physical routing can only be established manually or with a sensor.
+    history:
+      - "Observed: posted (non-device) input yields no haptic controller, so automation cannot stand in for physical tests."
+
+  - id: H7
+    title: Built-in (native) haptics can be avoided without privileged instrumentation
+    state: UNVERIFIED
+    requiredExperiments: [EXP-075]
+    history: []
+
+  - id: H8
+    title: Cross-app haptics are genuinely useful
+    state: UNVERIFIED
+    requiredExperiments: [EXP-090]
+    history: []

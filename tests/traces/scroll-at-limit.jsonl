@@ -1,0 +1,12 @@
+{"type":"comment","text":"Wheel input over a list that is already at its limit. Scroll texture is off: expect zero haptics."}
+{"type":"process","pid":100,"name":"WINWORD"}
+{"t":0,"type":"pointer","x":20,"y":200,"fg":100,"primary":false}
+{"t":5,"type":"element","req":0,"x":20,"y":200,"pid":100,"controlType":"List","rid":"list1","bounds":[0,100,300,400]}
+{"t":100,"type":"wheel","delta":-120}
+{"t":200,"type":"wheel","delta":-120}
+{"t":300,"type":"wheel","delta":-120}
+{"t":400,"type":"wheel","delta":-120}
+{"t":500,"type":"wheel","delta":-120}
+{"t":600,"type":"wheel","delta":-120}
+{"t":700,"type":"wheel","delta":-120}
+{"t":800,"type":"wheel","delta":-120}

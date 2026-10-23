@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Haptics Lab: CLI + dashboard + experiment runners + fixtures. One executable; each experiment
+       runs in its own child process when launched from the dashboard. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>haptics-lab</AssemblyName>
+    <RootNamespace>Haptics.Lab</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Haptics.Core\Haptics.Core.csproj" />
+    <ProjectReference Include="..\Haptics.Windows\Haptics.Windows.csproj" />
+  </ItemGroup>
+</Project>

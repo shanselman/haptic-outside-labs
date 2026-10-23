@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Haptics Everywhere tray prototype. Imports only production modules (Core + Windows).
+       Must never reference fixtures, test automation, SendInput, or UIA action patterns. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>haptics-tray</AssemblyName>
+    <RootNamespace>Haptics.Tray</RootNamespace>
+    <ApplicationManifest>..\Haptics.Lab\app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Haptics.Core\Haptics.Core.csproj" />
+    <ProjectReference Include="..\Haptics.Windows\Haptics.Windows.csproj" />
+  </ItemGroup>
+</Project>

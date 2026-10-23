@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+TestResults/
+publish/
+# Local experiment evidence stays on the machine unless an operator explicitly exports it.
+artifacts/*
+!artifacts/README.md

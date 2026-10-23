@@ -1,0 +1,33 @@
+name: Device compatibility
+description: Report how a haptic mouse/touchpad/pen behaves with the Haptics Lab.
+labels: [device]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device (model, connection)
+      placeholder: Surface Mouse (2nd Edition), Bluetooth LE
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Windows build and architecture (from `haptics-lab doctor`)
+      placeholder: 26H1 28000.3231 Arm64
+    validations:
+      required: true
+  - type: checkboxes
+    id: results
+    attributes:
+      label: What did you observe?
+      options:
+        - label: EXP-010 foreground baseline PASS
+        - label: EXP-020 R2 (raw-input thread manager) PASS
+        - label: EXP-020 R3a (cached controller) PASS
+        - label: EXP-020 R3b (override) PASS
+        - label: Native haptics (Snap / PowerPoint) felt
+  - type: textarea
+    id: doctor
+    attributes:
+      label: doctor output (sanitized)
+      render: markdown

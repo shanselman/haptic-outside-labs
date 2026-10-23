@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    # Hosted runner: x64, no haptic hardware, no human. It can prove logic, safety scans, and process
+    # containment — never a physical result (reports carry NOT_TESTED_ON_HARDWARE).
+    runs-on: windows-latest
+    env:
+      CI: "true"
+      DOTNET_NOLOGO: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build
+        run: dotnet build HapticsEverywhere.slnx -c Release
+      - name: Test
+        run: dotnet test HapticsEverywhere.slnx -c Release --no-build --logger "trx;LogFileName=results.trx"
+      - name: Automated experiments (no pointer movement, no haptics)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src/Haptics.Lab/bin/Release -Recurse -Filter haptics-lab.exe | Select-Object -First 1
+          & $exe.FullName doctor
+          foreach ($e in 'EXP-070','EXP-081','EXP-043') { & $exe.FullName run $e; if ($LASTEXITCODE -eq 1) { exit 1 } }
+          & $exe.FullName report
+      - name: Upload sanitized reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-report
+          path: |
+            artifacts/report.md
+            artifacts/report.html
+            **/TestResults/*.trx

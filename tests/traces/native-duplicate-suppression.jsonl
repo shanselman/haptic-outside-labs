@@ -1,0 +1,8 @@
+{"type":"comment","text":"Primary-button drags in PowerPoint and over title-bar caption buttons are left to native haptics. Expect zero haptics."}
+{"type":"process","pid":200,"name":"POWERPNT"}
+{"t":0,"type":"pointer","x":20,"y":200,"fg":200,"primary":false}
+{"t":5,"type":"element","req":0,"x":20,"y":200,"pid":200,"controlType":"Pane","rid":"pane","bounds":[0,0,2000,2000]}
+{"t":100,"type":"pointer","x":20,"y":15,"fg":200,"primary":true}
+{"t":106,"type":"element","req":101,"x":20,"y":15,"pid":200,"controlType":"Button","rid":"pa","bounds":[0,0,40,30],"parentType":"Group","parentRid":"g1"}
+{"t":400,"type":"pointer","x":60,"y":15,"fg":200,"primary":true}
+{"t":406,"type":"element","req":401,"x":60,"y":15,"pid":200,"controlType":"Button","rid":"pb","bounds":[40,0,40,30],"parentType":"TitleBar","parentRid":"tbar"}

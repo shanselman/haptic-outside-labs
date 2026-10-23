@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <Version>0.1.0</Version>
+    <Company>Haptics Outside Labs</Company>
+    <Product>Haptics Everywhere</Product>
+    <!--
+      The .NET 10 SDK does not yet know the 10.0.28000 Windows TFM, so Windows projects
+      target net10.0-windows10.0.26100.0 and pull the 28000 C# projection explicitly.
+      The 28000 projection is what contains Windows.Devices.Haptics.InputHapticsManager.
+      Runtime availability is still probed with ApiInformation (see docs/RESEARCH.md).
+    -->
+    <WindowsSdkPackageVersion>10.0.28000.87</WindowsSdkPackageVersion>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows'))">10.0.19041.0</SupportedOSPlatformVersion>
+    <NoWarn>$(NoWarn);CA1416;WFO0003;WFAC010</NoWarn>
+  </PropertyGroup>
+</Project>

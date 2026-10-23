@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/shanselman/haptic-outside-labs/schemas/trace-event.schema.json",
+  "title": "Golden replay trace event (one JSON object per line)",
+  "type": "object",
+  "required": ["type"],
+  "oneOf": [
+    { "properties": { "type": { "const": "comment" }, "text": { "type": "string" } } },
+    { "properties": { "type": { "const": "process" }, "pid": { "type": "integer" }, "name": { "type": "string" } }, "required": ["pid", "name"] },
+    {
+      "properties": {
+        "type": { "const": "pointer" }, "t": { "type": "number" }, "x": { "type": "integer" }, "y": { "type": "integer" },
+        "fg": { "type": "integer" }, "primary": { "type": "boolean" }
+      },
+      "required": ["t", "x", "y"]
+    },
+    {
+      "properties": {
+        "type": { "const": "element" }, "t": { "type": "number" }, "req": { "type": "number" }, "x": { "type": "integer" }, "y": { "type": "integer" },
+        "pid": { "type": "integer" }, "controlType": { "type": "string" }, "rid": { "type": "string" },
+        "bounds": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "parentType": { "type": "string" }, "parentRid": { "type": "string" },
+        "enabled": { "type": "boolean" }, "password": { "type": "boolean" }, "offscreen": { "type": "boolean" },
+        "range": { "type": "object", "required": ["value", "min", "max"], "properties": { "value": { "type": "number" }, "min": { "type": "number" }, "max": { "type": "number" }, "small": { "type": "number" }, "large": { "type": "number" } } },
+        "error": { "type": "string" }
+      },
+      "required": ["t", "controlType"]
+    },
+    { "properties": { "type": { "const": "device" }, "t": { "type": "number" }, "available": { "type": "boolean" } }, "required": ["t", "available"] },
+    { "properties": { "type": { "const": "wheel" }, "t": { "type": "number" }, "delta": { "type": "integer" } }, "required": ["t"] }
+  ]
+}

@@ -1,0 +1,6 @@
+{"type":"comment","text":"A password manager is excluded by default. Expect zero haptics."}
+{"type":"process","pid":300,"name":"KeePass"}
+{"t":0,"type":"pointer","x":20,"y":200,"fg":300,"primary":false}
+{"t":5,"type":"element","req":0,"x":20,"y":200,"pid":300,"controlType":"Pane","rid":"pane","bounds":[0,0,2000,2000]}
+{"t":100,"type":"pointer","x":20,"y":15,"fg":300,"primary":false}
+{"t":106,"type":"element","req":101,"x":20,"y":15,"pid":300,"controlType":"Button","rid":"k1","bounds":[0,0,40,30],"parentType":"ToolBar","parentRid":"tb1"}

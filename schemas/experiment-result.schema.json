@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/shanselman/haptic-outside-labs/schemas/experiment-result.schema.json",
+  "title": "Haptics Lab experiment result (SPEC §13.2)",
+  "type": "object",
+  "required": [
+    "schemaVersion", "example", "runId", "experimentId", "experimentSpecVersion", "hypothesisIds", "codeCommit",
+    "machine", "mode", "requiresPhysicalConfirmation", "method", "observations", "latencyMs", "assertions",
+    "negativeControls", "artifacts", "status", "evidenceClass", "labels", "explanation", "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "example": { "type": "boolean", "description": "Illustrative records are never evidence and can never PASS." },
+    "runId": { "type": "string" },
+    "experimentId": { "type": "string", "pattern": "^EXP-\\d{3}$" },
+    "experimentSpecVersion": { "type": "string" },
+    "hypothesisIds": { "type": "array", "items": { "type": "string", "pattern": "^H\\d+$" } },
+    "codeCommit": { "type": "string" },
+    "startedAtUtc": { "type": ["string", "null"], "format": "date-time" },
+    "endedAtUtc": { "type": ["string", "null"], "format": "date-time" },
+    "machine": {
+      "type": "object",
+      "required": ["osBuild", "osArchitecture", "processArchitecture", "machineFingerprint"],
+      "properties": {
+        "osDescription": { "type": "string" },
+        "osBuild": { "type": "string" },
+        "osDisplayVersion": { "type": ["string", "null"] },
+        "osArchitecture": { "type": "string" },
+        "processArchitecture": { "type": "string" },
+        "dotnetRuntime": { "type": "string" },
+        "windowsSdkProjection": { "type": ["string", "null"] },
+        "deviceModel": { "type": ["string", "null"] },
+        "machineFingerprint": { "type": "string", "description": "Salted hash; never the machine name." },
+        "sessionType": { "type": "string" }
+      }
+    },
+    "mode": { "enum": ["auto", "physical", "fixture", "replay"] },
+    "requiresPhysicalConfirmation": { "type": "boolean" },
+    "method": { "type": "object" },
+    "observations": { "type": "object" },
+    "latencyMs": { "type": "object", "additionalProperties": { "type": ["number", "null"] } },
+    "assertions": {
+      "type": "array",
+      "items": { "type": "object", "required": ["name", "passed"], "properties": { "name": { "type": "string" }, "passed": { "type": "boolean" }, "detail": { "type": ["string", "null"] } } }
+    },
+    "negativeControls": { "type": "array", "items": { "type": "string" } },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "object", "required": ["path"], "properties": { "path": { "type": "string" }, "sha256": { "type": ["string", "null"] }, "description": { "type": ["string", "null"] } } }
+    },
+    "routes": {
+      "type": ["object", "null"],
+      "description": "Per route/arm verdicts computed only from blinded operator answers.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["arm", "hits", "misses", "falseAlarms", "correctRejections", "fisherP", "apiAccepted", "status", "evidenceClass", "reason"]
+      }
+    },
+    "status": { "enum": ["NOT_RUN", "PASS", "FAIL", "INDETERMINATE", "BLOCKED", "SKIPPED_BY_POLICY"] },
+    "evidenceClass": { "enum": ["NONE", "DOC", "BUILD", "OBSERVED", "PHYSICAL"] },
+    "labels": { "type": "array", "items": { "type": "string" } },
+    "explanation": { "type": "string" },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "nextDecision": { "type": ["string", "null"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "requiresPhysicalConfirmation": { "const": true }, "status": { "const": "PASS" } } },
+      "then": { "properties": { "evidenceClass": { "const": "PHYSICAL" } } }
+    }
+  ]
+}

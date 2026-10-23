@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Haptics Lab browser fixture (EXP-050, manual)</title>
+<style>
+  body { font: 15px "Segoe UI", sans-serif; margin: 2rem; max-width: 900px; }
+  section { margin: 1.5rem 0; padding: 1rem; border: 1px solid #ccc; border-radius: 8px; }
+  button, [role=button] { padding: .5rem 1rem; margin: .25rem; }
+  [role=tab][aria-selected=true] { font-weight: 600; border-bottom: 2px solid #0067c0; }
+  .fake { display: inline-block; padding: .5rem 1rem; margin: .25rem; background: #5878c8; color: white; border-radius: 4px; }
+  canvas { border: 1px solid #999; }
+</style>
+</head>
+<body>
+<h1>Browser semantics fixture</h1>
+<p>Open in Edge/Chrome, start the Haptics Lab <b>Live observer</b> (Observe-only) and hover each section.
+Expected UIA types are listed; record what you actually see in the observer (EXP-050 is manual for now).</p>
+
+<section>
+  <h2>Native buttons → <code>Button</code></h2>
+  <button>Bold</button><button>Italic</button><button>Underline</button><button disabled>Disabled</button>
+</section>
+
+<section>
+  <h2>ARIA toolbar → <code>ToolBar</code> parent, <code>Button</code> children</h2>
+  <div role="toolbar" aria-label="Formatting">
+    <div role="button" tabindex="0">Left</div><div role="button" tabindex="0">Center</div><div role="button" tabindex="0">Right</div>
+  </div>
+</section>
+
+<section>
+  <h2>ARIA tabs → <code>Tab</code> / <code>TabItem</code></h2>
+  <div role="tablist" aria-label="Pages">
+    <button role="tab" aria-selected="true">One</button><button role="tab" aria-selected="false">Two</button><button role="tab" aria-selected="false">Three</button>
+  </div>
+</section>
+
+<section>
+  <h2>Range input → <code>Slider</code> with RangeValue (try dragging: Step every 10, Collide at ends)</h2>
+  <input type="range" min="0" max="100" step="1" value="5" style="width: 400px">
+</section>
+
+<section>
+  <h2>Menu → <code>Menu</code> / <code>MenuItem</code></h2>
+  <ul role="menu" aria-label="File"><li role="menuitem" tabindex="-1">New</li><li role="menuitem" tabindex="-1">Open</li><li role="menuitem" tabindex="-1">Save</li></ul>
+</section>
+
+<section>
+  <h2>Password → <code>Edit</code>, IsPassword (must be silent)</h2>
+  <input type="password" value="fixture-not-a-secret">
+</section>
+
+<section>
+  <h2>Div soup that only looks like buttons → expected opaque (<code>Text</code>/<code>Group</code>, not interactive)</h2>
+  <span class="fake">Looks clickable</span><span class="fake">Also fake</span>
+</section>
+
+<section>
+  <h2>Canvas → opaque (<code>Image</code>/<code>Pane</code>); must stay silent</h2>
+  <canvas id="c" width="400" height="80"></canvas>
+</section>
+
+<script>
+  const g = document.getElementById('c').getContext('2d');
+  g.fillStyle = '#5878c8';
+  for (let i = 0; i < 3; i++) { g.fillRect(10 + i * 130, 20, 110, 40); }
+</script>
+</body>
+</html>

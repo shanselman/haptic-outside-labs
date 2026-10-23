@@ -1,0 +1,140 @@
+using Haptics.Core;
+
+namespace Haptics.Core.Tests;
+
+/// <summary>Golden-trace replay (SPEC §12.3): exact logical decisions, no OS timing.</summary>
+public class ReplayTests
+{
+    private static TraceReplay.ReplayOutput Run(string name, PolicyConfig? cfg = null) =>
+        TraceReplay.Run(Path.Combine(AppContext.BaseDirectory, "traces", name), cfg);
+
+    [Fact]
+    public void SlowSweepEmitsOneHoverPerButton()
+    {
+        var o = Run("toolbar-slow-sweep.jsonl");
+        Assert.Equal(5, o.Emitted);
+        Assert.All(o.Haptic, d => Assert.Equal("Hover", d.Waveform));
+    }
+
+    [Fact]
+    public void FastFlickCollapsesToAtMostOne()
+    {
+        var o = Run("toolbar-fast-flick.jsonl");
+        Assert.InRange(o.Emitted, 0, 1);
+        Assert.Contains(o.Decisions, d => d.Reason == "fast-flick");
+    }
+
+    [Fact]
+    public void JitterAroundAnEdgeDoesNotBuzzSaw()
+    {
+        var o = Run("boundary-jitter.jsonl");
+        Assert.Equal(1, o.Emitted);
+        Assert.Contains(o.Notes, n => n.EndsWith("hysteresis-hold", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void UiChangingUnderStationaryPointerIsSilent()
+    {
+        var o = Run("same-element-stationary.jsonl");
+        Assert.Equal(1, o.Emitted);
+        Assert.Contains(o.Notes, n => n.EndsWith("stationary-ui-change-silent", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MenuGroupBoundaryEmitsStepAndCoalescesHover()
+    {
+        var o = Run("menu-nested.jsonl");
+        Assert.Equal(["Hover", "Step", "Hover"], o.Haptic.Select(d => d.Waveform));
+        Assert.Contains(o.Decisions, d => d.Reason == "coalesced-with-group-boundary");
+    }
+
+    [Fact]
+    public void QuietProfileDropsHoverButKeepsBoundary()
+    {
+        var cfg = new PolicyConfig { Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions };
+        cfg.ApplyProfile(EffectProfile.Quiet);
+        var o = Run("menu-nested.jsonl", cfg);
+        Assert.Equal(["Step"], o.Haptic.Select(d => d.Waveform));
+    }
+
+    [Fact]
+    public void SliderDetentsStepAndCollideOnlyDuringPhysicalDrag()
+    {
+        var o = Run("slider-discrete.jsonl");
+        var waves = o.Haptic.Select(d => d.Waveform).ToList();
+        Assert.Equal("Hover", waves[0]);
+        Assert.Equal(8, waves.Count(w => w == "Step"));
+        Assert.Equal(1, waves.Count(w => w == "Collide"));
+        Assert.Equal("Collide", waves[^1]);
+    }
+
+    [Fact]
+    public void WheelAtLimitIsSilent()
+    {
+        var o = Run("scroll-at-limit.jsonl");
+        Assert.Equal(0, o.Emitted);
+        Assert.Contains(o.Notes, n => n.Contains("wheel-ignored", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LateUiaNeverProducesLatePulses()
+    {
+        var o = Run("uia-stale-late.jsonl");
+        Assert.Equal(0, o.Emitted);
+        Assert.Contains(o.Notes, n => n.EndsWith("stale-snapshot-discarded", StringComparison.Ordinal));
+        Assert.Contains(o.Decisions, d => d.Reason == "stale-intent");
+    }
+
+    [Fact]
+    public void DeviceDisconnectFailsClosed()
+    {
+        var o = Run("device-disconnect.jsonl");
+        Assert.Equal(1, o.Emitted);
+        Assert.Contains(o.Decisions, d => d.Reason == "device-unavailable");
+    }
+
+    [Fact]
+    public void NativeHapticZonesAreSuppressed()
+    {
+        var o = Run("native-duplicate-suppression.jsonl");
+        Assert.Equal(0, o.Emitted);
+        Assert.Contains(o.Decisions, d => d.Reason == "native-suppression:powerpoint-alignment");
+    }
+
+    [Fact]
+    public void PasswordContextsAreSilent()
+    {
+        var o = Run("security-password.jsonl");
+        Assert.Equal(0, o.Emitted);
+        Assert.Contains(o.Decisions, d => d.Reason == "protected-context");
+    }
+
+    [Fact]
+    public void ExcludedAppsAreSilent()
+    {
+        var o = Run("excluded-app.jsonl");
+        Assert.Equal(0, o.Emitted);
+        Assert.Contains(o.Decisions, d => d.Reason == "process-excluded");
+    }
+
+    [Fact]
+    public void ObserveOnlyNeverEmits()
+    {
+        var cfg = new PolicyConfig { Mode = HapticsMode.ObserveOnly, AppPolicy = AppPolicy.AllExceptExclusions };
+        var o = Run("toolbar-slow-sweep.jsonl", cfg);
+        Assert.Equal(0, o.Emitted);
+        Assert.Equal(5, o.Decisions.Count(d => d.Outcome == PolicyOutcome.DryRun));
+    }
+
+    [Fact]
+    public void AllowlistDefaultIsSilentForUnlistedApps()
+    {
+        var cfg = new PolicyConfig { Mode = HapticsMode.On };
+        var o = Run("toolbar-slow-sweep.jsonl", cfg);
+        Assert.Equal(0, o.Emitted);
+        Assert.Contains(o.Decisions, d => d.Reason == "app-not-allowlisted");
+
+        cfg.AllowedProcesses.Add("winword");
+        Assert.Equal(5, Run("toolbar-slow-sweep.jsonl", cfg).Emitted);
+    }
+}

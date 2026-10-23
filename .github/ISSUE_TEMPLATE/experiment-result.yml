@@ -1,0 +1,36 @@
+name: Experiment result
+description: Report a physical or automated Haptics Lab run (sanitized summary only).
+labels: [evidence]
+body:
+  - type: input
+    id: experiment
+    attributes:
+      label: Experiment id
+      placeholder: EXP-020
+    validations:
+      required: true
+  - type: dropdown
+    id: status
+    attributes:
+      label: Status
+      options: [PASS, FAIL, INDETERMINATE, BLOCKED, NOT_RUN]
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Ledger entry
+      description: Paste the output of `haptics-lab evidence summarize <run-dir>`. Do not paste raw traces.
+      render: markdown
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Mouse / haptic device and Windows haptic intensity setting
+      placeholder: Surface Mouse (2nd Edition), Bluetooth LE, intensity 80%
+  - type: textarea
+    id: notes
+    attributes:
+      label: Operator notes
+      description: Anything that could bias the blinded answers (noise, touchpad use, fatigue, native haptics nearby).

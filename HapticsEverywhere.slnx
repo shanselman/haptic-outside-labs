@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Haptics.Core/Haptics.Core.csproj" />
+    <Project Path="src/Haptics.Lab/Haptics.Lab.csproj" />
+    <Project Path="src/Haptics.Tray/Haptics.Tray.csproj" />
+    <Project Path="src/Haptics.Windows/Haptics.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Haptics.Core.Tests/Haptics.Core.Tests.csproj" />
+    <Project Path="tests/Haptics.Windows.Tests/Haptics.Windows.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Pure, platform-neutral logic: contracts, evidence rules, statistics, semantics, policy, replay.
+       Must never reference Win32, UIA, or haptics APIs so it stays deterministic and CI-testable. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Haptics.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Haptics.Core.Tests" />
+  </ItemGroup>
+</Project>

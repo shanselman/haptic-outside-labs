@@ -1,0 +1,42 @@
+# Copilot instructions for this repository
+
+Source of truth: [`docs/SPEC.md`](../docs/SPEC.md). Design rationale: [`docs/DESIGN_NOTES.md`](../docs/DESIGN_NOTES.md).
+
+## Invariants (never violate)
+
+- **We never move, click, steer, or focus anything.** The user drives the pointer; we observe and add haptics.
+  No `SendInput`, `SetCursorPos`, `SetForegroundWindow`, `SetFocus`, hooks, injection, UIA action patterns, or
+  `ValuePattern`/`TextPattern` in `src/`. `ForbiddenApiScanner` + `tests/Haptics.Windows.Tests/SafetyTests.cs` enforce this.
+- Raw Input is **mouse only** (usage page 0x01, usage 0x02) with `RIDEV_INPUTSINK | RIDEV_DEVNOTIFY`. Never keyboard,
+  never `RIDEV_NOLEGACY` / `RIDEV_CAPTUREMOUSE`.
+- UIA reads only control type, bounds, enabled/offscreen/password flags, PID, hashed runtime id, one parent hop, and
+  slider range. Never `Name`, values, text, URLs. UIA runs only in the worker process (`--uia-worker`).
+- An API returning `true` is `OBSERVED`, never `PHYSICAL`. Only blinded operator trials (`PhysicalEvaluator`) produce
+  `PHYSICAL`. Call `ExperimentResult.Finalize()` (via `ExperimentSession.Complete()`); do not bypass it.
+- Every haptic intent goes through `HapticPolicy.Evaluate`. No new source may emit around it.
+- The tray must not reference `Haptics.Lab` or fixtures, and its **On** mode must stay gated by
+  `EvidenceLedger.VerifiedBackgroundRoutes` for the current machine fingerprint.
+- Never invent results. Update `docs/EVIDENCE_LEDGER.md` only with real runs (`haptics-lab evidence summarize <run>`).
+
+## Build and test
+
+```powershell
+dotnet build HapticsEverywhere.slnx
+dotnet test HapticsEverywhere.slnx
+src\Haptics.Lab\bin\Debug\net10.0-windows10.0.26100.0\haptics-lab.exe run-all   # automated experiments
+```
+
+Windows projects target `net10.0-windows10.0.26100.0` with `WindowsSdkPackageVersion=10.0.28000.87`
+(the .NET 10 SDK does not know the 28000 TFM yet; ADR 0005).
+
+## Adding an experiment
+
+1. Add it to `ExperimentCatalog` (`src/Haptics.Core/Ledger.cs`) with hypotheses and dependencies.
+2. Implement it under `src/Haptics.Lab/Experiments/` using `ExperimentSession`; include a negative control and a
+   falsification condition; label evidence honestly.
+3. Wire it in `Program.RunExperiment`, add tests, and document it in `docs/TEST_MATRIX.md`.
+
+## Adding a semantic rule
+
+Add the transition to `SemanticInterpreter`, its rule/intent mapping in `HapticPolicy.RuleFor`, and a golden trace in
+`tests/traces/` with an expectation in `Exp070Replay.Expectations` and a test in `ReplayTests`.

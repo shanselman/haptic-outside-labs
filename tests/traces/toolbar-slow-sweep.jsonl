@@ -1,0 +1,19 @@
+{"type":"comment","text":"Enters five toolbar buttons slowly. Expect 5 Hover emits."}
+{"type":"process","pid":100,"name":"WINWORD"}
+{"t":0,"type":"pointer","x":20,"y":200,"fg":100,"primary":false}
+{"t":5,"type":"element","req":0,"x":20,"y":200,"pid":100,"controlType":"Pane","rid":"pane","bounds":[0,0,2000,2000]}
+{"t":300,"type":"pointer","x":20,"y":15,"fg":100,"primary":false}
+{"t":301,"type":"pointer","x":21,"y":15,"fg":100,"primary":false}
+{"t":306,"type":"element","req":301,"x":21,"y":15,"pid":100,"controlType":"Button","rid":"b0","bounds":[0,0,40,30],"parentType":"ToolBar","parentRid":"tb1"}
+{"t":600,"type":"pointer","x":60,"y":15,"fg":100,"primary":false}
+{"t":601,"type":"pointer","x":61,"y":15,"fg":100,"primary":false}
+{"t":606,"type":"element","req":601,"x":61,"y":15,"pid":100,"controlType":"Button","rid":"b1","bounds":[40,0,40,30],"parentType":"ToolBar","parentRid":"tb1"}
+{"t":900,"type":"pointer","x":100,"y":15,"fg":100,"primary":false}
+{"t":901,"type":"pointer","x":101,"y":15,"fg":100,"primary":false}
+{"t":906,"type":"element","req":901,"x":101,"y":15,"pid":100,"controlType":"Button","rid":"b2","bounds":[80,0,40,30],"parentType":"ToolBar","parentRid":"tb1"}
+{"t":1200,"type":"pointer","x":140,"y":15,"fg":100,"primary":false}
+{"t":1201,"type":"pointer","x":141,"y":15,"fg":100,"primary":false}
+{"t":1206,"type":"element","req":1201,"x":141,"y":15,"pid":100,"controlType":"Button","rid":"b3","bounds":[120,0,40,30],"parentType":"ToolBar","parentRid":"tb1"}
+{"t":1500,"type":"pointer","x":180,"y":15,"fg":100,"primary":false}
+{"t":1501,"type":"pointer","x":181,"y":15,"fg":100,"primary":false}
+{"t":1506,"type":"element","req":1501,"x":181,"y":15,"pid":100,"controlType":"Button","rid":"b4","bounds":[160,0,40,30],"parentType":"ToolBar","parentRid":"tb1"}
