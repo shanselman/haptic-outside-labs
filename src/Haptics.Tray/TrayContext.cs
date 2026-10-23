@@ -7,21 +7,19 @@ using Windows.Devices.Haptics;
 namespace Haptics.Tray;
 
 /// <summary>
-/// Tiny tray prototype (SPEC §3.2, §8.4, PR 9). Off / Observe-only / On, with On LOCKED until local evidence
-/// shows a physically confirmed background route for this machine. Starts in Observe-only (if consented) or Off.
+/// The sample tray: starts On, drives the haptic mouse from the background through a controller captured from our own
+/// UI (route R3a, physically confirmed by EXP-020). Priming is automatic: a small box at startup, and silently again
+/// whenever the mouse passes over the tray menu. Passive only — never moves, clicks, or focuses anything.
 /// </summary>
 internal sealed class TrayContext : ApplicationContext
 {
     private readonly NotifyIcon _icon = new() { Visible = true };
     private readonly ContextMenuStrip _menu = new();
     private readonly TraySettings _settings = TraySettings.Load();
-    private readonly string _fp = EnvironmentProbe.CurrentFingerprint();
-    private readonly System.Windows.Forms.Timer _foregroundTimer = new() { Interval = 1000 };
+    private readonly System.Windows.Forms.Timer _foreground = new() { Interval = 1000 };
     private ObservationPipeline? _pipeline;
-    private HapticsMode _mode = HapticsMode.Off;
-    private string? _route;
     private CapturedController? _controller;
-    private string? _lastForeignApp;
+    private string? _lastApp;
 
     public TrayContext()
     {
@@ -34,73 +32,81 @@ internal sealed class TrayContext : ApplicationContext
             }
         };
         _menu.Opening += (_, _) => BuildMenu();
-        _foregroundTimer.Tick += (_, _) => TrackForeground();
-        RefreshRoute();
-        SetMode(_settings.ConsentGiven ? HapticsMode.ObserveOnly : HapticsMode.Off, prompt: false);
-        if (!_settings.ConsentGiven)
+        _menu.MouseMove += (_, _) => TryPrime(); // Any mouse movement over our own menu refreshes the controller.
+        _foreground.Tick += (_, _) => TrackForeground();
+        _foreground.Start();
+        Apply();
+        if (_settings.Enabled)
         {
-            _icon.ShowBalloonTip(5000, "Haptics Everywhere", "Off until you consent. Right-click the tray icon to review what it observes.", ToolTipIcon.Info);
+            ShowPrimeWindow();
         }
     }
 
-    private void RefreshRoute()
+    private void TryPrime()
     {
-        var results = EvidenceLedger.Load(ArtifactLocator.RunsRoot()).Concat(EvidenceLedger.Load(LocalRunsRoot())).ToList();
-        _route = EvidenceLedger.VerifiedBackgroundRoutes(results, _fp).FirstOrDefault();
+        var c = HapticsApi.TryCaptureCurrentController(HapticDeviceType.Mouse);
+        if (c is not null)
+        {
+            _controller = c;
+            if (_pipeline is not null)
+            {
+                _pipeline.Controller = c;
+            }
+
+            UpdateIcon();
+        }
     }
 
-    private static string LocalRunsRoot() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HapticsEverywhere", "artifacts", "runs");
+    private void Apply()
+    {
+        _settings.Save();
+        if (_settings.Enabled && _pipeline is null)
+        {
+            _pipeline = new ObservationPipeline(_settings.ToPolicy(), new PipelineOptions { Route = OutputRoutes.CachedController });
+            _pipeline.Start();
+        }
+        else if (!_settings.Enabled && _pipeline is not null)
+        {
+            _pipeline.Dispose(); // Off really means off: raw input unregistered, UIA worker killed.
+            _pipeline = null;
+        }
 
-    private bool NeedsController => _route is OutputRoutes.CachedController or OutputRoutes.OverrideOnRawThread;
+        if (_pipeline is not null)
+        {
+            _pipeline.Policy.Config = _settings.ToPolicy();
+            _pipeline.Policy.ConsentGiven = true; // Launching the sample is the opt-in.
+            _pipeline.Policy.OutputRouteVerified = true;
+            _pipeline.Controller = _controller;
+        }
 
-    private bool OnAvailable => _route is not null && (!NeedsController || _controller is not null);
+        UpdateIcon();
+    }
+
+    private void UpdateIcon()
+    {
+        _icon.Text = !_settings.Enabled ? "Haptics Everywhere: Off"
+            : _controller is null ? "Haptics Everywhere: On (needs prime)"
+            : "Haptics Everywhere: On";
+        var old = _icon.Icon;
+        _icon.Icon = MakeIcon(!_settings.Enabled ? Color.Gray : _controller is null ? Color.FromArgb(200, 120, 0) : Color.FromArgb(16, 124, 16));
+        old?.Dispose();
+    }
 
     private void BuildMenu()
     {
-        RefreshRoute();
-        if (_mode == HapticsMode.On && !OnAvailable)
-        {
-            // Evidence changed underneath us (e.g. a newer EXP-020 verdict): fail closed.
-            SetMode(HapticsMode.ObserveOnly);
-        }
-        else
-        {
-            Apply();
-        }
-
         _menu.Items.Clear();
-        _menu.Items.Add(new ToolStripLabel($"Haptics Everywhere · {_mode}") { Font = new Font(_menu.Font, FontStyle.Bold) });
+        _menu.Items.Add(new ToolStripLabel(_controller is null && _settings.Enabled
+            ? "Haptics Everywhere — move the mouse over this menu to prime"
+            : "Haptics Everywhere") { Font = new Font(_menu.Font, FontStyle.Bold) });
         _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add(Item("Stop now (Off)", () => SetMode(HapticsMode.Off), _mode == HapticsMode.Off));
-        _menu.Items.Add(Item("Observe only (no haptics)", () => SetMode(HapticsMode.ObserveOnly), _mode == HapticsMode.ObserveOnly));
-        var onText = _route is null
-            ? "On — locked: no physically verified background route (run EXP-020 in Haptics Lab)"
-            : NeedsController && _controller is null
-                ? $"On — needs 'Prime haptic mouse' first ({_route})"
-                : $"On ({_route})";
-        var on = Item(onText, () => SetMode(HapticsMode.On), _mode == HapticsMode.On);
-        on.Enabled = OnAvailable;
-        _menu.Items.Add(on);
-        if (NeedsController)
+        _menu.Items.Add(Item("On", () =>
         {
-            _menu.Items.Add(Item(_controller is null ? "Prime haptic mouse…" : $"Re-prime haptic mouse (captured {_controller.DeviceType})", Prime));
-        }
+            _settings.Enabled = !_settings.Enabled;
+            Apply();
+        }, _settings.Enabled));
 
-        _menu.Items.Add(new ToolStripSeparator());
-        var profile = new ToolStripMenuItem("Effect profile");
-        foreach (var p in Enum.GetValues<EffectProfile>())
-        {
-            profile.DropDownItems.Add(Item(p.ToString(), () =>
-            {
-                _settings.Profile = p;
-                Apply();
-            }, _settings.Profile == p));
-        }
-
-        _menu.Items.Add(profile);
         var intensity = new ToolStripMenuItem("Intensity");
-        foreach (var (name, value) in new[] { ("Low", 0.25), ("Medium", 0.5), ("Strong", 0.8) })
+        foreach (var (name, value) in new[] { ("Low", 0.3), ("Medium", 0.55), ("Strong", 0.8), ("Max", 1.0) })
         {
             intensity.DropDownItems.Add(Item(name, () =>
             {
@@ -110,49 +116,31 @@ internal sealed class TrayContext : ApplicationContext
         }
 
         _menu.Items.Add(intensity);
-        var apps = new ToolStripMenuItem("Apps");
-        apps.DropDownItems.Add(Item("Allow all apps (except exclusions)", () =>
+        if (_lastApp is { } app)
         {
-            _settings.AppPolicy = _settings.AppPolicy == AppPolicy.AllExceptExclusions ? AppPolicy.OptInAllowlist : AppPolicy.AllExceptExclusions;
-            Apply();
-        }, _settings.AppPolicy == AppPolicy.AllExceptExclusions));
-        if (_lastForeignApp is { } app)
-        {
-            var allowed = _settings.AllowedProcesses.Contains(app, StringComparer.OrdinalIgnoreCase);
-            apps.DropDownItems.Add(Item($"Allow '{app}'", () =>
+            var excluded = _settings.ExcludedProcesses.Contains(app, StringComparer.OrdinalIgnoreCase);
+            _menu.Items.Add(Item(excluded ? $"Include '{app}' again" : $"Exclude '{app}'", () =>
             {
-                if (allowed)
+                if (excluded)
                 {
-                    _settings.AllowedProcesses.RemoveAll(x => string.Equals(x, app, StringComparison.OrdinalIgnoreCase));
+                    _settings.ExcludedProcesses.RemoveAll(x => string.Equals(x, app, StringComparison.OrdinalIgnoreCase));
                 }
                 else
                 {
-                    _settings.AllowedProcesses.Add(app);
+                    _settings.ExcludedProcesses.Add(app);
                 }
 
-                Apply();
-            }, allowed));
-            apps.DropDownItems.Add(Item($"Exclude '{app}'", () =>
-            {
-                _settings.ExtraExcludedProcesses.Add(app);
-                _settings.AllowedProcesses.RemoveAll(x => string.Equals(x, app, StringComparison.OrdinalIgnoreCase));
                 Apply();
             }));
         }
 
-        if (_settings.AllowedProcesses.Count > 0)
-        {
-            apps.DropDownItems.Add(new ToolStripLabel("Allowed: " + string.Join(", ", _settings.AllowedProcesses)));
-        }
-
-        _menu.Items.Add(apps);
         _menu.Items.Add(Item("Status…", ShowStatus));
-        _menu.Items.Add(Item("What does this observe? (consent)", () => AskConsent(force: true)));
         _menu.Items.Add(Item("Open Haptics Lab", OpenLab));
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(Item("Quit", () =>
         {
-            SetMode(HapticsMode.Off);
+            _pipeline?.Dispose();
+            _pipeline = null;
             _icon.Visible = false;
             ExitThread();
         }));
@@ -165,119 +153,58 @@ internal sealed class TrayContext : ApplicationContext
         return i;
     }
 
-    private void SetMode(HapticsMode mode, bool prompt = true)
+    private void ShowPrimeWindow()
     {
-        if (mode != HapticsMode.Off && !_settings.ConsentGiven && (!prompt || !AskConsent(force: false)))
+        var f = new Form
         {
-            mode = HapticsMode.Off;
-        }
-
-        if (mode == HapticsMode.On && !OnAvailable)
-        {
-            mode = HapticsMode.ObserveOnly;
-        }
-
-        _mode = mode;
-        if (mode == HapticsMode.Off)
-        {
-            // Off really means off: unregister raw input, kill the UIA worker, stop polling.
-            _pipeline?.Dispose();
-            _pipeline = null;
-            _foregroundTimer.Stop();
-            _lastForeignApp = null;
-        }
-        else
-        {
-            if (_pipeline is null)
-            {
-                _pipeline = new ObservationPipeline(_settings.ToPolicy(mode), new PipelineOptions { Route = _route ?? OutputRoutes.DryRun });
-                _pipeline.Start();
-            }
-
-            _foregroundTimer.Start();
-        }
-
-        Apply();
-    }
-
-    private void Apply()
-    {
-        _settings.Save();
-        if (_pipeline is not null)
-        {
-            _pipeline.Policy.Config = _settings.ToPolicy(_mode);
-            _pipeline.Policy.ConsentGiven = _settings.ConsentGiven;
-            _pipeline.Route = _route ?? OutputRoutes.DryRun;
-            _pipeline.Controller = _controller;
-            _pipeline.Policy.OutputRouteVerified = _mode == HapticsMode.On && OnAvailable;
-        }
-
-        _icon.Text = $"Haptics Everywhere: {_mode}{(_mode == HapticsMode.On ? $" via {_route}" : "")}";
-        var old = _icon.Icon;
-        _icon.Icon = MakeIcon(_mode switch
-        {
-            HapticsMode.On => Color.FromArgb(16, 124, 16),
-            HapticsMode.ObserveOnly => Color.FromArgb(0, 90, 158),
-            _ => Color.Gray,
-        });
-        old?.Dispose();
-    }
-
-    private bool AskConsent(bool force)
-    {
-        const string text =
-            "Haptics Everywhere adds tactile feedback to apps that never asked for it.\n\n" +
-            "While Observe-only or On, it:\n" +
-            "• reads raw MOUSE input (movement, buttons, wheel) — never the keyboard;\n" +
-            "• asks Windows UI Automation what kind of control is under the pointer (button, tab, slider…) and its bounds;\n" +
-            "• never reads names, text, values, passwords, URLs, or document content, and takes no screenshots;\n" +
-            "• never moves the pointer, clicks, changes focus, or controls other apps;\n" +
-            "• stores nothing about what you hover and sends nothing over the network.\n\n" +
-            "Password fields, excluded apps, and protected desktops are always silent. 'Stop now (Off)' tears everything down.\n\n" +
-            "Allow observation?";
-        var ok = MessageBox.Show(text, "Haptics Everywhere — consent", force && _settings.ConsentGiven ? MessageBoxButtons.OK : MessageBoxButtons.YesNo,
-            MessageBoxIcon.Information) is DialogResult.Yes or DialogResult.OK;
-        if (!force || !_settings.ConsentGiven)
-        {
-            _settings.ConsentGiven = ok;
-            _settings.Save();
-        }
-
-        if (!_settings.ConsentGiven && _mode != HapticsMode.Off)
-        {
-            SetMode(HapticsMode.Off);
-        }
-
-        return _settings.ConsentGiven;
-    }
-
-    private void Prime()
-    {
-        using var f = new Form { Text = "Prime haptic mouse", ClientSize = new Size(420, 200), StartPosition = FormStartPosition.CenterScreen, TopMost = true };
-        var l = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 11f), Text = "Move your haptic MOUSE over this box." };
-        f.Controls.Add(l);
-        l.MouseMove += (_, _) =>
-        {
-            var c = HapticsApi.TryCaptureCurrentController(HapticDeviceType.Mouse);
-            if (c is not null)
-            {
-                _controller = c;
-                l.Text = $"Captured {c.DeviceType} controller ({c.IdHash}). You can close this window.";
-                Apply();
-            }
+            Text = "Haptics Everywhere",
+            ClientSize = new Size(380, 120),
+            StartPosition = FormStartPosition.CenterScreen,
+            TopMost = true,
+            FormBorderStyle = FormBorderStyle.FixedToolWindow,
+            BackColor = Color.FromArgb(36, 40, 52),
         };
-        f.ShowDialog();
+        var l = new Label
+        {
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 12f),
+            Text = "Wiggle your haptic mouse over this box.",
+        };
+        f.Controls.Add(l);
+        void OnMove(object? s, MouseEventArgs e)
+        {
+            TryPrime();
+            if (_controller is not null)
+            {
+                l.Text = "Got it — haptics are on.";
+                l.MouseMove -= OnMove;
+                var t = new System.Windows.Forms.Timer { Interval = 700 };
+                t.Tick += (_, _) =>
+                {
+                    t.Dispose();
+                    f.Close();
+                };
+                t.Start();
+            }
+        }
+
+        l.MouseMove += OnMove;
+        f.FormClosed += (_, _) => f.Dispose();
+        f.Show();
     }
 
     private void ShowStatus()
     {
         var s = _pipeline?.Stats();
-        var text = $"Mode: {_mode}\nVerified background route: {_route ?? "none (On locked)"}\nController captured: {_controller?.DeviceType.ToString() ?? "no"}\n" +
-                   $"Profile: {_settings.Profile}, intensity {_settings.IntensityScale:0.00}, apps: {_settings.AppPolicy}\n\n" +
+        var text = $"On: {_settings.Enabled}   Intensity: {_settings.IntensityScale:0.00}   Controller: {(_controller is null ? "not primed" : "primed")}\n\n" +
                    (s is null ? "Pipeline stopped." :
-                       $"Raw events {s.RawEvents} (background {s.BackgroundRawEvents})\nUIA lookup p50 {s.LookupP50:0.0} ms, p95 {s.LookupP95:0.0} ms\n" +
-                       $"Decisions: emit {s.Emits}, dry-run {s.DryRuns}, suppressed {s.Suppressed}\nOutput: accepted {s.ApiAccepted}, rejected {s.ApiRejected}, expired {s.Expired}\n" +
-                       $"Input→call p50 {s.InputToCallP50:0.0} ms, p95 {s.InputToCallP95:0.0} ms\nUIA worker restarts {s.Uia?.Restarts}, timeouts {s.Uia?.Timeouts}");
+                       $"Raw events {s.RawEvents} (background {s.BackgroundRawEvents})\n" +
+                       $"UIA lookup p50 {s.LookupP50:0.0} ms, p95 {s.LookupP95:0.0} ms\n" +
+                       $"Pulses sent {s.ApiAccepted}, rejected {s.ApiRejected}, too late {s.Expired}\n" +
+                       $"Decisions: emit {s.Emits}, suppressed {s.Suppressed}\n" +
+                       $"Input→call p50 {s.InputToCallP50:0.0} ms, p95 {s.InputToCallP95:0.0} ms");
         MessageBox.Show(text, "Haptics Everywhere — status");
     }
 
@@ -286,7 +213,7 @@ internal sealed class TrayContext : ApplicationContext
         var pid = DesktopContext.Foreground().Pid;
         if (pid != 0 && pid != DesktopContext.OwnProcessId)
         {
-            _lastForeignApp = DesktopContext.ProcessName(pid) ?? _lastForeignApp;
+            _lastApp = DesktopContext.ProcessName(pid) ?? _lastApp;
         }
     }
 
@@ -295,19 +222,16 @@ internal sealed class TrayContext : ApplicationContext
         var dir = AppContext.BaseDirectory;
         var candidates = new List<string> { Path.Combine(dir, "haptics-lab.exe") };
         var repo = ArtifactLocator.FindRepoRoot(dir);
-        if (repo is not null)
+        if (repo is not null && Directory.Exists(Path.Combine(repo, "src", "Haptics.Lab", "bin")))
         {
             candidates.AddRange(Directory.GetFiles(Path.Combine(repo, "src", "Haptics.Lab", "bin"), "haptics-lab.exe", SearchOption.AllDirectories));
         }
 
         var exe = candidates.FirstOrDefault(File.Exists);
-        if (exe is null)
+        if (exe is not null)
         {
-            MessageBox.Show("haptics-lab.exe not found next to the tray or in the repository build output.", "Haptics Everywhere");
-            return;
+            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
         }
-
-        Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
     }
 
     private static Icon MakeIcon(Color color)
@@ -338,7 +262,7 @@ internal sealed class TrayContext : ApplicationContext
             _pipeline?.Dispose();
             _icon.Dispose();
             _menu.Dispose();
-            _foregroundTimer.Dispose();
+            _foreground.Dispose();
         }
 
         base.Dispose(disposing);

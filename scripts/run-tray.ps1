@@ -1,5 +1,5 @@
-# Builds (Release) and starts the Haptics Everywhere tray prototype. It starts Off until you consent,
-# then Observe-only. "On" stays locked until EXP-020 has a physically confirmed route on this machine.
+# Builds (Release) and starts the Haptics Everywhere tray sample. It starts On; wiggle the haptic mouse over the
+# box it shows once to prime it. Right-click the tray icon for intensity, exclusions, status, and Off.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 dotnet build "$root\src\Haptics.Tray\Haptics.Tray.csproj" -c Release --nologo -v quiet

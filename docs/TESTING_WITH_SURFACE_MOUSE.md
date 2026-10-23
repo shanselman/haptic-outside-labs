@@ -80,15 +80,15 @@ felt nothing.
   deliberately silent). If a background route passed, pick it in **Route** and switch Mode to **On** to feel it.
 - **Waveform playground** — feel each named waveform (foreground, not evidence).
 
-## 4. Tray (only if EXP-020 passed)
+## 4. Tray sample
 
 ```powershell
 .\scripts\run-tray.ps1
 ```
 
-Right-click the tray icon → read the consent text → *Observe only* → *On (R…)*. If the passing route was
-R3a/R3b, use *Prime haptic mouse…* first. Under *Apps*, either allow the current app or toggle
-*Allow all apps (except exclusions)*. **Stop now (Off)** tears everything down.
+It starts On. Wiggle the haptic mouse over the small box it shows (that primes the controller), then use any app.
+Right-click the icon for Intensity, *Exclude '<app>'*, *Status…*, or *On* to toggle off. Moving the mouse over the
+menu re-primes it.
 
 ## 5. Record what happened
 

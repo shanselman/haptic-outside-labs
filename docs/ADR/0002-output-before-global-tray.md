@@ -16,3 +16,9 @@ semantic observer is worthless as a product if the mouse cannot be actuated from
 ## Consequences
 Nobody can demo "haptics everywhere" on a machine where it has not been felt. If EXP-020 fails, the project pivots
 with the semantic layer intact (SPEC §15) instead of shipping an imitation.
+
+## Update 2026-10-23
+
+EXP-020 physically confirmed routes R3a/R3b on the bench machine. At the user's request, the tray became a simple
+sample that starts On with R3a and no longer reads the ledger. The decision's purpose (prove output before shipping
+a global tray) was met; the lab gates remain.

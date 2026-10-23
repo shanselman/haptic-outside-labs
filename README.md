@@ -119,8 +119,7 @@ flowchart LR
 | `PHYSICAL` | Blinded operator trials: pulses felt vs silent controls, one-sided Fisher p ≤ 0.01, hit ≥ 80%, false alarm ≤ 20% | **Yes, for that machine/route** |
 
 `ExperimentResult.Finalize()` mechanically downgrades any `PASS` on a physical claim without `PHYSICAL` evidence,
-and the tray's **On** switch reads the local ledger: it stays locked until a background route has a `PHYSICAL`
-`PASS` on *this* machine fingerprint. Statuses are `PASS / FAIL / INDETERMINATE / BLOCKED / NOT_RUN /
+and the lab's gates read the same local ledger, keyed by machine fingerprint. Statuses are `PASS / FAIL / INDETERMINATE / BLOCKED / NOT_RUN /
 SKIPPED_BY_POLICY` — a "not felt" is only a `FAIL` if the foreground baseline already passed.
 
 ## Repository map
@@ -129,12 +128,26 @@ SKIPPED_BY_POLICY` — a "not felt" is only a `FAIL` if the foreground baseline 
 src/Haptics.Core        platform-neutral: evidence contracts, blinded-trial stats, semantics, policy, replay, ledger, API scanner
 src/Haptics.Windows     Win32/WinRT adapters: raw-input message thread, guarded haptics routes, UIA worker+client, pipeline
 src/Haptics.Lab         haptics-lab.exe: CLI, dashboard, experiments EXP-000/010/020/023/030/040/043/070/081, UI fixture
-src/Haptics.Tray        haptics-tray.exe: Off / Observe-only / On (evidence-gated), consent, per-app lists, kill switch
+src/Haptics.Tray        haptics-tray.exe: the simple sample — starts On, auto-primes, all apps, intensity, exclude app, Off
 tests/                  Core tests (evidence, policy, 13 golden traces) + Windows tests (safety scans, worker containment)
 docs/                   SPEC, runbook, evidence ledger, hypotheses, research notes, design notes, privacy/threat model, ADRs
 schemas/                JSON schemas for results and traces
 fixtures/browser        static HTML/ARIA page for manual Chromium/Edge checks (EXP-050)
 ```
+
+## The sample tray
+
+`.\scripts\run-tray.ps1` starts **Haptics Everywhere** as a deliberately simple, aggressive sample:
+
+- It starts **On** in every app. A small box asks you to wiggle the haptic mouse over it once: that's the "prime" that
+  captures the mouse's `SimpleHapticsController` (route R3a, the one EXP-020 proved). Moving the mouse over the tray
+  menu re-primes it silently. The icon is green when primed, orange when it needs a prime, and gray when Off.
+- Menu: **On**, **Intensity** (Low/Medium/Strong/Max), **Exclude '<current app>'**, **Status…**, **Quit**.
+- Loose limits (≈12 pulses/s, 200 ms re-entry, no fast-flick suppression). It stays silent over password fields and for
+  password managers and sign-in UIs, and it never moves, clicks, or focuses anything.
+
+The rigorous gating (consent dialog, evidence-locked On, allowlists) lives in the **lab**, where it belongs; the
+tray is the demo.
 
 ## Docs
 
@@ -151,7 +164,7 @@ fixtures/browser        static HTML/ARIA page for manual Chromium/Edge checks (E
 ## What's next
 
 1. ~~Run EXP-010 and EXP-020 with a Surface Mouse.~~ Done: A1 and A2 passed via R3a/R3b.
-2. **Dogfood the tray** (`.\scripts\run-tray.ps1` → consent → *Prime haptic mouse…* → *On (R3a)*) over real apps.
+2. **Dogfood the tray** (`.\scripts\run-tray.ps1`, wiggle the mouse over the box it shows, then just use Windows).
 3. **Controller lifetime (EXP-082):** does the captured controller survive idle, sleep/resume, Bluetooth re-pair,
    and device switching? This is now the main product risk.
 4. EXP-030 (raw attribution), live toolbar/ribbon hover in Word/Edge/Explorer (EXP-070 physical), native

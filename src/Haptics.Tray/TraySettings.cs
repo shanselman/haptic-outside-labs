@@ -6,12 +6,9 @@ namespace Haptics.Tray;
 /// <summary>Local-only tray settings (%LOCALAPPDATA%\HapticsEverywhere\tray.json). No telemetry, ever.</summary>
 public sealed class TraySettings
 {
-    public bool ConsentGiven { get; set; }
-    public EffectProfile Profile { get; set; } = EffectProfile.Balanced;
-    public double IntensityScale { get; set; } = 0.25;
-    public AppPolicy AppPolicy { get; set; } = AppPolicy.OptInAllowlist;
-    public List<string> AllowedProcesses { get; set; } = new();
-    public List<string> ExtraExcludedProcesses { get; set; } = new();
+    public bool Enabled { get; set; } = true;
+    public double IntensityScale { get; set; } = 0.8;
+    public List<string> ExcludedProcesses { get; set; } = new();
 
     public static string PathOnDisk => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HapticsEverywhere", "tray.json");
 
@@ -33,11 +30,22 @@ public sealed class TraySettings
         File.WriteAllText(PathOnDisk, JsonSerializer.Serialize(this, HapticsJson.Indented));
     }
 
-    public PolicyConfig ToPolicy(HapticsMode mode)
+    /// <summary>
+    /// Sample-app policy: every app, hover + boundaries + slider detents, loose rate limits. Password fields and the
+    /// built-in exclusion list (credential UIs, password managers) stay silent.
+    /// </summary>
+    public PolicyConfig ToPolicy() => new()
     {
-        var p = new PolicyConfig { Mode = mode, IntensityScale = IntensityScale, AppPolicy = AppPolicy, AllowedProcesses = AllowedProcesses.ToList() };
-        p.ApplyProfile(Profile);
-        p.ExcludedProcesses.AddRange(ExtraExcludedProcesses);
-        return p;
-    }
+        Mode = Enabled ? HapticsMode.On : HapticsMode.Off,
+        Profile = EffectProfile.Experimental,
+        IntensityScale = IntensityScale,
+        AppPolicy = AppPolicy.AllExceptExclusions,
+        GlobalMaxPulsesPerSecond = 12,
+        MaxPulsesPerMinute = 600,
+        MinimumGlobalSpacingMs = 40,
+        SameElementReentryCooldownMs = 200,
+        SemanticIntentExpiryMs = 150,
+        HoverMaxPointerSpeedPxPerSec = 1_000_000,
+        ExcludedProcesses = new PolicyConfig().ExcludedProcesses.Concat(ExcludedProcesses).ToList(),
+    };
 }

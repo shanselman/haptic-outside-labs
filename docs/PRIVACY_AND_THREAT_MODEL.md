@@ -38,11 +38,11 @@ machine unless an operator copies a summary into `docs/EVIDENCE_LEDGER.md`.
 
 ## Consent and control
 
-- Tray starts **Off** until the user reads and accepts the consent text, then **Observe-only** on each launch.
-- **On** is impossible without local `PHYSICAL` evidence for a background route on this machine.
-- Default app policy is an **opt-in allowlist**; password managers, credential UI, LogonUI, consent.exe, LockApp are
-  excluded by default; password-flagged controls are always silent.
-- **Stop now (Off)** disposes the pipeline: raw input is unregistered and the UIA worker process is killed.
+- The tray is a **sample**: launching it is the opt-in, and it starts **On** in all apps (user decision 2026-10-23).
+  A product build would restore an explicit consent step and an allowlist (the policy engine still supports both).
+- Password managers, credential UI, LogonUI, consent.exe, LockApp are excluded by default; password-flagged controls
+  are always silent; users can exclude the current app from the menu.
+- **On** unchecked or **Quit** disposes the pipeline: raw input is unregistered and the UIA worker process is killed.
 
 ## Second-order harms and mitigations (SPEC §10.4)
 
@@ -53,7 +53,7 @@ machine unless an operator copies a summary into `docs/EVIDENCE_LEDGER.md`.
 | Cognitive: false "success" | No Success/Error/drop-accepted in the generic layer at all |
 | Security: pressure to over-privilege | No UIAccess/elevation/injection paths exist in code; ADR 0004 requires review to add any |
 | Reliability: hurting target apps | UIA in a separate process, one request in flight, timeouts + quarantine |
-| Ecosystem: unreliable augmentation erodes trust in haptics | Evidence gates; tray only turns on with a felt, blinded result |
+| Ecosystem: unreliable augmentation erodes trust in haptics | The route the tray uses (R3a) was proven by a blinded, felt test (EXP-020) |
 
 ## Reversibility
 

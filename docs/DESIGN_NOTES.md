@@ -118,7 +118,7 @@ haptics. Profiles: **Quiet** (boundaries + sliders), **Balanced** (+ light hover
   WinEvents become valuable for cache invalidation once we cache across movements (EXP-042).
 - **No WPF/WinUI/WebView2 fixtures yet.** The WinForms fixture exercises Win32 + MSAA proxies; a static ARIA page is
   in `fixtures/browser` for manual Edge checks.
-- **No installer, signing, or auto-start.** The tray is a prototype; it starts Off/Observe-only each launch.
+- **No installer, signing, or auto-start.** The tray is a simple sample (see §11).
 
 ## 10. Open questions we are recording, not blocking on (SPEC §17)
 
@@ -130,3 +130,13 @@ haptics. Profiles: **Quiet** (boundaries + sliders), **Balanced** (+ light hover
 2. With both a haptic touchpad and a haptic mouse, which device does `GetForCurrentThread()` choose under sink input?
 3. Do native Snap/PowerPoint haptics and ours ever double up in practice (EXP-075)?
 4. Is hover worth having at all, or are boundaries + detents the whole product (EXP-090)?
+
+## 11. After EXP-020: the tray becomes a simple sample (2026-10-23)
+
+Once background output was physically proven (R3a/R3b), Scott asked for the tray to be "more aggressive… a sample,
+we don't need all the checks and balances". The tray now starts On with route R3a in every app at Strong intensity,
+primes itself (a box at startup, plus any mouse movement over its menu), and uses loose limits: ≈12 pulses/s,
+40 ms spacing, 200 ms re-entry, a 150 ms freshness window because real apps' UIA is slower than our fixture, and no
+fast-flick suppression. Removed: consent dialog, evidence-locked On, allowlist, profiles. Kept because they cost
+nothing and are the thesis: passive-only observation, password silence, default exclusions, one-click Off.
+The lab keeps all its rigor; ADR 0002's gating now applies to the lab's gates, not the sample.

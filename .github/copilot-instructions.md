@@ -14,8 +14,8 @@ Source of truth: [`docs/SPEC.md`](../docs/SPEC.md). Design rationale: [`docs/DES
 - An API returning `true` is `OBSERVED`, never `PHYSICAL`. Only blinded operator trials (`PhysicalEvaluator`) produce
   `PHYSICAL`. Call `ExperimentResult.Finalize()` (via `ExperimentSession.Complete()`); do not bypass it.
 - Every haptic intent goes through `HapticPolicy.Evaluate`. No new source may emit around it.
-- The tray must not reference `Haptics.Lab` or fixtures, and its **On** mode must stay gated by
-  `EvidenceLedger.VerifiedBackgroundRoutes` for the current machine fingerprint.
+- The tray is a deliberately simple sample (user decision, 2026-10-23): starts On with route R3a, auto-primes, all apps.
+  It must still not reference `Haptics.Lab` or fixtures, stay passive, and keep password/exclusion silence.
 - Never invent results. Update `docs/EVIDENCE_LEDGER.md` only with real runs (`haptics-lab evidence summarize <run>`).
 
 ## Build and test
