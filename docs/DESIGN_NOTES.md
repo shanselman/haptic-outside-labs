@@ -122,6 +122,10 @@ haptics. Profiles: **Quiet** (boundaries + sliders), **Balanced** (+ light hover
 
 ## 10. Open questions we are recording, not blocking on (SPEC §17)
 
+> **Answered 2026-10-23 (EXP-020):** R2 fails because the raw-input thread never acquires a controller. R3a and R3b
+> both pass with the Surface Mouse. The product architecture is therefore "prime once, then drive the captured
+> controller from the background". Question 1 below (controller lifetime) is now the critical open risk.
+
 1. If R2 fails but R3a passes, how long does a captured controller stay valid across idle, sleep, re-pair?
 2. With both a haptic touchpad and a haptic mouse, which device does `GetForCurrentThread()` choose under sink input?
 3. Do native Snap/PowerPoint haptics and ours ever double up in practice (EXP-075)?

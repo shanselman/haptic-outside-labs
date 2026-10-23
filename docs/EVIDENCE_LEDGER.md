@@ -11,34 +11,59 @@ and what it does **and does not** prove. Entries are appended, never rewritten. 
 |---|---|---|
 | Is the haptics API present and guardable on the bench machine? | Yes | `BUILD` |
 | Does anything we send make a mouse buzz in the foreground? | **Yes** — Surface Mouse 2nd Edition, Click and Step, 12/12 felt vs 0/6 controls (EXP-010) | `PHYSICAL` |
-| …while another app is foreground (the go/no-go)? | **Not tested** | — |
+| …while another app is foreground (the go/no-go)? | **Yes, via R3a/R3b** (captured controller, 6/6 felt vs 0/6 each). **No via R2** (background raw-input thread never gets a controller) | `PHYSICAL` |
 | Can UIA identify controls under a point quickly, in an isolated worker? | Yes, on our WinForms fixture: 23/23, p95 ≈ 4.4 ms | `OBSERVED` |
 | Does a hung provider freeze us? | No: cut off at ≈ 237 ms, worker restarted, no late delivery | `OBSERVED` |
 | Do the semantic rules make the intended decisions? | Yes, 13/13 golden traces | `OBSERVED` (logic only) |
 | Do shipped assemblies avoid input-synthesis/focus/hook/injection APIs? | Yes (5 assemblies scanned) | `OBSERVED` |
 
-**Gate A1 (foreground actuation) is physically confirmed on this machine. Gate A2 (background, the go/no-go) is still untested.** Next: [`TESTING_WITH_SURFACE_MOUSE.md`](TESTING_WITH_SURFACE_MOUSE.md).
+**Gates A1 and A2 are physically confirmed on this machine for the Surface Mouse: background haptics work via a controller captured from our own foreground input (R3a/R3b). The plain background raw-input route (R2) does not.** Next: tray dogfood, EXP-030, live semantics in real apps (EXP-070 physical), EXP-075, EXP-080, EXP-082.
 
 ## Bench machine
 
 `f10947f6a858b89f` — Surface Laptop 15" 8th Edition (Snapdragon), Windows 26H1 build 28000.3231, ARM64 process,
 .NET 10. Haptic touchpad present. Raw-input mice at the time of the final runs: the built-in Surface HID touchpad
-mouse collection and a USB mouse (VID_3434&PID_D030). No Microsoft-VID external mouse, i.e. no Surface Mouse paired yet.
+mouse collection and a USB mouse (VID_3434&PID_D030). No Surface Mouse was paired for the automated runs; for the physical runs a Surface Mouse 2nd Edition was paired over Bluetooth LE (VID_045E&PID_0880).
 
 ## Entries
 
-### 2026-10-23 · EXP-010 · PASS [PHYSICAL] — first felt result
+### 2026-10-23 · EXP-020 · `PASS` [PHYSICAL] — background output works via a captured controller
 
-- Run 20261023-195826-EXP-010-6c99e9, commit 2c36831, machine 10947f6a858b89f
-- Device: **Surface Mouse 2nd Edition** (Bluetooth LE, VID 045E PID 0880), target mouse; every trial's UI-thread
-  haptic device type was Mouse. Intensity 1.0; route R1 (documented GetForCurrentThread() on our focused window).
+- Run `20261023-200151-EXP-020-4b9071`, commit `2c36831`, machine `f10947f6a858b89f`
+- Device: Surface Mouse 2nd Edition (BLE, `VID_045E&PID_0880`), locked from priming (233 prime events, all from
+  this device). Captured controller: type `Mouse`, intensity supported. Waveform Click, intensity 1.0, message-only
+  raw-input window. Foreground: another app (Notepad). Raw events: 7,927 background vs 235 foreground (priming).
+- Blinded, seeded: 6 pulses per route × 3 routes + 6 silent controls; 24/24 answered; **0 invalid trials**
+  (all `RIM_INPUTSINK`, lab never foreground, pointer never over the lab).
+
+| Route | Felt | Controls felt | Fisher p | API | Verdict |
+|---|---|---|---|---|---|
+| **R3a** cached `SimpleHapticsController`, used from the raw-input thread | **6/6** | 0/6 | 0.0011 | 6/6 accepted | **PASS** |
+| **R3b** `SetOverrideHapticsController` on the raw-input thread's manager | **6/6** | 0/6 | 0.0011 | 6/6 accepted | **PASS** |
+| **R2** `GetForCurrentThread()` on the raw-input thread | 0/6 | 0/6 | 1.0 | 0/6 accepted | **FAIL** |
+
+- API-level finding: the raw-input thread's manager had **no controller in 0/288** background samples (device type
+  `None` throughout). Background `WM_INPUT` via `RIDEV_INPUTSINK` does **not** count as "recent input" for
+  `InputHapticsManager` routing on this build.
+- Input→call p50 0.23 ms, p95 2.8 ms (software, sent inside the `WM_INPUT` handler).
+- R2's FAIL is a true FAIL: EXP-010 passed for Click at intensity 1.0 on this machine.
+- Promotion: **H1 → `FALSIFIED_ON[f10947f6a858b89f]`**; **H2 → `CONFIRMED_ON[f10947f6a858b89f]`** (R3a and R3b).
+  Gate A2 confirmed → tray **On** unlocks here with R3a (needs a one-time "Prime haptic mouse").
+- Limitations: single session, one device and OS build. Controller lifetime across idle, sleep, re-pair, and
+  device switching is untested (EXP-082). Answers were given by clicking the non-activating panel with the same mouse.
+
+### 2026-10-23 · EXP-010 · `PASS` [PHYSICAL] — first felt result
+
+- Run `20261023-195826-EXP-010-6c99e9`, commit `2c36831`, machine `f10947f6a858b89f`
+- Device: **Surface Mouse 2nd Edition** (Bluetooth LE, VID 045E PID 0880), target `mouse`; every trial's UI-thread
+  haptic device type was `Mouse`. Intensity 1.0; route R1 (documented `GetForCurrentThread()` on our focused window).
 - Blinded, seeded schedule (seed 1298865452): 6 Click + 6 Step pulses + 6 silent controls, all 18 answered, 0 invalid.
-  - R1-foreground-manager:Click: felt **6/6**, controls 0/6, one-sided Fisher p = 0.0011 → PASS
-  - R1-foreground-manager:Step: felt **6/6**, controls 0/6, p = 0.0011 → PASS
+  - `R1-foreground-manager:Click`: felt **6/6**, controls 0/6, one-sided Fisher p = 0.0011 → PASS
+  - `R1-foreground-manager:Step`: felt **6/6**, controls 0/6, p = 0.0011 → PASS
 - API accepted 12/12 sends. Input→call p50 3.9 ms; call duration p95 0.16 ms (software timestamps, not physical onset).
 - Limitation: the operator did not tick "felt native haptics first"; irrelevant here since the pulses were felt.
-- Promotion: Gate A1 → **confirmed on 10947f6a858b89f** for the Surface Mouse. This also makes a "not felt" in
-  EXP-020 (Click or Step, intensity ≤ 1.0) a genuine FAIL rather than INDETERMINATE. H1/H2 remain UNVERIFIED.
+- Promotion: Gate A1 → **confirmed on `f10947f6a858b89f`** for the Surface Mouse. This also makes a "not felt" in
+  EXP-020 (Click or Step, intensity ≤ 1.0) a genuine FAIL rather than INDETERMINATE.
 
 ### 2026-10-23 · EXP-000 · `PASS` [BUILD]
 
@@ -112,5 +137,5 @@ mouse collection and a USB mouse (VID_3434&PID_D030). No Microsoft-VID external 
 | Experiment | Who | Status |
 |---|---|---|
 | EXP-010 foreground baseline | operator + Surface Mouse | `PASS` [PHYSICAL] 2026-10-23 |
-| EXP-020 background routes R2 / R3a / R3b | operator + Surface Mouse | `NOT_RUN` |
+| EXP-020 background routes R2 / R3a / R3b | operator + Surface Mouse | `PASS` [PHYSICAL] 2026-10-23 (R3a, R3b pass; R2 fails) |
 | EXP-030 raw input attribution | operator | `NOT_RUN` |

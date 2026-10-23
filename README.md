@@ -26,10 +26,17 @@ hand has actually felt.
 | Gate | What it means | State |
 |---|---|---|
 | **A1** Foreground actuation | Our own focused window can make the target mouse buzz (EXP-010) | ✅ **PHYSICAL** — Surface Mouse 2nd Ed., 12/12 felt vs 0/6 controls |
-| **A2** Background actuation | It still buzzes with *another* app in front (EXP-020, routes R2/R3a/R3b) | ⏳ needs a human + Surface Mouse — **the go/no-go** |
+| **A2** Background actuation | It still buzzes with *another* app in front (EXP-020, routes R2/R3a/R3b) | ✅ **PHYSICAL via R3a/R3b** (captured controller, 6/6 felt vs 0/6 each) · ❌ R2 (plain background raw input) |
 | **B** Observation | Background raw input (EXP-030 ⏳) and UIA semantics (EXP-040 ✅ 23/23 fixture controls, p95 ≈ 4–6 ms) | partial |
-| **C** Composition | Latency, duplicates, cost in real apps | blocked on A2 |
+| **C** Composition | Latency, duplicates, cost in real apps | ⏳ next (tray dogfood, EXP-070 live, EXP-075, EXP-080) |
 | **D** Value | Do people want it on? | blocked on C |
+
+> **Headline (2026-10-23):** an ordinary, non-elevated, non-injected process *can* buzz a Surface Mouse 2nd Edition
+> while another app is in the foreground. The documented per-thread route alone doesn't work from the background: the
+> thread receiving background `WM_INPUT` never gets a haptic controller. What works is capturing the mouse's
+> `SimpleHapticsController` once, while the user moves the mouse over *our* window ("prime"), and then using it
+> directly (R3a) or via `SetOverrideHapticsController` (R3b) from the background thread. Scope: one machine, one
+> session; controller lifetime across sleep or re-pair is untested.
 
 Everything that can be verified without a hand on a mouse **has been run** on a Surface Laptop 8 (Snapdragon,
 Windows 26H1 build 28000, ARM64) — see [`docs/EVIDENCE_LEDGER.md`](docs/EVIDENCE_LEDGER.md). Notable real findings
@@ -143,8 +150,10 @@ fixtures/browser        static HTML/ARIA page for manual Chromium/Edge checks (E
 
 ## What's next
 
-1. **Run EXP-010 and EXP-020 with a Surface Mouse** (the runbook). This single result decides the architecture.
-2. If a background route passes: EXP-030 (raw attribution), live toolbar/ribbon hover in Word/Edge/Explorer
-   (EXP-070 physical), native double-buzz A/B (EXP-075), latency/CPU (EXP-080), then a small dogfood of the tray.
-3. If none passes: the semantic layer (Gate B) still stands; the output path pivots to a supported first-party or
-   vendor route (SPEC §15). The tray will not pretend otherwise.
+1. ~~Run EXP-010 and EXP-020 with a Surface Mouse.~~ Done: A1 and A2 passed via R3a/R3b.
+2. **Dogfood the tray** (`.\scripts\run-tray.ps1` → consent → *Prime haptic mouse…* → *On (R3a)*) over real apps.
+3. **Controller lifetime (EXP-082):** does the captured controller survive idle, sleep/resume, Bluetooth re-pair,
+   and device switching? This is now the main product risk.
+4. EXP-030 (raw attribution), live toolbar/ribbon hover in Word/Edge/Explorer (EXP-070 physical), native
+   double-buzz A/B (EXP-075), latency/CPU (EXP-080).
+5. Optional: repeat EXP-010/020 with `--target touchpad` to see whether the same routing holds for the haptic touchpad.

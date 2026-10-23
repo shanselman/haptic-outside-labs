@@ -5,7 +5,7 @@ schemaVersion: 1
 hypotheses:
   - id: H1
     title: Background Raw Input is eligible for mouse haptic routing
-    state: UNVERIFIED
+    state: FALSIFIED_ON[f10947f6a858b89f]   # Surface Mouse 2nd Ed., build 28000.3231, ARM64
     requiredExperiments: [EXP-010, EXP-020]
     route: R2-raw-thread-manager
     scope: [target-device, os-build, process-architecture]
@@ -18,10 +18,11 @@ hypotheses:
     ifIndeterminate: Fix setup (device, intensity, answers) and rerun with more trials.
     history:
       - "2026-10-23 EXP-010 PASS [PHYSICAL] (Surface Mouse, R1 foreground, Click+Step 12/12 vs 0/6): prerequisite met; EXP-020 next."
+      - "2026-10-23 EXP-020 run 20261023-200151-EXP-020-4b9071: R2 FAIL. Raw-input thread had no controller in 0/288 background samples; API rejected 6/6; felt 0/6. Background WM_INPUT does not make a thread eligible for InputHapticsManager routing on this build."
 
   - id: H2
     title: A controller captured in a foreground moment stays usable for background output
-    state: UNVERIFIED
+    state: CONFIRMED_ON[f10947f6a858b89f]   # single session; lifetime untested (EXP-082)
     requiredExperiments: [EXP-010, EXP-020]
     route: [R3a-cached-controller, R3b-override-on-raw-thread]
     scope: [target-device, os-build, controller-lifetime]
@@ -30,7 +31,8 @@ hypotheses:
       or are not felt above controls.
     ifTrue: Promote the passing R3 route; tray requires a one-time "Prime haptic mouse"; lifetime tests (EXP-082) next.
     ifFalse: Output architecture pivot (SPEC §15) if H1 is also false.
-    history: []
+    history:
+      - "2026-10-23 EXP-020 run 20261023-200151-EXP-020-4b9071: R3a 6/6 felt vs 0/6 controls (p=0.0011), R3b 6/6 vs 0/6 (p=0.0011), API 12/12 accepted, 0 invalid trials, another app foreground throughout."
 
   - id: H3
     title: UIA hit tests identify semantic controls on useful timescales

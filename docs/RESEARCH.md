@@ -54,14 +54,20 @@ SimpleHapticsController: Id, SupportedFeedback, IsIntensitySupported, IsPlayCoun
 | UIA `ElementFromPoint` + `CacheRequest` in a worker process: 23/23 WinForms fixture controls correct; p50 3.5–4.9 ms, p95 4.4–6.0 ms across three runs | `[OBSERVED]` | EXP-040 |
 | WinForms `TrackBar` (msctls_trackbar32 via proxy) is a UIA `Slider` supporting only `ValuePattern`; `IsRangeValuePatternAvailable` = false | `[OBSERVED]` | EXP-040 + live probe |
 
+## Answered by physical runs (2026-10-23, Surface Mouse 2nd Edition)
+
+- `[PHYSICAL]` Foreground `GetForCurrentThread().TrySendHapticWaveform` buzzes the Surface Mouse (EXP-010, 12/12 vs 0/6).
+- `[OBSERVED]` Background `WM_INPUT` (`RIM_INPUTSINK`) does **not** give the receiving thread a `CurrentHapticsController`:
+  0/288 samples, device type `None`, `TrySendHapticWaveform` returned false 6/6 (EXP-020 R2).
+- `[PHYSICAL]` A `SimpleHapticsController` captured on the UI thread during our own foreground input can be used from
+  the raw-input thread while another app is foreground, both directly (R3a) and via `SetOverrideHapticsController` on
+  that thread's manager (R3b). Each felt 6/6 vs 0/6 controls, with no exceptions.
+
 ## Still unknown
 
-- `[UNVERIFIED]` Whether background `WM_INPUT` (RIM_INPUTSINK) gives the receiving thread a `CurrentHapticsController`
-  for the Surface Mouse — EXP-020 measures this directly (`rawThreadBackgroundSamplesWithController`) as well as
-  physically.
-- `[UNVERIFIED]` Whether a `SimpleHapticsController` captured on one thread can be used from another
-  (`MarshalingBehavior` of the controller class is not asserted here; EXP-020 R3a records any exception).
-- `[UNVERIFIED]` Any physical sensation at all from this code. No `PHYSICAL` evidence exists yet.
+- `[UNVERIFIED]` How long a captured controller stays valid (idle, sleep/resume, Bluetooth re-pair, device switch) — EXP-082.
+- `[UNVERIFIED]` Whether the haptic touchpad behaves the same way (rerun EXP-010/020 with `--target touchpad`).
+- `[UNVERIFIED]` Whether `GetForCurrentThread()` routing differs on other OS builds or architectures.
 
 ## Design-relevant documentation facts (from SPEC §2.1, rechecked)
 
