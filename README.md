@@ -40,7 +40,7 @@ so far:
   call on it fails with `RPC_E_WRONG_THREAD (0x8001010E)` (EXP-023).
 - With only *posted* (non-device) input, the UI thread's manager has **no controller** and `TrySendHapticWaveform`
   returns `false` — routing really is tied to physical device input.
-- The isolated UIA worker identified **23/23** controls in the WinForms fixture, p50 ≈ 4 ms, and the hang watchdog
+- The isolated UIA worker identified **23/23** controls in the WinForms fixture, p50 ≈ 5 ms / p95 ≈ 6 ms, and the hang watchdog
   cuts off a frozen provider in ≈ 240 ms without blocking the caller (EXP-040, EXP-043).
 - WinForms `TrackBar` exposes `Slider` with ValuePattern only (no RangeValue), so slider detents correctly stay
   silent there — the lab never reads value strings.
