@@ -2,7 +2,7 @@
 #   .\scripts\publish.ps1              -> publish\HapticsEverywhere-<version>-win-arm64.zip and -win-x64.zip
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$version = '0.1.0'
+$version = '0.1.1'
 $out = Join-Path $root 'publish'
 Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue
 foreach ($rid in 'win-arm64', 'win-x64') {

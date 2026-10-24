@@ -27,6 +27,16 @@ mouse collection and a USB mouse (VID_3434&PID_D030). No Surface Mouse was paire
 
 ## Entries
 
+### 2026-10-23 · Informal (not blinded) · touchpad via the tray sample
+
+- Commit `281b4b5`, machine `f10947f6a858b89f`. The operator primed the Surface Laptop 8 haptic touchpad in the tray's
+  prime box and reported feeling ticks while gliding over controls in other apps. The ticks felt **lighter than the
+  Surface Mouse**.
+- Unblinded and without controls, so this is **not** `PHYSICAL` evidence for the touchpad route. A blinded run is
+  `haptics-lab run EXP-020 --target touchpad`.
+- Note: the API takes waveform, intensity, duration, and play count only; there is no x/y. Strength is also scaled by
+  the device's own Windows setting (Settings → Bluetooth & devices → Touchpad → haptic feedback intensity).
+
 ### 2026-10-23 · EXP-020 · `PASS` [PHYSICAL] — background output works via a captured controller
 
 - Run `20261023-200151-EXP-020-4b9071`, commit `2c36831`, machine `f10947f6a858b89f`
