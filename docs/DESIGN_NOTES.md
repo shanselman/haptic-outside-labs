@@ -143,3 +143,47 @@ primes itself (a box at startup, plus any mouse movement over its menu), and use
 fast-flick suppression. Removed: consent dialog, evidence-locked On, allowlist, profiles. Kept because they cost
 nothing and are the thesis: passive-only observation, password silence, default exclusions, one-click Off.
 The lab keeps all its rigor; ADR 0002's gating now applies to the lab's gates, not the sample.
+
+## 12. v0.2: a vocabulary, and being choosy (2026-10-24)
+
+Once background output worked, the problem became *taste*. A buzz on every crossing is noise; the goal is that each
+sensation means one thing, and fires only when it carries information.
+
+**Four meanings, fixed waveforms.** Land = Hover, Land · big = Click, Detent = Step, Edge = Collide. The device's
+richer waveforms (Align, Success, Error) are reserved for apps that actually *know* an outcome, via the cooperative
+pipe. The generic layer still never fakes outcomes.
+
+**Choosiness rules, in order of payoff:**
+1. *Land, don't pass.* Entering a control while moving faster than the landing speed is a pass, so it's held as a
+   pending arrival. It fires if the pointer slows down or dwells (80 ms) on it, and is dropped (`passed-through`) if it
+   leaves first. A stopped pointer sends no input, so the interpreter needs a clock (`OnTick`). The landing speed adapts
+   to 2.5× the median speed just before your last clicks (clamped to 400–2500 px/s): fast users get a higher bar.
+2. *Group first.* Entering a toolbar, ribbon group, menu, or tab strip you haven't been in for 1.5 s is a Step. It
+   orients you before any land. Moving within the group refreshes the memory, so working in one toolbar doesn't
+   re-detent.
+3. *Choices are detents.* Tabs and radio buttons are Step, not Hover: you're choosing between siblings. The one
+   that's already selected is silent, since you can't go to where you already are.
+4. *Size in logical px.* Big targets (≥56 logical px tall, or ≥48 both ways: Office's large ribbon buttons) land with
+   Click; tiny ones (<10 logical px) are silent. Physical pixels would make every 150% display "big".
+5. *Edges.* Leaving a toolbar or tab strip off its long-axis end is a Collide: "end of the line".
+6. *Back off in busy apps.* More than N lands in 2 s from one app (10 by default, 6 for browsers, chat, and IDEs)
+   pauses lands for 4 s. Structure (detents, edges) keeps working, so the app becomes "Quiet" exactly when it's
+   too dense.
+7. *Skip inline links* (Hyperlink inside Document/Text/Edit): a paragraph of links would be a rattle.
+
+**Styles replaced profiles.** Quiet (structure only), Focused (default), Everything (no landing filter, no density
+limit, looser rate caps; for demos). One question, "how much do you want?", instead of a matrix of knobs.
+
+**Touchpad boost.** The haptics API has no x/y, so a touchpad pulse is the whole pad, and it feels lighter than the
+mouse at the same intensity. We multiply intensity by 1.3 for touchpad controllers (tray option).
+
+**The lab becomes the Showcase.** With EXP-010/020 physically passed, the evidence machinery stops being the front
+door. `haptics-lab` opens a Showcase: feel each sensation on demand, try it on a demo surface (menu, toolbar, ribbon,
+tabs, choices, a WPF slider that exposes RangeValue, and a row of things that should stay silent), and read the
+*reason* behind every tick or skip. The experiments live on a Lab tab, and nobody needs to run them to use the app.
+EXP-090 (blind style comparison) is the first experiment about *taste* rather than capability.
+
+**Things we chose not to do:** per-pixel "texture" while moving (the device can't localize it, and it reads as
+vibration); Grow on drag (we can't tell a drag from a selection reliably without reading content); scroll texture
+(Windows already does wheel detents on the mouse).
+

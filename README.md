@@ -1,195 +1,151 @@
-# Haptics Everywhere · Haptics Lab
+# Haptics Everywhere
 
-**What if existing Windows apps gained useful tactile feedback overnight, without changing a line of their code?**
+**Feel the things you can *do* in Windows: buttons, tabs, ribbons, menus, sliders, the taskbar. In any app, with no
+changes to those apps.**
 
-The Surface Mouse (2nd Edition) can buzz. Today it only does so where an app (or Windows itself — Snap,
-PowerPoint alignment) explicitly calls the haptics API. This repo tests an *outside-in* idea: a small,
-consent-first background process that **observes** your real mouse and the UI under it (via accessibility),
-works out what you just did — *entered a toolbar button, crossed into a menu, dragged a slider past a detent* —
-and kicks the mouse's haptic actuator to match.
+The Surface Mouse (2nd Edition) and Surface haptic touchpads can buzz, but only where an app explicitly asks.
+Haptics Everywhere is a small background app that *observes* your pointer and the UI under it (through Windows
+accessibility) and adds a light, meaningful tick when you land on something actionable. A detent tells you that you
+moved to a new group or choice; an edge tells you that you reached the end of a strip.
 
-It is built as an **evidence-first lab**, not a demo. The key platform question is genuinely unknown:
+> **It never moves, clicks, or focuses anything, never reads the keyboard, and never reads names or text.** It's passive:
+> mouse input plus read-only UI structure. Nothing leaves your PC. See [`docs/PRIVACY_AND_THREAT_MODEL.md`](docs/PRIVACY_AND_THREAT_MODEL.md).
 
-> Can a normal, non-elevated, non-injected Windows process make the mouse buzz **while another app is in the
-> foreground**, using supported public APIs?
+## Get it
 
-The documented `InputHapticsManager` routes feedback to *"the device that most recently delivered input to the
-associated thread"*. Whether background Raw Input counts is exactly what nobody has measured. So this repo
-ships the instruments to find out, refuses to call an API `true` a "buzz", and only promotes what a human
-hand has actually felt.
+Download `HapticsEverywhere-<version>-win-arm64.zip` (Snapdragon Surfaces) or `-win-x64.zip` from
+[**Releases**](https://github.com/shanselman/haptic-outside-labs/releases). It's self-contained, so no .NET install is
+needed. Unzip it, then:
 
-> **We never move, click, or steer the mouse, and never control other apps.** The user drives the pointer; we
-> only observe and add tactile feedback. See [`docs/PRIVACY_AND_THREAT_MODEL.md`](docs/PRIVACY_AND_THREAT_MODEL.md).
+| Run | What it is |
+|---|---|
+| `haptics-tray.exe` | **The app.** Starts On. Wiggle your haptic mouse and/or touchpad over the little box once, then use Windows. Right-click the tray icon for Style, Intensity, Exclude app, Status, Off. |
+| `haptics-lab.exe` | **The Showcase.** Feel each sensation, try it on real controls, see *why* each tick happened (or didn't), and blind-compare the styles. Also holds the research lab. |
 
-## Status
+Requirements: Windows 11 with the haptics API (build 26100+, Universal API Contract 19; built and tested on 28000) and a
+haptic mouse or touchpad.
 
-| Gate | What it means | State |
-|---|---|---|
-| **A1** Foreground actuation | Our own focused window can make the target mouse buzz (EXP-010) | ✅ **PHYSICAL** — Surface Mouse 2nd Ed., 12/12 felt vs 0/6 controls |
-| **A2** Background actuation | It still buzzes with *another* app in front (EXP-020, routes R2/R3a/R3b) | ✅ **PHYSICAL via R3a/R3b** (captured controller, 6/6 felt vs 0/6 each) · ❌ R2 (plain background raw input) |
-| **B** Observation | Background raw input (EXP-030 ⏳) and UIA semantics (EXP-040 ✅ 23/23 fixture controls, p95 ≈ 4–6 ms) | partial |
-| **C** Composition | Latency, duplicates, cost in real apps | ⏳ next (tray dogfood, EXP-070 live, EXP-075, EXP-080) |
-| **D** Value | Do people want it on? | blocked on C |
+## What you feel
 
-> **Headline (2026-10-23):** an ordinary, non-elevated, non-injected process *can* buzz a Surface Mouse 2nd Edition
-> while another app is in the foreground. The documented per-thread route alone doesn't work from the background: the
-> thread receiving background `WM_INPUT` never gets a haptic controller. What works is capturing the mouse's
-> `SimpleHapticsController` once, while the user moves the mouse over *our* window ("prime"), and then using it
-> directly (R3a) or via `SetOverrideHapticsController` (R3b) from the background thread. Scope: one machine, one
-> session; controller lifetime across sleep or re-pair is untested.
+Four sensations, one meaning each, so they become a language rather than a buzz:
 
-Everything that can be verified without a hand on a mouse **has been run** on a Surface Laptop 8 (Snapdragon,
-Windows 26H1 build 28000, ARM64) — see [`docs/EVIDENCE_LEDGER.md`](docs/EVIDENCE_LEDGER.md). Notable real findings
-so far:
+| Sensation | Waveform | Means | Examples |
+|---|---|---|---|
+| **Land** | Hover | You landed on something you can do | buttons, menu commands, checkboxes, links, combo boxes, taskbar buttons |
+| **Land · big** | Click | A large target | the big buttons in Office ribbons |
+| **Detent** | Step | A new choice or region | entering a toolbar, ribbon group, menu or tab strip; moving to another tab or option; slider ticks while dragging |
+| **Edge** | Collide | End of the line | sliding off the end of a toolbar or tab strip; a slider reaching its limit |
 
-- The 28000 SDK haptics API is present and `IsSupported()` / `IsHapticDevicePresent()` are `true` (the touchpad is haptic too).
-- `InputHapticsManager` **enforces thread affinity**: `TryGetForThread` hands you another thread's manager, but any
-  call on it fails with `RPC_E_WRONG_THREAD (0x8001010E)` (EXP-023).
-- With only *posted* (non-device) input, the UI thread's manager has **no controller** and `TrySendHapticWaveform`
-  returns `false` — routing really is tied to physical device input.
-- The isolated UIA worker identified **23/23** controls in the WinForms fixture, p50 ≈ 3.5–5 ms / p95 ≈ 4.4–6 ms, and the hang watchdog
-  cuts off a frozen provider in ≈ 235 ms without blocking the caller (EXP-040, EXP-043).
-- WinForms `TrackBar` exposes `Slider` with ValuePattern only (no RangeValue), so slider detents correctly stay
-  silent there — the lab never reads value strings.
+**Choosy on purpose:**
+- **Landing, not passing.** Flying across a toolbar is silent; slowing or stopping on a button ticks. The threshold
+  learns from how fast *you* move just before you click.
+- **Silent on purpose:** windows, panes, text, list, tree and grid rows (files, emails), the tab you're already on,
+  disabled controls, tiny targets, links inside running text, password fields, password managers, and sign-in screens.
+- **Busy apps back off:** if an app produces lots of lands quickly, lands pause briefly and structure (detents, edges) keeps
+  working. Browsers, chat and IDEs have lower limits; Office ribbons get softer lands so group detents stand out.
+- **No faked outcomes.** We can't know whether a drop or save worked, so Success, Error and Align come only from apps
+  that tell us (see *Cooperating apps*).
 
-## Try it (5 minutes to first dashboard)
+**Styles:**
+- **Quiet:** structure only (detents and edges).
+- **Focused** (default): Quiet plus a tick when you land on a control.
+- **Everything:** every crossing, dense; good for demos.
 
-Requirements: Windows 11 (haptics API needs build 26100+ with Universal API Contract 19; tested on 28000),
-.NET 10 SDK. x64 and ARM64 both work (AnyCPU).
+Intensity runs Low → Max. Touchpads get a boost, because they feel lighter than mice at the same strength.
+
+## How it works (and why the one-time "prime")
+
+```mermaid
+flowchart LR
+    U[You move the mouse or touchpad] --> RI["Raw Input thread<br/>(mouse only, RIDEV_INPUTSINK)"]
+    RI -->|latest point| UW["UIA worker process<br/>type · bounds · selected · parent group"]
+    UW --> SI["Interpreter<br/>land vs pass · groups · edges · sliders"]
+    RI --> SI
+    APP[Cooperating app] -->|local pipe| SI
+    SI --> P["Policy<br/>style · exclusions · passwords · density · rate limits"]
+    P --> O["Captured controller<br/>(per device)"]
+    O --> M[(Mouse / touchpad actuator)]
+```
+
+Windows' `InputHapticsManager` only gives a haptic controller to a thread whose *own window* just got input from the
+device. A background app never does. We measured this with blinded, felt tests: calling the API from the thread
+receiving background input never got a controller (0 of 288 samples). **What works:** capture the device's
+`SimpleHapticsController` once, while you wiggle it over our window, then drive it from the background (felt 6/6 vs
+0/6 silent controls).
+
+That's the "prime". The tray re-primes silently whenever you move over its menu.
+[`samples/MinimalBackgroundHaptics`](samples/MinimalBackgroundHaptics/Program.cs) shows the whole trick in ~150 lines.
+
+## Cooperating apps
+
+Apps know things we can't infer, like "a snap guide appeared" or "the drop was accepted". Any app running as the same
+user can send a haptic over the local pipe `HapticsEverywhere`. It still goes through the same policy (rate limits,
+exclusions):
+
+```powershell
+$p = [System.IO.Pipes.NamedPipeClientStream]::new('.', 'HapticsEverywhere', 'Out'); $p.Connect(500)
+$w = [System.IO.StreamWriter]::new($p); $w.WriteLine('{"waveform":"Align"}'); $w.Flush(); $p.Dispose()
+```
+
+Or run `haptics-lab coop-send Success`. Valid waveforms: Hover, Click, Step, Collide, Align, Success, Error, Grow,
+Press, Release (whatever your device supports).
+
+## Build from source
 
 ```powershell
 git clone https://github.com/shanselman/haptic-outside-labs
 cd haptic-outside-labs
-dotnet test                      # 68 tests: evidence rules, policy, golden traces, schemas, safety scans, UIA worker
-.\scripts\run-lab.ps1            # opens the Haptics Lab dashboard
+dotnet test                      # 78 tests: vocabulary rules, golden traces, policy, safety scans, UIA worker
+.\scripts\run-tray.ps1           # the app
+.\scripts\run-lab.ps1            # the Showcase
+.\scripts\publish.ps1            # self-contained zips for win-arm64 and win-x64
 ```
 
-Then follow **[`docs/TESTING_WITH_SURFACE_MOUSE.md`](docs/TESTING_WITH_SURFACE_MOUSE.md)** — a ~20 minute
-operator runbook: EXP-010 (foreground baseline) → EXP-020 (background gate) → optional live observer and tray.
+.NET 10 SDK, Windows only. Projects target `net10.0-windows10.0.26100.0` with the 28000 SDK projection (ADR 0005).
 
-CLI (all commands write `artifacts/runs/<run-id>/{result.json,trace.jsonl,summary.md}`):
+## The research behind it
 
-```powershell
-.\scripts\run-lab.ps1 doctor              # EXP-000 capability inventory (never sends a waveform)
-.\scripts\run-lab.ps1 list-experiments
-.\scripts\run-lab.ps1 run-all             # every automated experiment; never moves the pointer or buzzes
-.\scripts\run-lab.ps1 run EXP-010         # physical: opens the blinded trial window
-.\scripts\run-lab.ps1 replay tests\traces\toolbar-fast-flick.jsonl
-.\scripts\run-lab.ps1 report              # artifacts\report.html
-```
+This started as an evidence-first lab: the platform question ("can a normal background app buzz the mouse while
+another app is in front?") was genuinely unknown, so the repo was built to *prove* it rather than assume it. It
+used blinded pulse/no-pulse trials, Fisher exact tests, and an evidence ledger that never counts an API returning `true`
+as a buzz. The answer is **yes, via a captured controller**:
 
-## How it works
+| Gate | Result (Surface Laptop 8, Windows 28000, ARM64, Surface Mouse 2nd Edition) |
+|---|---|
+| Foreground actuation (EXP-010) | **PHYSICAL PASS**: 12/12 felt vs 0/6 silent controls |
+| Background actuation (EXP-020) | **PHYSICAL PASS** via captured controller (R3a, R3b: 6/6 vs 0/6 each); plain background route R2 **FAIL** |
+| UIA semantics (EXP-040/043) | 23/23 fixture controls, p95 ≈ 4–6 ms; hung providers cut off in ≈ 240 ms |
 
-```mermaid
-flowchart LR
-    U[Your hand moves the mouse] --> RI["Raw Input thread<br/>(mouse only, RIDEV_INPUTSINK)"]
-    RI -->|latest cursor point| UC["UIA client<br/>latest-wins, 250 ms watchdog"]
-    UC <-->|JSON lines| UW["UIA worker PROCESS<br/>MTA, ElementFromPoint + cache<br/>types & bounds only"]
-    UC --> SI["Semantic interpreter<br/>Enter / GroupBoundary / RangeStep / RangeLimit"]
-    RI --> SI
-    SI --> P["Policy (single arbitration point)<br/>consent · exclusions · password · native-suppression<br/>freshness ≤45 ms · rate caps · coalescing"]
-    P -->|DryRun| L[Lab timeline / evidence]
-    P -->|Emit, only if route has PHYSICAL evidence| O["Output on the raw-input thread<br/>R2 · R3a · R3b"]
-    O --> M[(Surface Mouse actuator)]
-```
-
-- **Observation is passive.** Mouse-only Raw Input (no keyboard, no `NOLEGACY`/`CAPTUREMOUSE`), read-only UI
-  Automation for control *type* and *bounds* (never names, text, values, URLs; slider range only). No hooks, no
-  injection, no `SendInput`, no focus changes — enforced by a metadata scan of the compiled assemblies (EXP-081).
-- **UIA runs in a separate process** on a windowless MTA thread. One outstanding request, latest-wins coalescing,
-  hard timeout → kill & restart, per-app quarantine, no late delivery.
-- **Semantics before sensations.** Hover only on *enabled interactive* controls, group-boundary `Step`s for
-  ribbon/menu transitions, slider detents/limits only during a physical drag. Never `Success`/`Error` (we can't
-  know an outcome). A wrong affirmative buzz is worse than a missed one.
-- **One arbitration point.** Every intent passes the same policy: consent, app allow/deny lists, password/protected
-  contexts, device availability, freshness deadline (stale = dropped, never late-buzzed), native-haptic
-  suppression (Snap/PowerPoint drags), fast-flick suppression, re-entry cooldown, ≤4 pulses/s.
-- **Output routes under test** (EXP-020), all called on the thread that just received the physical `WM_INPUT`:
-  - **R2** `InputHapticsManager.GetForCurrentThread()` on the raw-input thread.
-  - **R3a** a `SimpleHapticsController` captured from `CurrentHapticsController` during a moment when *our*
-    window had mouse input, reused later.
-  - **R3b** that controller installed via `SetOverrideHapticsController`, send, clear.
-
-## The evidence model
-
-| Class | Means | Proves a buzz? |
-|---|---|---|
-| `BUILD` | API discovered / guarded at runtime | No |
-| `OBSERVED` | Instrumented event or call result (e.g. `SEND_RETURNED_TRUE`) | No |
-| `PHYSICAL` | Blinded operator trials: pulses felt vs silent controls, one-sided Fisher p ≤ 0.01, hit ≥ 80%, false alarm ≤ 20% | **Yes, for that machine/route** |
-
-`ExperimentResult.Finalize()` mechanically downgrades any `PASS` on a physical claim without `PHYSICAL` evidence,
-and the lab's gates read the same local ledger, keyed by machine fingerprint. Statuses are `PASS / FAIL / INDETERMINATE / BLOCKED / NOT_RUN /
-SKIPPED_BY_POLICY` — a "not felt" is only a `FAIL` if the foreground baseline already passed.
+The lab is still there (the Showcase's **Lab** tab, `haptics-lab run …`) for checking new devices and builds, but you
+don't need it to use the app. Start with [`docs/EVIDENCE_LEDGER.md`](docs/EVIDENCE_LEDGER.md),
+[`docs/DESIGN_NOTES.md`](docs/DESIGN_NOTES.md) and the operator runbook
+[`docs/TESTING_WITH_SURFACE_MOUSE.md`](docs/TESTING_WITH_SURFACE_MOUSE.md).
 
 ## Repository map
 
 ```text
-src/Haptics.Core        platform-neutral: evidence contracts, blinded-trial stats, semantics, policy, replay, ledger, API scanner
-src/Haptics.Windows     Win32/WinRT adapters: raw-input message thread, guarded haptics routes, UIA worker+client, pipeline
-src/Haptics.Lab         haptics-lab.exe: CLI, dashboard, experiments EXP-000/010/020/023/030/040/043/070/081, UI fixture
-src/Haptics.Tray        haptics-tray.exe: the simple sample — starts On, auto-primes, all apps, intensity, exclude app, Off
-tests/                  Core tests (evidence, policy, 13 golden traces) + Windows tests (safety scans, worker containment)
-docs/                   SPEC, runbook, evidence ledger, hypotheses, research notes, design notes, privacy/threat model, ADRs
-samples/                MinimalBackgroundHaptics: the core trick in ~150 lines
-schemas/                JSON schemas for results and traces
-fixtures/browser        static HTML/ARIA page for manual Chromium/Edge checks (EXP-050)
+src/Haptics.Core        vocabulary rules (interpreter + policy), evidence model, golden-trace replay, API scanner
+src/Haptics.Windows     raw input, guarded haptics routes, per-device controller bank, UIA worker, cooperative pipe
+src/Haptics.Tray        haptics-tray.exe — the app
+src/Haptics.Lab         haptics-lab.exe — Showcase (+ Inspector, Lab tab, CLI, experiments, fixtures)
+samples/                MinimalBackgroundHaptics — the core trick in ~150 lines
+tests/                  Core tests (vocabulary, policy, 13 golden traces) + Windows tests (safety scans, worker, tray)
+docs/                   design notes, evidence ledger, hypotheses, research, privacy/threat model, ADRs, SPEC
 ```
-
-## The sample tray
-
-**Download:** grab `HapticsEverywhere-<version>-win-arm64.zip` or `-win-x64.zip` from
-[Releases](https://github.com/shanselman/haptic-outside-labs/releases). Each is self-contained (no .NET install needed),
-so unzip and run `haptics-tray.exe`. To build the zips yourself, run `.\scripts\publish.ps1`. From source, run `.\scripts\run-tray.ps1`.
-
-It's a deliberately simple, aggressive sample:
-
-- It starts **On** in every app. A small box asks you to wiggle a haptic mouse *or touchpad* over it once (wiggle both to prime both; each device then buzzes itself): that's the "prime" that
-  captures the mouse's `SimpleHapticsController` (route R3a, the one EXP-020 proved). Moving the mouse over the tray
-  menu re-primes it silently. The icon is green when primed, orange when it needs a prime, and gray when Off.
-- Menu: **On**, **Intensity** (Low/Medium/Strong/Max), **Exclude '<current app>'**, **Status…**, **Quit**.
-- Loose limits (≈12 pulses/s, 200 ms re-entry, no fast-flick suppression). It stays silent over password fields and for
-  password managers and sign-in UIs, and it never moves, clicks, or focuses anything.
-
-**What you feel: a tick on things you can *do*.**
-
-| You move onto… | Feel | Examples |
-|---|---|---|
-| a clickable control | **Hover** tick | buttons, split buttons, ribbon and menu commands, tabs, checkboxes, radio buttons, links, combo boxes, taskbar buttons, caption buttons |
-| a control in a *different group* | firmer **Step** (instead of the hover) | toolbar → menu, menu bar → open menu, ribbon group → ribbon group |
-| a slider's next tick, while dragging | **Step** | Edge `<input type=range>`, WPF sliders |
-| a slider's end, while dragging | **Collide** | same |
-
-Silent: windows, panes, text and documents, list, tree and grid rows (files, emails), disabled controls, passwords,
-scrolling, clicks, and Snap or PowerPoint drags (those have native haptics).
-
-**Is the one-time "prime" really needed?** Yes. EXP-020 measured it: the thread that receives *background* mouse input
-never gets a haptic controller (0 of 288 samples), so Windows rejects every pulse. A controller is only handed to a
-thread whose *own window* just got input from the mouse. After one wiggle, that controller keeps working from the
-background. [`samples/MinimalBackgroundHaptics`](samples/MinimalBackgroundHaptics/Program.cs) shows the whole trick
-in ~150 lines.
-
-The rigorous gating (consent dialog, evidence-locked On, allowlists) lives in the **lab**, where it belongs; the
-tray is the demo.
 
 ## Docs
 
-- [`docs/TESTING_WITH_SURFACE_MOUSE.md`](docs/TESTING_WITH_SURFACE_MOUSE.md) — operator runbook (start here with hardware)
-- [`docs/EVIDENCE_LEDGER.md`](docs/EVIDENCE_LEDGER.md) — what has actually been measured, where, and with which commit
-- [`docs/HYPOTHESES.yaml`](docs/HYPOTHESES.yaml) — H1–H8 with falsifiers and current state
-- [`docs/DESIGN_NOTES.md`](docs/DESIGN_NOTES.md) — the thinking: decisions, trade-offs, what was deliberately not built
-- [`docs/RESEARCH.md`](docs/RESEARCH.md) — verified API surface, SDK/TFM pitfalls, observed platform behaviour
-- [`docs/TEST_MATRIX.md`](docs/TEST_MATRIX.md) — what each test layer can and cannot prove
-- [`docs/PRIVACY_AND_THREAT_MODEL.md`](docs/PRIVACY_AND_THREAT_MODEL.md) — data minimization, hard constraints, harms
-- [`docs/ADR/`](docs/ADR) — architecture decision records
-- [`docs/SPEC.md`](docs/SPEC.md) — the full engineering specification this implements
+- [`docs/DESIGN_NOTES.md`](docs/DESIGN_NOTES.md): decisions, trade-offs, the haptic vocabulary
+- [`docs/EVIDENCE_LEDGER.md`](docs/EVIDENCE_LEDGER.md): what has been measured, where, and with which commit
+- [`docs/PRIVACY_AND_THREAT_MODEL.md`](docs/PRIVACY_AND_THREAT_MODEL.md): what's observed, hard constraints, harms
+- [`docs/RESEARCH.md`](docs/RESEARCH.md): verified API surface and observed platform behaviour
+- [`docs/TEST_MATRIX.md`](docs/TEST_MATRIX.md): what each test layer can and cannot prove
+- [`docs/TESTING_WITH_SURFACE_MOUSE.md`](docs/TESTING_WITH_SURFACE_MOUSE.md): operator runbook for the physical experiments
+- [`docs/ADR/`](docs/ADR), [`docs/HYPOTHESES.yaml`](docs/HYPOTHESES.yaml), [`docs/SPEC.md`](docs/SPEC.md)
 
 ## What's next
 
-1. ~~Run EXP-010 and EXP-020 with a Surface Mouse.~~ Done: A1 and A2 passed via R3a/R3b.
-2. **Dogfood the tray** (`.\scripts\run-tray.ps1`, wiggle the mouse over the box it shows, then just use Windows).
-3. **Controller lifetime (EXP-082):** does the captured controller survive idle, sleep/resume, Bluetooth re-pair,
-   and device switching? This is now the main product risk.
-4. EXP-030 (raw attribution), live toolbar/ribbon hover in Word/Edge/Explorer (EXP-070 physical), native
-   double-buzz A/B (EXP-075), latency/CPU (EXP-080).
-5. Optional: repeat EXP-010/020 with `--target touchpad` to see whether the same routing holds for the haptic touchpad.
+1. **Controller lifetime (EXP-082):** does a captured controller survive idle, sleep/resume, and Bluetooth re-pair?
+2. **Blind style comparison (EXP-090):** Showcase → *Compare styles*. Which style do people keep on?
+3. **Native double-buzz A/B (EXP-075)** against Snap and PowerPoint; **latency/CPU in real apps (EXP-080)**.
+4. Per-app profiles tuned by feel; more cooperating apps.

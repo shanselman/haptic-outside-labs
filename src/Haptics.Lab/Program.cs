@@ -9,9 +9,10 @@ namespace Haptics.Lab;
 internal static class Program
 {
     private const string Usage = """
-        haptics-lab — evidence-first Windows haptics lab (see README.md)
+        haptics-lab — Haptics Everywhere showcase + lab (see README.md)
 
-          haptics-lab                              open the dashboard
+          haptics-lab                              open the Showcase
+          haptics-lab coop-send <Waveform>         send Align/Success/Error/... as a cooperating app would
           haptics-lab doctor [--json]              EXP-000 capability inventory
           haptics-lab list-experiments
           haptics-lab run <EXP-ID> [options]       run one experiment (writes artifacts/runs/<run-id>/)
@@ -47,7 +48,7 @@ internal static class Program
         if (args.Length == 0)
         {
             FreeConsole();
-            Application.Run(new DashboardForm());
+            Application.Run(new ShowcaseForm());
             return 0;
         }
 
@@ -65,7 +66,8 @@ internal static class Program
                 "report" => WriteReport(),
                 "evidence" => Evidence(opt),
                 "fixture" => Fixture(opt),
-                "dashboard" => RunDashboard(),
+                "dashboard" or "showcase" => RunDashboard(),
+                "coop-send" => CoopSend(opt),
                 "help" or "--help" or "-h" or "/?" => Help(),
                 _ => Help(1),
             };
@@ -85,8 +87,16 @@ internal static class Program
 
     private static int RunDashboard()
     {
-        Application.Run(new DashboardForm());
+        Application.Run(new ShowcaseForm());
         return 0;
+    }
+
+    private static int CoopSend(CliOptions opt)
+    {
+        var waveform = opt.Positional.FirstOrDefault() ?? throw new ArgumentException("coop-send <Waveform>");
+        var ok = CooperativeServer.Send(waveform);
+        Console.WriteLine(ok ? $"sent {waveform}" : "no Haptics Everywhere engine is listening (start the tray or the Showcase)");
+        return ok ? 0 : 1;
     }
 
     private static int Doctor(CliOptions opt)
@@ -134,6 +144,7 @@ internal static class Program
             "EXP-043" => Exp043UiaContainment.Run(outDir),
             "EXP-070" => Exp070Replay.Run(outDir, opt.Get("trace")),
             "EXP-081" => Exp081StaticScan.Run(outDir),
+            "EXP-090" => RunForm(() => new ShowcaseForm(startCompare: true)),
             _ => null,
         };
 

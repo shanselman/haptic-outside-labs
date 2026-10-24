@@ -21,12 +21,12 @@ public class TrayDefaultsTests
     }
 
     [Fact]
-    public void SampleIsMoreAggressiveThanTheLabDefaults()
+    public void EverythingStyleIsMoreAggressiveThanTheLabDefaults()
     {
         var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
         var lab = TraceReplay.Run(Path.Combine(traces, "toolbar-fast-flick.jsonl")).Emitted;
-        var sample = TraceReplay.Run(Path.Combine(traces, "toolbar-fast-flick.jsonl"), new TraySettings().ToPolicy()).Emitted;
-        Assert.True(sample > lab, $"sample {sample} vs lab {lab}");
+        var sample = TraceReplay.Run(Path.Combine(traces, "toolbar-fast-flick.jsonl"), new TraySettings { Style = EffectProfile.Everything }.ToPolicy()).Emitted;
+        Assert.True(sample >= lab + 3, $"sample {sample} vs lab {lab}");
     }
 
     [Fact]

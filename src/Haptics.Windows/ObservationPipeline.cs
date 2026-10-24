@@ -13,6 +13,9 @@ public sealed record OutputEvent(double AtMs, HapticIntent Intent, HapticAttempt
 
 public sealed record DiagnosticEvent(double AtMs, string Message) : PipelineEvent(AtMs);
 
+/// <summary>Why something stayed silent before reaching policy (e.g. skip:already-selected, passed-through).</summary>
+public sealed record NoteEvent(double AtMs, string Note, ElementSnapshot? Element) : PipelineEvent(AtMs);
+
 public sealed class PipelineOptions
 {
     public MessageWindowKind WindowKind { get; init; } = MessageWindowKind.MessageOnly;
@@ -52,6 +55,7 @@ public sealed class ObservationPipeline : IDisposable
     private readonly Queue<double> _lookup = new();
     private readonly Queue<double> _inputToCall = new();
     private MessageWindowThread? _thread;
+    private Timer? _tick;
     private UiaClient? _uia;
     private bool _primaryDown;
     private (int X, int Y) _lastPos = (int.MinValue, int.MinValue);
@@ -88,7 +92,22 @@ public sealed class ObservationPipeline : IDisposable
     private CapturedController? ControllerForLatestInput() =>
         Controllers is { } map && map.TryGetValue(LastDeviceHandle, out var c) ? c : Controller;
 
+    /// <summary>Touchpads feel lighter than mice at the same intensity; this multiplies their pulses (clamped to 1).</summary>
+    public double TouchpadBoost { get; set; } = 1.0;
+
+    public SemanticInterpreter Interpreter => _interpreter;
+
     public bool Running => _thread is not null;
+
+    /// <summary>An app-reported haptic (cooperative pipe). Arbitrated by the same policy as everything else.</summary>
+    public void SubmitCooperative(string waveform, int processId)
+    {
+        lock (_lock)
+        {
+            var e = _interpreter.Cooperative(waveform, processId, Now);
+            HandleLocked(new InterpretResult([e], []), Now);
+        }
+    }
 
     public uint RawThreadId => _thread?.ThreadId ?? 0;
 
@@ -110,6 +129,7 @@ public sealed class ObservationPipeline : IDisposable
         _thread.RawMouse += OnRaw;
         _thread.DeviceChanged += OnDeviceChanged;
         _thread.Start();
+        _tick = new Timer(_ => Tick(), null, 15, 15);
         Publish(new DiagnosticEvent(Now, _thread.RawInputRegistered
             ? $"raw input registered on thread {_thread.ThreadId} ({_opt.WindowKind})"
             : $"raw input registration FAILED (win32 {_thread.RawInputRegistrationError})"));
@@ -117,6 +137,8 @@ public sealed class ObservationPipeline : IDisposable
 
     public void Stop()
     {
+        _tick?.Dispose();
+        _tick = null;
         _thread?.Dispose();
         _thread = null;
         _uia?.Dispose();
@@ -141,6 +163,18 @@ public sealed class ObservationPipeline : IDisposable
 
     private static double Now => MonotonicClock.Instance.NowMs;
 
+    private void Tick()
+    {
+        // A pointer that stops on a target sends no more input; dwell landings resolve here.
+        lock (_lock)
+        {
+            if (_interpreter.HasPendingArrival)
+            {
+                HandleLocked(_interpreter.OnTick(Now), Now);
+            }
+        }
+    }
+
     private void OnRaw(RawMouseInput raw)
     {
         // Raw-input thread: keep it tiny. No UIA, no disk, no process enumeration.
@@ -162,6 +196,7 @@ public sealed class ObservationPipeline : IDisposable
         lock (_lock)
         {
             _raw++;
+            _interpreter.Config.LandingSpeedPxPerSec = Policy.Config.LandingSpeedPxPerSec;
             if (raw.Code == RawInputCode.Background)
             {
                 _bgRaw++;
@@ -217,6 +252,14 @@ public sealed class ObservationPipeline : IDisposable
 
     private void HandleLocked(InterpretResult r, double now)
     {
+        foreach (var n in r.Notes)
+        {
+            if (n.StartsWith("skip:", StringComparison.Ordinal) || n == "passed-through")
+            {
+                Publish(new NoteEvent(now, n, _interpreter.Current));
+            }
+        }
+
         foreach (var e in r.Events)
         {
             var d = Policy.Evaluate(e, Now);
@@ -256,11 +299,15 @@ public sealed class ObservationPipeline : IDisposable
             return;
         }
 
+        var controller = ControllerForLatestInput();
+        var intensity = controller?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad
+            ? Math.Min(1.0, intent.Intensity * TouchpadBoost)
+            : intent.Intensity;
         HapticAttempt? a = Route switch
         {
-            OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(Route, intent.Waveform, intent.Intensity, intent.PointerTimestampMs),
-            OutputRoutes.CachedController => HapticsApi.SendViaController(Route, ControllerForLatestInput(), intent.Waveform, intent.Intensity, intent.PointerTimestampMs),
-            OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(Route, ControllerForLatestInput(), intent.Waveform, intent.Intensity, intent.PointerTimestampMs),
+            OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(Route, intent.Waveform, intensity, intent.PointerTimestampMs),
+            OutputRoutes.CachedController => HapticsApi.SendViaController(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),
+            OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),
             _ => null,
         };
 

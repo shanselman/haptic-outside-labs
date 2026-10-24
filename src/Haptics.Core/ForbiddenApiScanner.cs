@@ -29,12 +29,21 @@ public static class ForbiddenApiScanner
         "System.Windows.Automation.TogglePattern",
         "System.Windows.Automation.ValuePattern",
         "System.Windows.Automation.TextPattern",
-        "System.Windows.Automation.SelectionItemPattern",
         "System.Windows.Automation.ExpandCollapsePattern",
         "System.Windows.Automation.WindowPattern",
         "System.Windows.Automation.TransformPattern",
         "System.Windows.Forms.SendKeys",
         "Windows.UI.Input.Preview.Injection.InputInjector",
+    };
+
+    /// <summary>Patterns we may *read* state from, but whose action methods must never be called.</summary>
+    public static readonly IReadOnlySet<string> ForbiddenMembers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "System.Windows.Automation.SelectionItemPattern.Select",
+        "System.Windows.Automation.SelectionItemPattern.AddToSelection",
+        "System.Windows.Automation.SelectionItemPattern.RemoveFromSelection",
+        "System.Windows.Automation.RangeValuePattern.SetValue",
+        "System.Windows.Forms.Cursor.set_Position",
     };
 
     public static IReadOnlyList<ApiViolation> Scan(string assemblyPath)
@@ -87,10 +96,10 @@ public static class ForbiddenApiScanner
             if (mr.Parent.Kind == HandleKind.TypeReference)
             {
                 var tr = md.GetTypeReference((TypeReferenceHandle)mr.Parent);
-                var full = $"{md.GetString(tr.Namespace)}.{md.GetString(tr.Name)}";
-                if (full == "System.Windows.Forms.Cursor" && member == "set_Position")
+                var full = $"{md.GetString(tr.Namespace)}.{md.GetString(tr.Name)}.{member}";
+                if (ForbiddenMembers.Contains(full))
                 {
-                    list.Add(new ApiViolation(name, "member-reference", "System.Windows.Forms.Cursor.Position (setter)"));
+                    list.Add(new ApiViolation(name, "member-reference", full));
                 }
             }
         }

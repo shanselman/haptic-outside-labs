@@ -9,18 +9,17 @@ public class ReplayTests
         TraceReplay.Run(Path.Combine(AppContext.BaseDirectory, "traces", name), cfg);
 
     [Fact]
-    public void SlowSweepEmitsOneHoverPerButton()
+    public void SlowSweepEntersToolbarWithStepThenLandsOnEachButton()
     {
         var o = Run("toolbar-slow-sweep.jsonl");
-        Assert.Equal(5, o.Emitted);
-        Assert.All(o.Haptic, d => Assert.Equal("Hover", d.Waveform));
+        Assert.Equal(["Step", "Hover", "Hover", "Hover", "Hover"], o.Haptic.Select(d => d.Waveform));
     }
 
     [Fact]
     public void SlowPixelCrawlStillProducesHovers()
     {
         var o = Run("toolbar-pixel-crawl.jsonl");
-        Assert.Equal(["Hover", "Hover"], o.Haptic.Select(d => d.Waveform));
+        Assert.Equal(["Step", "Hover"], o.Haptic.Select(d => d.Waveform));
         Assert.DoesNotContain(o.Notes, n => n.EndsWith("stationary-ui-change-silent", StringComparison.Ordinal));
     }
 
@@ -49,7 +48,7 @@ public class ReplayTests
     {
         var o = Run("toolbar-fast-flick.jsonl");
         Assert.InRange(o.Emitted, 0, 1);
-        Assert.Contains(o.Decisions, d => d.Reason == "fast-flick");
+        Assert.True(o.Notes.Count(n => n.EndsWith("passed-through", StringComparison.Ordinal)) >= 15);
     }
 
     [Fact]
@@ -72,7 +71,7 @@ public class ReplayTests
     public void MenuGroupBoundaryEmitsStepAndCoalescesHover()
     {
         var o = Run("menu-nested.jsonl");
-        Assert.Equal(["Hover", "Step", "Hover"], o.Haptic.Select(d => d.Waveform));
+        Assert.Equal(["Step", "Step", "Hover"], o.Haptic.Select(d => d.Waveform));
         Assert.Contains(o.Decisions, d => d.Reason == "coalesced-with-group-boundary");
     }
 
@@ -82,7 +81,7 @@ public class ReplayTests
         var cfg = new PolicyConfig { Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions };
         cfg.ApplyProfile(EffectProfile.Quiet);
         var o = Run("menu-nested.jsonl", cfg);
-        Assert.Equal(["Step"], o.Haptic.Select(d => d.Waveform));
+        Assert.Equal(["Step", "Step"], o.Haptic.Select(d => d.Waveform));
     }
 
     [Fact]

@@ -41,7 +41,7 @@ public static class TraceReplay
     {
         config ??= new PolicyConfig { Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions };
         var names = new Dictionary<int, string>();
-        var interpreter = new SemanticInterpreter();
+        var interpreter = new SemanticInterpreter(new InterpreterConfig { LandingSpeedPxPerSec = config.LandingSpeedPxPerSec });
         var policy = new HapticPolicy(config, pid => names.TryGetValue(pid, out var n) ? n : null)
         {
             ConsentGiven = true,
@@ -49,7 +49,7 @@ public static class TraceReplay
         };
         var decisions = new List<ReplayDecision>();
         var notes = new List<string>();
-        var lastPointer = new Dictionary<string, double>();
+        double lastT = 0;
 
         void Handle(InterpretResult r, double t)
         {
@@ -71,7 +71,19 @@ public static class TraceReplay
 
             var o = JsonNode.Parse(line)!.AsObject();
             var type = (string?)o["type"] ?? throw new InvalidDataException($"Trace line missing type: {line}");
-            var t = (double?)o["t"] ?? 0;
+            var t = (double?)o["t"] ?? lastT;
+            if (type != "comment" && type != "process")
+            {
+                // A stopped pointer sends no input: simulate the engine's ~10 ms tick so dwell landings resolve on time.
+                for (var tt = lastT + 10; tt < t && interpreter.HasPendingArrival; tt += 10)
+                {
+                    Handle(interpreter.OnTick(tt), tt);
+                }
+
+                Handle(interpreter.OnTick(t), t);
+                lastT = t;
+            }
+
             switch (type)
             {
                 case "comment":
@@ -92,6 +104,11 @@ public static class TraceReplay
                     var snap = ParseElement(o, t, interpreter.LastPointer);
                     Handle(interpreter.OnSnapshot(snap, t), t);
                     break;
+                case "coop":
+                    var coop = interpreter.Cooperative((string)o["waveform"]!, (int?)o["pid"] ?? 0, t);
+                    var cd = policy.Evaluate(coop, t);
+                    decisions.Add(new ReplayDecision(t, coop.Kind.ToString(), coop.ControlType, cd.Outcome, cd.Reason, cd.Intent?.Waveform));
+                    break;
                 case "device":
                     var available = (bool?)o["available"] ?? true;
                     policy.DeviceAvailable = available;
@@ -106,16 +123,20 @@ public static class TraceReplay
             }
         }
 
+        for (var tt = lastT + 10; tt <= lastT + 1000 && interpreter.HasPendingArrival; tt += 10)
+        {
+            Handle(interpreter.OnTick(tt), tt);
+        }
+
         return new ReplayOutput(decisions, notes);
     }
 
+    private static RectD? Rect(JsonNode? n) =>
+        n is JsonArray b && b.Count == 4 ? new RectD((double)b[0]!, (double)b[1]!, (double)b[2]!, (double)b[3]!) : null;
+
     private static ElementSnapshot ParseElement(JsonObject o, double t, PointerObservation? last)
     {
-        RectD? bounds = null;
-        if (o["bounds"] is JsonArray b && b.Count == 4)
-        {
-            bounds = new RectD((double)b[0]!, (double)b[1]!, (double)b[2]!, (double)b[3]!);
-        }
+        var bounds = Rect(o["bounds"]);
 
         RangeInfo? range = null;
         if (o["range"] is JsonObject r)
@@ -138,6 +159,9 @@ public static class TraceReplay
             IsPassword = (bool?)o["password"] ?? false,
             ParentControlType = (string?)o["parentType"],
             ParentRuntimeIdHash = (string?)o["parentRid"],
+            ParentBounds = Rect(o["parentBounds"]),
+            IsSelected = (bool?)o["selected"],
+            Scale = (double?)o["scale"] ?? 1.0,
             Range = range,
             RequestedAtMs = (double?)o["req"] ?? t,
             ReceivedAtMs = t,

@@ -123,12 +123,14 @@ public static class UiaWorker
                      AutomationElement.IsControlElementProperty, AutomationElement.AutomationIdProperty, AutomationElement.RuntimeIdProperty,
                      AutomationElement.IsRangeValuePatternAvailableProperty, RangeValuePattern.ValueProperty, RangeValuePattern.MinimumProperty,
                      RangeValuePattern.MaximumProperty, RangeValuePattern.SmallChangeProperty, RangeValuePattern.LargeChangeProperty,
+                     AutomationElement.IsSelectionItemPatternAvailableProperty, SelectionItemPattern.IsSelectedProperty,
                  })
         {
             c.Add(p);
         }
 
         c.Add(RangeValuePattern.Pattern);
+        c.Add(SelectionItemPattern.Pattern);
         return c;
     }
 
@@ -143,10 +145,13 @@ public static class UiaWorker
             {
                 el = AutomationElement.FromPoint(new System.Windows.Point(req.X, req.Y));
                 var type = TypeName(el);
-                if (type == "Thumb" && Parent(el, cache) is { } p && TypeName(p) == "Slider")
+                AutomationElement? partOf = type is "Thumb" or "Button" ? Parent(el, cache) : null;
+                if (partOf is not null && TypeName(partOf) == "Slider")
                 {
-                    el = p;
+                    // A slider's thumb or track (repeat) buttons are parts of the slider, not buttons to land on.
+                    el = partOf;
                     type = "Slider";
+                    partOf = null;
                 }
                 else if (type == "Pane" && DrillDownHosts.Contains(Get<string>(el, AutomationElement.ClassNameProperty) ?? "") &&
                          HostedControlAt(el, req.X, req.Y, cache) is { } hosted)
@@ -158,7 +163,7 @@ public static class UiaWorker
 
                 if (SemanticVocabulary.InteractiveTypes.Contains(type))
                 {
-                    parent = Parent(el, cache);
+                    parent = partOf ?? Parent(el, cache);
                 }
             }
 
@@ -261,12 +266,37 @@ public static class UiaWorker
             IsControlElement = Get<bool>(el, AutomationElement.IsControlElementProperty),
             ParentControlType = parent is null ? null : TypeName(parent),
             ParentRuntimeIdHash = parent is null ? null : HashRuntimeId(Get<int[]>(parent, AutomationElement.RuntimeIdProperty)),
+            ParentBounds = parent is null ? null : ToRect(Get<System.Windows.Rect>(parent, AutomationElement.BoundingRectangleProperty)),
+            IsSelected = Get<bool>(el, AutomationElement.IsSelectionItemPatternAvailableProperty) ? Get<bool>(el, SelectionItemPattern.IsSelectedProperty) : null,
+            Scale = MonitorScale(req.X, req.Y),
             Range = range,
             AutomationId = req.AutomationId ? Get<string>(el, AutomationElement.AutomationIdProperty) : null,
             QueryX = req.X,
             QueryY = req.Y,
         };
     }
+
+    private static RectD? ToRect(System.Windows.Rect r) =>
+        r.IsEmpty || double.IsInfinity(r.Width) ? null : new RectD(r.X, r.Y, r.Width, r.Height);
+
+    private static double MonitorScale(int x, int y)
+    {
+        try
+        {
+            var mon = MonitorFromPoint(new Native.POINT { X = x, Y = y }, 2 /* MONITOR_DEFAULTTONEAREST */);
+            return GetDpiForMonitor(mon, 0 /* MDT_EFFECTIVE_DPI */, out var dpiX, out _) == 0 && dpiX > 0 ? dpiX / 96.0 : 1.0;
+        }
+        catch
+        {
+            return 1.0;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(Native.POINT pt, uint flags);
+
+    [System.Runtime.InteropServices.DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
 
     private static string TypeName(AutomationElement el)
     {

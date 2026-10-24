@@ -2,24 +2,30 @@ using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using Haptics.Core;
 using Haptics.Windows;
-using Windows.Devices.Haptics;
 
 namespace Haptics.Tray;
 
 /// <summary>
-/// The sample tray: starts On, drives the haptic mouse from the background through a controller captured from our own
-/// UI (route R3a, physically confirmed by EXP-020). Priming is automatic: a small box at startup, and silently again
-/// whenever the mouse passes over the tray menu. Passive only — never moves, clicks, or focuses anything.
+/// The sample tray: starts On, drives haptic devices from the background through controllers captured from our own UI
+/// (route R3a, physically confirmed by EXP-020). Priming is automatic: a small box at startup, and silently again
+/// whenever a haptic device passes over the tray menu. Passive only — never moves, clicks, or focuses anything.
 /// </summary>
 internal sealed class TrayContext : ApplicationContext
 {
+    private static readonly (EffectProfile Style, string Label)[] Styles =
+    [
+        (EffectProfile.Quiet, "Quiet — structure only (groups, tabs, edges, sliders)"),
+        (EffectProfile.Focused, "Focused — plus a tick when you land on a control"),
+        (EffectProfile.Everything, "Everything — every crossing (dense)"),
+    ];
+
     private readonly NotifyIcon _icon = new() { Visible = true };
     private readonly ContextMenuStrip _menu = new();
     private readonly TraySettings _settings = TraySettings.Load();
+    private readonly ControllerBank _bank = new();
     private readonly System.Windows.Forms.Timer _foreground = new() { Interval = 1000 };
     private ObservationPipeline? _pipeline;
-    private CapturedController? _controller;
-    private IReadOnlyDictionary<long, CapturedController> _controllers = new Dictionary<long, CapturedController>();
+    private CooperativeServer? _cooperation;
     private string? _lastApp;
 
     public TrayContext()
@@ -33,7 +39,7 @@ internal sealed class TrayContext : ApplicationContext
             }
         };
         _menu.Opening += (_, _) => BuildMenu();
-        _menu.MouseMove += (_, _) => TryPrime(); // Any mouse movement over our own menu refreshes the controller.
+        _menu.MouseMove += (_, _) => TryPrime(); // Any haptic device moving over our own menu refreshes its controller.
         _foreground.Tick += (_, _) => TrackForeground();
         _foreground.Start();
         Apply();
@@ -45,29 +51,11 @@ internal sealed class TrayContext : ApplicationContext
 
     private void TryPrime()
     {
-        // Any haptic device that just moved over our own UI (mouse, touchpad, pen) — whatever the user wiggled.
-        var c = HapticsApi.TryCaptureCurrentController();
-        if (c is null)
+        if (_bank.TryCapture(_pipeline?.LastDeviceHandle ?? 0))
         {
-            return;
+            _bank.ApplyTo(_pipeline);
+            UpdateIcon();
         }
-
-        _controller = c;
-        var handle = _pipeline?.LastDeviceHandle ?? 0;
-        if (_controllers.TryGetValue(handle, out var known) && known.IdHash == c.IdHash)
-        {
-            return; // Same device, already primed: nothing to do (this runs on every mouse move over our UI).
-        }
-
-        // Associate it with the raw device that is moving right now, so each device buzzes itself.
-        _controllers = new Dictionary<long, CapturedController>(_controllers) { [handle] = c };
-        if (_pipeline is not null)
-        {
-            _pipeline.Controller = c;
-            _pipeline.Controllers = _controllers;
-        }
-
-        UpdateIcon();
     }
 
     private void Apply()
@@ -89,32 +77,42 @@ internal sealed class TrayContext : ApplicationContext
             _pipeline.Policy.Config = _settings.ToPolicy();
             _pipeline.Policy.ConsentGiven = true; // Launching the sample is the opt-in.
             _pipeline.Policy.OutputRouteVerified = true;
-            _pipeline.Controller = _controller;
-            _pipeline.Controllers = _controllers;
+            _pipeline.TouchpadBoost = _settings.TouchpadBoost;
+            _bank.ApplyTo(_pipeline);
+        }
+
+        var wantCooperation = _settings.Enabled && _settings.CooperationEnabled;
+        if (wantCooperation && _cooperation is null)
+        {
+            _cooperation = new CooperativeServer((waveform, pid) => _pipeline?.SubmitCooperative(waveform, pid));
+            _cooperation.Start();
+        }
+        else if (!wantCooperation && _cooperation is not null)
+        {
+            _cooperation.Dispose();
+            _cooperation = null;
         }
 
         UpdateIcon();
     }
 
-    private string Devices() =>
-        string.Join(" + ", _controllers.Values.Select(c => c.DeviceType.ToString()).Append(_controller?.DeviceType.ToString() ?? "").Where(s => s.Length > 0).Distinct());
-
     private void UpdateIcon()
     {
-        _icon.Text = !_settings.Enabled ? "Haptics Everywhere: Off"
-            : _controller is null ? "Haptics Everywhere: On (needs prime)"
-            : $"Haptics Everywhere: On ({Devices()})";
+        var text = !_settings.Enabled ? "Haptics Everywhere: Off"
+            : !_bank.Any ? "Haptics Everywhere: On (needs prime)"
+            : $"Haptics Everywhere: On ({_bank.Describe()})";
+        _icon.Text = text.Length > 63 ? text[..63] : text;
         var old = _icon.Icon;
-        _icon.Icon = MakeIcon(!_settings.Enabled ? Color.Gray : _controller is null ? Color.FromArgb(200, 120, 0) : Color.FromArgb(16, 124, 16));
+        _icon.Icon = MakeIcon(!_settings.Enabled ? Color.Gray : !_bank.Any ? Color.FromArgb(200, 120, 0) : Color.FromArgb(16, 124, 16));
         old?.Dispose();
     }
 
     private void BuildMenu()
     {
         _menu.Items.Clear();
-        _menu.Items.Add(new ToolStripLabel(_controller is null && _settings.Enabled
-            ? "Haptics Everywhere — move the mouse over this menu to prime"
-            : "Haptics Everywhere") { Font = new Font(_menu.Font, FontStyle.Bold) });
+        _menu.Items.Add(new ToolStripLabel(!_bank.Any && _settings.Enabled
+            ? "Haptics Everywhere — move your mouse or touchpad over this menu"
+            : $"Haptics Everywhere — {_bank.Describe()}") { Font = new Font(_menu.Font, FontStyle.Bold) });
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(Item("On", () =>
         {
@@ -122,6 +120,17 @@ internal sealed class TrayContext : ApplicationContext
             Apply();
         }, _settings.Enabled));
 
+        var style = new ToolStripMenuItem("Style");
+        foreach (var (s, label) in Styles)
+        {
+            style.DropDownItems.Add(Item(label, () =>
+            {
+                _settings.Style = s;
+                Apply();
+            }, _settings.Style == s));
+        }
+
+        _menu.Items.Add(style);
         var intensity = new ToolStripMenuItem("Intensity");
         foreach (var (name, value) in new[] { ("Low", 0.3), ("Medium", 0.55), ("Strong", 0.8), ("Max", 1.0) })
         {
@@ -132,6 +141,12 @@ internal sealed class TrayContext : ApplicationContext
             }, Math.Abs(_settings.IntensityScale - value) < 0.01));
         }
 
+        intensity.DropDownItems.Add(new ToolStripSeparator());
+        intensity.DropDownItems.Add(Item("Boost touchpad", () =>
+        {
+            _settings.TouchpadBoost = _settings.TouchpadBoost > 1.01 ? 1.0 : 1.3;
+            Apply();
+        }, _settings.TouchpadBoost > 1.01));
         _menu.Items.Add(intensity);
         if (_lastApp is { } app)
         {
@@ -151,13 +166,19 @@ internal sealed class TrayContext : ApplicationContext
             }));
         }
 
+        _menu.Items.Add(Item("Let apps send haptics", () =>
+        {
+            _settings.CooperationEnabled = !_settings.CooperationEnabled;
+            Apply();
+        }, _settings.CooperationEnabled));
         _menu.Items.Add(Item("Status…", ShowStatus));
-        _menu.Items.Add(Item("Open Haptics Lab", OpenLab));
+        _menu.Items.Add(Item("Open Showcase", OpenShowcase));
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(Item("Quit", () =>
         {
             _pipeline?.Dispose();
             _pipeline = null;
+            _cooperation?.Dispose();
             _icon.Visible = false;
             ExitThread();
         }));
@@ -175,7 +196,7 @@ internal sealed class TrayContext : ApplicationContext
         var f = new Form
         {
             Text = "Haptics Everywhere",
-            ClientSize = new Size(380, 120),
+            ClientSize = new Size(400, 130),
             StartPosition = FormStartPosition.CenterScreen,
             TopMost = true,
             FormBorderStyle = FormBorderStyle.FixedToolWindow,
@@ -194,12 +215,12 @@ internal sealed class TrayContext : ApplicationContext
         void OnMove(object? s, MouseEventArgs e)
         {
             TryPrime();
-            if (_controller is null)
+            if (!_bank.Any)
             {
                 return;
             }
 
-            l.Text = $"Got it: {Devices()}.\nWiggle another haptic device here to add it.";
+            l.Text = $"Got it: {_bank.Describe()}.\nWiggle another haptic device here to add it.";
             if (closeTimer is null)
             {
                 closeTimer = new System.Windows.Forms.Timer { Interval = 4000 };
@@ -220,7 +241,8 @@ internal sealed class TrayContext : ApplicationContext
     private void ShowStatus()
     {
         var s = _pipeline?.Stats();
-        var text = $"On: {_settings.Enabled}   Intensity: {_settings.IntensityScale:0.00}   Controller: {(_controller is null ? "not primed" : "primed")}\n\n" +
+        var text = $"On: {_settings.Enabled}   Style: {_settings.Style}   Intensity: {_settings.IntensityScale:0.00}\nPrimed: {_bank.Describe()}\n" +
+                   $"Landing speed: {_pipeline?.Interpreter.EffectiveLandingSpeed:0} px/s (learns from your clicks)\n\n" +
                    (s is null ? "Pipeline stopped." :
                        $"Raw events {s.RawEvents} (background {s.BackgroundRawEvents})\n" +
                        $"UIA lookup p50 {s.LookupP50:0.0} ms, p95 {s.LookupP95:0.0} ms\n" +
@@ -239,7 +261,7 @@ internal sealed class TrayContext : ApplicationContext
         }
     }
 
-    private static void OpenLab()
+    private static void OpenShowcase()
     {
         var dir = AppContext.BaseDirectory;
         var candidates = new List<string> { Path.Combine(dir, "haptics-lab.exe") };
@@ -250,10 +272,13 @@ internal sealed class TrayContext : ApplicationContext
         }
 
         var exe = candidates.FirstOrDefault(File.Exists);
-        if (exe is not null)
+        if (exe is null)
         {
-            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+            MessageBox.Show("The Showcase (haptics-lab.exe) isn't next to the tray. It's in the full download or the repo.", "Haptics Everywhere");
+            return;
         }
+
+        Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
     }
 
     private static Icon MakeIcon(Color color)
@@ -282,6 +307,7 @@ internal sealed class TrayContext : ApplicationContext
         if (disposing)
         {
             _pipeline?.Dispose();
+            _cooperation?.Dispose();
             _icon.Dispose();
             _menu.Dispose();
             _foreground.Dispose();

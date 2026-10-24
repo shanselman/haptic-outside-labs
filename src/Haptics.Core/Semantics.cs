@@ -8,7 +8,7 @@ public enum InputOrigin
     /// <summary>Raw Input from a real device handle (hDevice != 0).</summary>
     HardwareRaw,
 
-    /// <summary>Raw Input without a device handle (e.g. SendInput) or unknown origin. Never physical proof.</summary>
+    /// <summary>Raw Input without a device handle (e.g. SendInput or some precision touchpads). Never physical proof.</summary>
     SyntheticOrUnknown,
 
     /// <summary>Authored/recorded trace replayed through the logic. Proves logic only.</summary>
@@ -51,10 +51,18 @@ public sealed record ElementSnapshot
     public bool IsOffscreen { get; init; }
     public bool IsPassword { get; init; }
     public bool IsControlElement { get; init; } = true;
+
+    /// <summary>Selection state for tabs/radio buttons (read-only SelectionItem property). Null when not exposed.</summary>
+    public bool? IsSelected { get; init; }
+
     public string? ParentControlType { get; init; }
     public string? ParentRuntimeIdHash { get; init; }
+    public RectD? ParentBounds { get; init; }
     public RangeInfo? Range { get; init; }
     public string? AutomationId { get; init; }
+
+    /// <summary>Monitor scale (physical px per logical px, 1.0 = 96 DPI) so size rules mean the same at any DPI.</summary>
+    public double Scale { get; init; } = 1.0;
 
     /// <summary>Timestamp of the pointer observation this lookup was requested for (t0).</summary>
     public double RequestedAtMs { get; init; }
@@ -70,6 +78,13 @@ public sealed record ElementSnapshot
     public string? GroupKey => ParentRuntimeIdHash is not null && ParentControlType is not null && SemanticVocabulary.GroupTypes.Contains(ParentControlType)
         ? $"{ProcessId}:{ParentRuntimeIdHash}"
         : null;
+
+    /// <summary>Smaller side in logical (96-DPI) pixels; null if bounds are unknown.</summary>
+    public double? LogicalMinSide => Bounds is { } b ? Math.Min(b.Width, b.Height) / Math.Max(0.5, Scale) : null;
+
+    public double? LogicalHeight => Bounds is { } b ? b.Height / Math.Max(0.5, Scale) : null;
+
+    public double? LogicalWidth => Bounds is { } b ? b.Width / Math.Max(0.5, Scale) : null;
 }
 
 public static class SemanticVocabulary
@@ -87,6 +102,12 @@ public static class SemanticVocabulary
     {
         "ToolBar", "Group", "Tab", "MenuBar", "Menu", "List", "Tree", "StatusBar", "TitleBar", "Header", "DataGrid",
     };
+
+    /// <summary>Choices where moving between options is a "detent" (one-of-many selection).</summary>
+    public static readonly IReadOnlySet<string> DetentTypes = new HashSet<string>(StringComparer.Ordinal) { "TabItem", "RadioButton" };
+
+    /// <summary>Parents that mean a hyperlink is inline in running text, not a standalone command.</summary>
+    public static readonly IReadOnlySet<string> TextContainers = new HashSet<string>(StringComparer.Ordinal) { "Document", "Text", "Edit" };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<SemanticEventKind>))]
@@ -94,11 +115,19 @@ public enum SemanticEventKind
 {
     EnterControl,
     LeaveControl,
+
+    /// <summary>Arrived in a group (toolbar, ribbon group, menu, tab strip) different from the last one.</summary>
     CrossGroupBoundary,
+
+    /// <summary>Slid off the end of a strip along its long axis ("end of the line").</summary>
+    GroupEdge,
     RangeStep,
     RangeLimit,
     ForegroundChanged,
     DeviceUnavailable,
+
+    /// <summary>An app told us directly (local pipe) what happened; carries <see cref="SemanticEvent.RequestedWaveform"/>.</summary>
+    Cooperative,
 }
 
 public sealed record SemanticEvent(
@@ -114,14 +143,33 @@ public sealed record SemanticEvent(
     IReadOnlyList<string> Evidence,
     bool PrimaryDown,
     double PointerSpeedPxPerSec,
-    ElementSnapshot? Element);
+    ElementSnapshot? Element,
+    string? RequestedWaveform = null);
 
 public sealed class InterpreterConfig
 {
-    public double GeometryHysteresisPx { get; init; } = 5;
-    public double MaxSnapshotAgeMs { get; init; } = 250;
-    public double SupersededDistancePx { get; init; } = 24;
-    public int RangeTicksWhenNoLargeChange { get; init; } = 10;
+    public double GeometryHysteresisPx { get; set; } = 5;
+    public double MaxSnapshotAgeMs { get; set; } = 250;
+    public double SupersededDistancePx { get; set; } = 24;
+    public int RangeTicksWhenNoLargeChange { get; set; } = 10;
+
+    /// <summary>Arrivals fire immediately at or below this pointer speed, otherwise after a dwell. 0 = fire on every crossing.</summary>
+    public double LandingSpeedPxPerSec { get; set; } = 1200;
+
+    /// <summary>Time inside a target after which an arrival fires even if the pointer was fast (it has stopped there).</summary>
+    public double LandingDwellMs { get; set; } = 80;
+
+    /// <summary>Learn the landing speed from how fast this user moves just before clicking (≥ 8 clicks).</summary>
+    public bool AdaptiveLanding { get; set; } = true;
+
+    /// <summary>Targets smaller than this (logical px, smaller side) are ignored.</summary>
+    public double MinTargetPx { get; set; } = 10;
+
+    public bool SkipInlineLinks { get; set; } = true;
+    public bool SkipSelectedChoices { get; set; } = true;
+
+    /// <summary>How long the last group is remembered across gaps (separators, padding) between its controls.</summary>
+    public double GroupMemoryMs { get; set; } = 1500;
 }
 
 public sealed record InterpretResult(IReadOnlyList<SemanticEvent> Events, IReadOnlyList<string> Notes)
@@ -131,12 +179,15 @@ public sealed record InterpretResult(IReadOnlyList<SemanticEvent> Events, IReadO
 
 /// <summary>
 /// Turns pointer observations + element snapshots into semantic transitions (SPEC §5). Pure and single-threaded:
-/// callers must serialize access. It never claims outcomes (no Success/drop acceptance).
+/// callers must serialize access, and call <see cref="OnTick"/> periodically (a stopped pointer sends no input).
+/// It never claims outcomes (no Success/drop acceptance).
 /// </summary>
 public sealed class SemanticInterpreter
 {
-    private readonly InterpreterConfig _cfg;
+    private readonly Queue<double> _clickSpeeds = new();
     private ElementSnapshot? _current;
+    private Arrival? _pending;
+    private (string Key, double At)? _lastGroup;
     private bool _movedSinceSnapshot;
     private bool _hadSnapshot;
     private PointerObservation? _last;
@@ -146,13 +197,37 @@ public sealed class SemanticInterpreter
     private bool _atMax;
     private long _transition;
 
-    public SemanticInterpreter(InterpreterConfig? cfg = null) => _cfg = cfg ?? new InterpreterConfig();
+    public SemanticInterpreter(InterpreterConfig? cfg = null) => Config = cfg ?? new InterpreterConfig();
+
+    public InterpreterConfig Config { get; }
 
     public ElementSnapshot? Current => _current;
 
     public PointerObservation? LastPointer => _last;
 
     public double PointerSpeedPxPerSec => _speed;
+
+    public bool HasPendingArrival => _pending is not null;
+
+    /// <summary>Landing speed in effect: configured, or learned from this user's pre-click speeds.</summary>
+    public double EffectiveLandingSpeed
+    {
+        get
+        {
+            if (Config.LandingSpeedPxPerSec <= 0)
+            {
+                return double.PositiveInfinity;
+            }
+
+            if (!Config.AdaptiveLanding || _clickSpeeds.Count < 8)
+            {
+                return Config.LandingSpeedPxPerSec;
+            }
+
+            var sorted = _clickSpeeds.Order().ToArray();
+            return Math.Clamp(2.5 * sorted[sorted.Length / 2], 400, 2500);
+        }
+    }
 
     public InterpretResult OnPointer(PointerObservation p)
     {
@@ -177,7 +252,17 @@ public sealed class SemanticInterpreter
                 }
 
                 ResetElement();
+                _lastGroup = null;
                 notes.Add("state-cleared:foreground-changed");
+            }
+
+            if (!last.PrimaryDown && p.PrimaryDown && _speed > 0)
+            {
+                _clickSpeeds.Enqueue(_speed);
+                while (_clickSpeeds.Count > 30)
+                {
+                    _clickSpeeds.Dequeue();
+                }
             }
 
             if (last.PrimaryDown && !p.PrimaryDown)
@@ -196,7 +281,46 @@ public sealed class SemanticInterpreter
         }
 
         _last = p;
+        if (_current?.GroupKey is { } g && _lastGroup?.Key == g)
+        {
+            _lastGroup = (g, p.TimestampMs);
+        }
+
+        if (_pending is { } a)
+        {
+            if (a.Element.Bounds is { } b && !b.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
+            {
+                _pending = null;
+                notes.Add("passed-through");
+            }
+            else if (_speed <= EffectiveLandingSpeed)
+            {
+                Arrive(a, p, p.TimestampMs, _speed, "landed:slowed", events);
+            }
+        }
+
         return new InterpretResult(events, notes);
+    }
+
+    /// <summary>Resolve a pending arrival once the pointer has rested inside it for the dwell time.</summary>
+    public InterpretResult OnTick(double nowMs)
+    {
+        if (_pending is not { } a || _last is not { } p || nowMs - a.Since < Config.LandingDwellMs)
+        {
+            return InterpretResult.Empty;
+        }
+
+        if (a.Element.Bounds is { } b && !b.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
+        {
+            _pending = null;
+            return new InterpretResult([], ["passed-through"]);
+        }
+
+        var events = new List<SemanticEvent>();
+
+        // The cause is "the pointer has stopped here", so the event is timed now and the pointer counts as still.
+        Arrive(a, p, nowMs, 0, "landed:dwell", events);
+        return new InterpretResult(events, []);
     }
 
     public InterpretResult OnDeviceUnavailable(double nowMs)
@@ -207,6 +331,11 @@ public sealed class SemanticInterpreter
         return new InterpretResult(events, ["state-cleared:device-unavailable"]);
     }
 
+    /// <summary>An app-reported event (cooperative integration). The app knows the outcome; we only arbitrate.</summary>
+    public SemanticEvent Cooperative(string waveform, int processId, double nowMs) =>
+        new(SemanticEventKind.Cooperative, ++_transition, nowMs, nowMs, processId, "App", null, null, 1.0,
+            ["cooperative-app"], _last?.PrimaryDown ?? false, 0, null, waveform);
+
     public InterpretResult OnSnapshot(ElementSnapshot s, double nowMs)
     {
         var notes = new List<string>();
@@ -216,19 +345,19 @@ public sealed class SemanticInterpreter
             return new InterpretResult(events, ["no-pointer-yet"]);
         }
 
-        if (nowMs - s.RequestedAtMs > _cfg.MaxSnapshotAgeMs)
+        if (nowMs - s.RequestedAtMs > Config.MaxSnapshotAgeMs)
         {
             return new InterpretResult(events, ["stale-snapshot-discarded"]);
         }
 
-        if (Distance(p.X, p.Y, s.QueryX, s.QueryY) > _cfg.SupersededDistancePx)
+        if (Distance(p.X, p.Y, s.QueryX, s.QueryY) > Config.SupersededDistancePx)
         {
             return new InterpretResult(events, ["superseded-snapshot-discarded"]);
         }
 
         if (s.Error is not null)
         {
-            if (_current?.Bounds is { } cb && !cb.Contains(p.X, p.Y, _cfg.GeometryHysteresisPx))
+            if (_current?.Bounds is { } cb && !cb.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
             {
                 events.Add(Make(SemanticEventKind.LeaveControl, p, _current, 0.6, ["lookup-error", s.Error]));
                 ResetElement();
@@ -238,7 +367,7 @@ public sealed class SemanticInterpreter
             return new InterpretResult(events, notes);
         }
 
-        var interactive = IsInteractive(s);
+        var interactive = IsTarget(s, notes);
         var moved = _movedSinceSnapshot || !_hadSnapshot;
         _movedSinceSnapshot = false;
         _hadSnapshot = true;
@@ -254,7 +383,7 @@ public sealed class SemanticInterpreter
         }
 
         // Jitter guard: a different element reported for a point that is only just outside the current one.
-        if (_current?.Bounds is { } held && held.Contains(s.QueryX, s.QueryY, _cfg.GeometryHysteresisPx) && !held.Contains(s.QueryX, s.QueryY))
+        if (_current?.Bounds is { } held && held.Contains(s.QueryX, s.QueryY, Config.GeometryHysteresisPx) && !held.Contains(s.QueryX, s.QueryY))
         {
             notes.Add("hysteresis-hold");
             return new InterpretResult(events, notes);
@@ -264,15 +393,23 @@ public sealed class SemanticInterpreter
         if (!moved)
         {
             _current = interactive ? s : null;
+            _pending = null;
             InitRange(s);
             notes.Add("stationary-ui-change-silent");
             return new InterpretResult(events, notes);
         }
 
         var previous = _current;
-        if (previous is not null && IsInteractive(previous))
+        _pending = null;
+        if (previous is not null)
         {
             events.Add(Make(SemanticEventKind.LeaveControl, p, previous, 0.9, ["identity-changed"]));
+            if (previous.ParentBounds is { } pb && previous.GroupKey is not null && s.GroupKey != previous.GroupKey &&
+                ExitsAlongLongAxis(pb, s.QueryX, s.QueryY) && _speed <= EffectiveLandingSpeed * 1.5)
+            {
+                _transition++;
+                events.Add(Make(SemanticEventKind.GroupEdge, p, previous, 0.8, ["left-strip-end", $"group:{previous.ParentControlType}"]));
+            }
         }
 
         if (!interactive)
@@ -284,7 +421,25 @@ public sealed class SemanticInterpreter
 
         _current = s;
         InitRange(s);
-        var evidence = new List<string> { $"uia:{s.ControlType}" };
+        var arrival = new Arrival(s, p.TimestampMs);
+        if (_speed <= EffectiveLandingSpeed)
+        {
+            Arrive(arrival, p, p.TimestampMs, _speed, "landed:slow-entry", events);
+        }
+        else
+        {
+            _pending = arrival;
+            notes.Add("arrival-pending");
+        }
+
+        return new InterpretResult(events, notes);
+    }
+
+    private void Arrive(Arrival a, PointerObservation p, double at, double speed, string how, List<SemanticEvent> events)
+    {
+        _pending = null;
+        var s = a.Element;
+        var evidence = new List<string> { $"uia:{s.ControlType}", how };
         var confidence = 0.6;
         if (s.Bounds is { } b && b.Contains(s.QueryX, s.QueryY))
         {
@@ -299,14 +454,19 @@ public sealed class SemanticInterpreter
         }
 
         _transition++;
-        var newGroup = s.GroupKey;
-        if (newGroup is not null && previous?.GroupKey is { } oldGroup && oldGroup != newGroup)
+        var when = p with { TimestampMs = at };
+        if (s.GroupKey is { } g)
         {
-            events.Add(Make(SemanticEventKind.CrossGroupBoundary, p, s, Math.Min(1, confidence), [.. evidence, $"group:{s.ParentControlType}"]));
+            var known = _lastGroup is { } lg && lg.Key == g && at - lg.At <= Config.GroupMemoryMs;
+            if (!known)
+            {
+                events.Add(Make(SemanticEventKind.CrossGroupBoundary, when, s, Math.Min(1, confidence), [.. evidence, $"group:{s.ParentControlType}"], speed));
+            }
+
+            _lastGroup = (g, at);
         }
 
-        events.Add(Make(SemanticEventKind.EnterControl, p, s, Math.Min(1, confidence), evidence));
-        return new InterpretResult(events, notes);
+        events.Add(Make(SemanticEventKind.EnterControl, when, s, Math.Min(1, confidence), evidence, speed));
     }
 
     private void RangeTransitions(PointerObservation p, ElementSnapshot s, RangeInfo r, List<SemanticEvent> events)
@@ -362,23 +522,64 @@ public sealed class SemanticInterpreter
             return 0;
         }
 
-        var tick = r.LargeChange > 0 && r.LargeChange < span ? r.LargeChange : span / _cfg.RangeTicksWhenNoLargeChange;
+        var tick = r.LargeChange > 0 && r.LargeChange < span ? r.LargeChange : span / Config.RangeTicksWhenNoLargeChange;
         return (int)Math.Floor((r.Value - r.Minimum) / tick + 1e-9);
     }
 
-    private static bool IsInteractive(ElementSnapshot s) =>
-        SemanticVocabulary.InteractiveTypes.Contains(s.ControlType) && s.IsControlElement && !s.IsOffscreen;
+    /// <summary>Is this something you can *do*, worth a tick? Records why not in <paramref name="notes"/>.</summary>
+    private bool IsTarget(ElementSnapshot s, List<string> notes)
+    {
+        if (!SemanticVocabulary.InteractiveTypes.Contains(s.ControlType) || !s.IsControlElement || s.IsOffscreen)
+        {
+            return false;
+        }
+
+        if (s.LogicalMinSide is { } side && side < Config.MinTargetPx)
+        {
+            notes.Add("skip:too-small");
+            return false;
+        }
+
+        if (Config.SkipInlineLinks && s.ControlType == "Hyperlink" && s.ParentControlType is { } pt && SemanticVocabulary.TextContainers.Contains(pt))
+        {
+            notes.Add("skip:inline-link");
+            return false;
+        }
+
+        if (Config.SkipSelectedChoices && s.IsSelected == true && SemanticVocabulary.DetentTypes.Contains(s.ControlType))
+        {
+            notes.Add("skip:already-selected");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool ExitsAlongLongAxis(RectD strip, double x, double y)
+    {
+        if (strip.Contains(x, y))
+        {
+            return false;
+        }
+
+        var inRows = y >= strip.Y && y < strip.Y + strip.Height;
+        var inCols = x >= strip.X && x < strip.X + strip.Width;
+        return strip.Width >= strip.Height ? inRows && !inCols : inCols && !inRows;
+    }
 
     private void ResetElement()
     {
         _current = null;
+        _pending = null;
         _lastTick = null;
         _atMin = _atMax = false;
     }
 
-    private SemanticEvent Make(SemanticEventKind kind, PointerObservation p, ElementSnapshot? s, double confidence, IReadOnlyList<string> evidence) =>
+    private SemanticEvent Make(SemanticEventKind kind, PointerObservation p, ElementSnapshot? s, double confidence, IReadOnlyList<string> evidence, double? speed = null) =>
         new(kind, _transition, p.TimestampMs, p.TimestampMs, s?.ProcessId ?? p.ForegroundPid, s?.ControlType ?? "None",
-            s?.ElementKey, s?.GroupKey, confidence, evidence, p.PrimaryDown, _speed, s);
+            s?.ElementKey, s?.GroupKey, confidence, evidence, p.PrimaryDown, speed ?? _speed, s);
 
     private static double Distance(double x1, double y1, double x2, double y2) => Math.Sqrt(Math.Pow(x1 - x2, 2) + Math.Pow(y1 - y2, 2));
+
+    private sealed record Arrival(ElementSnapshot Element, double Since);
 }

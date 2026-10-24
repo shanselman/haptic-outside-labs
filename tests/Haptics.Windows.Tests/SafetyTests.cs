@@ -26,10 +26,13 @@ public class SafetyTests
     [Fact]
     public void ScannerActuallyDetectsForbiddenImports()
     {
-        // Negative control: this test assembly deliberately declares a forbidden P/Invoke below.
+        // Negative control: this test assembly deliberately declares a forbidden P/Invoke and member use below.
         var v = ForbiddenApiScanner.Scan(typeof(SafetyTests).Assembly.Location);
         Assert.Contains(v, x => x.Name == "SendInput");
+        Assert.Contains(v, x => x.Name == "System.Windows.Forms.Cursor.set_Position");
     }
+
+    private static void NeverCalledForbiddenMemberControl() => System.Windows.Forms.Cursor.Position = default;
 
     [Fact]
     public void SourceNeverUsesCaptureOrNoLegacyOrUiAccess()

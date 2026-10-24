@@ -20,14 +20,14 @@ public enum AppPolicy
 [JsonConverter(typeof(JsonStringEnumConverter<EffectProfile>))]
 public enum EffectProfile
 {
-    /// <summary>Structural boundaries and slider detents only.</summary>
+    /// <summary>Structure only: group entries, tab/radio detents, strip edges, slider detents. No per-button ticks.</summary>
     Quiet,
 
-    /// <summary>Quiet + a light hover when entering an enabled interactive control (rate-limited).</summary>
-    Balanced,
+    /// <summary>The default: Quiet + a tick when you *land* on something you can do (not while flying past).</summary>
+    Focused,
 
-    /// <summary>Balanced with looser rate limits. Expect more density and possible native duplicates.</summary>
-    Experimental,
+    /// <summary>Every crossing ticks (no landing filter), looser limits. Dense; useful for demos and tuning.</summary>
+    Everything,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<IntentKind>))]
@@ -65,11 +65,48 @@ public sealed class NativeSuppression
     public bool OnlyWhenPrimaryDown { get; init; } = true;
 }
 
-/// <summary>Editable prototype defaults (SPEC §8.3). These are starting values to test, not proven UX values.</summary>
+/// <summary>Per-app tuning. Starting points, meant to be edited.</summary>
+public sealed class AppProfile
+{
+    public double IntensityMultiplier { get; set; } = 1.0;
+
+    /// <summary>Scales only "land" ticks, so structure (groups, detents) stands out in dense apps.</summary>
+    public double LandIntensityMultiplier { get; set; } = 1.0;
+
+    public int? DensityLandsPer2s { get; set; }
+
+    public static Dictionary<string, AppProfile> Defaults()
+    {
+        var d = new Dictionary<string, AppProfile>(StringComparer.OrdinalIgnoreCase);
+        foreach (var browser in new[] { "msedge", "chrome", "firefox", "brave", "opera" })
+        {
+            d[browser] = new AppProfile { DensityLandsPer2s = 6 }; // Web pages are dense with controls.
+        }
+
+        foreach (var chat in new[] { "ms-teams", "Teams", "slack", "Discord" })
+        {
+            d[chat] = new AppProfile { DensityLandsPer2s = 6 };
+        }
+
+        foreach (var dev in new[] { "Code", "devenv", "rider64" })
+        {
+            d[dev] = new AppProfile { DensityLandsPer2s = 6 };
+        }
+
+        foreach (var office in new[] { "WINWORD", "EXCEL", "POWERPNT", "OUTLOOK", "olk", "ONENOTE" })
+        {
+            d[office] = new AppProfile { LandIntensityMultiplier = 0.8 }; // Ribbon group entries stand out.
+        }
+
+        return d;
+    }
+}
+
+/// <summary>Editable defaults (SPEC §8.3). Starting values to tune by feel, not proven UX values.</summary>
 public sealed class PolicyConfig
 {
     public HapticsMode Mode { get; set; } = HapticsMode.ObserveOnly;
-    public EffectProfile Profile { get; set; } = EffectProfile.Balanced;
+    public EffectProfile Profile { get; set; } = EffectProfile.Focused;
     public double IntensityScale { get; set; } = 0.25;
     public int GlobalMaxPulsesPerSecond { get; set; } = 4;
     public int MaxPulsesPerMinute { get; set; } = 120;
@@ -95,27 +132,74 @@ public sealed class PolicyConfig
         new NativeSuppression { Id = "windows-snap-titlebar-drag", ControlType = "TitleBar", OnlyWhenPrimaryDown = true },
     };
 
+    public Dictionary<string, AppProfile> AppProfiles { get; set; } = AppProfile.Defaults();
+
+    /// <summary>Copied into the interpreter: arrivals fire only when the pointer slows/stops. 0 = every crossing.</summary>
+    public double LandingSpeedPxPerSec { get; set; } = 1200;
+
     public bool HoverEnabled => Profile != EffectProfile.Quiet;
+    public bool DetentsEnabled { get; set; } = true;
     public bool GroupBoundaryEnabled { get; set; } = true;
+    public bool EdgeBumpsEnabled { get; set; } = true;
     public bool RangeStepsEnabled { get; set; } = true;
     public bool RangeLimitsEnabled { get; set; } = true;
+    public bool CooperativeEnabled { get; set; } = true;
+
+    /// <summary>Per app: more than this many "land" ticks in 2 s → land ticks pause (structure still ticks). 0 = off.</summary>
+    public int DensityLandsPer2s { get; set; } = 10;
+
+    public double DensityBackoffMs { get; set; } = 4000;
+
+    /// <summary>A target this tall (logical px), or at least this big on both sides, lands with a firmer Click.</summary>
+    public double LargeTargetLogicalHeight { get; set; } = 56;
+
+    public double LargeTargetLogicalSide { get; set; } = 48;
+
+    public double LandIntensity { get; set; } = 0.85;
+    public double LargeIntensity { get; set; } = 1.0;
+    public double DetentIntensity { get; set; } = 1.1;
+    public double GroupIntensity { get; set; } = 1.2;
+    public double EdgeIntensity { get; set; } = 0.9;
 
     public PolicyConfig Clone() => (PolicyConfig)MemberwiseClone();
+
+    /// <summary>
+    /// The policy used by the tray and the Showcase: every app, the chosen style, loose global limits, and a 150 ms
+    /// freshness window (real apps' UIA is slower than the lab fixture). Password fields and exclusions stay silent.
+    /// </summary>
+    public static PolicyConfig Sample(EffectProfile style, double intensity)
+    {
+        var p = new PolicyConfig { Mode = HapticsMode.On, IntensityScale = intensity, AppPolicy = AppPolicy.AllExceptExclusions };
+        p.ApplyProfile(style);
+        p.GlobalMaxPulsesPerSecond = 12;
+        p.MaxPulsesPerMinute = 600;
+        p.MinimumGlobalSpacingMs = 40;
+        p.SameElementReentryCooldownMs = 200;
+        p.SemanticIntentExpiryMs = 150;
+        p.HoverMaxPointerSpeedPxPerSec = 1_000_000;
+        return p;
+    }
 
     public void ApplyProfile(EffectProfile profile)
     {
         Profile = profile;
         switch (profile)
         {
-            case EffectProfile.Experimental:
-                GlobalMaxPulsesPerSecond = 8;
-                MinimumGlobalSpacingMs = 60;
-                SameElementReentryCooldownMs = 250;
+            case EffectProfile.Everything:
+                GlobalMaxPulsesPerSecond = 12;
+                MinimumGlobalSpacingMs = 40;
+                SameElementReentryCooldownMs = 200;
+                HoverMaxPointerSpeedPxPerSec = 1_000_000;
+                LandingSpeedPxPerSec = 0;
+                DensityLandsPer2s = 0;
                 break;
             default:
                 GlobalMaxPulsesPerSecond = 4;
                 MinimumGlobalSpacingMs = 120;
                 SameElementReentryCooldownMs = 500;
+                HoverMaxPointerSpeedPxPerSec = 4000;
+                LandingSpeedPxPerSec = 1200;
+                DensityLandsPer2s = 10;
                 break;
         }
     }
@@ -141,7 +225,7 @@ public sealed record PolicyDecision(
     double DecidedAtMs);
 
 /// <summary>
-/// The single global arbitration point (SPEC §8.2). Every source (generic rules, future adapters) must pass
+/// The single global arbitration point (SPEC §8.2). Every source (generic rules, cooperating apps) must pass
 /// through here; nothing reaches an actuator otherwise. Not thread-safe: callers serialize.
 /// </summary>
 public sealed class HapticPolicy
@@ -149,6 +233,8 @@ public sealed class HapticPolicy
     private readonly Func<int, string?> _processName;
     private readonly Dictionary<string, double> _lastByElement = new();
     private readonly Queue<double> _recent = new();
+    private readonly Dictionary<int, Queue<double>> _landsByPid = new();
+    private readonly Dictionary<int, double> _backoffUntil = new();
     private double _lastEmitMs = double.NegativeInfinity;
     private long _lastTransitionEmitted = -1;
     private long _intentSeq;
@@ -182,15 +268,14 @@ public sealed class HapticPolicy
             return Suppress("no-consent");
         }
 
-        var rule = RuleFor(e.Kind);
-        if (rule is null)
+        if (RuleFor(e) is not { } rule)
         {
             return Suppress("no-haptic-for-event");
         }
 
-        if (!RuleEnabled(rule.Value.Rule))
+        if (!RuleEnabled(rule.Name))
         {
-            return Suppress($"rule-disabled:{rule.Value.Rule}");
+            return Suppress($"rule-disabled:{rule.Name}");
         }
 
         var name = _processName(e.ProcessId);
@@ -205,6 +290,7 @@ public sealed class HapticPolicy
             return Suppress("app-not-allowlisted");
         }
 
+        var app = name is not null && Config.AppProfiles.TryGetValue(name, out var ap) ? ap : null;
         if (e.Element is { IsPassword: true })
         {
             return Suppress("protected-context");
@@ -235,19 +321,22 @@ public sealed class HapticPolicy
             return Suppress("stale-intent");
         }
 
-        foreach (var ns in Config.NativeSuppressions)
+        if (e.Kind != SemanticEventKind.Cooperative)
         {
-            var procMatch = ns.ProcessName is null || string.Equals(ns.ProcessName, name, StringComparison.OrdinalIgnoreCase);
-            var typeMatch = ns.ControlType is null || string.Equals(ns.ControlType, e.ControlType, StringComparison.Ordinal) ||
-                            string.Equals(ns.ControlType, e.Element?.ParentControlType, StringComparison.Ordinal);
-            var buttonMatch = !ns.OnlyWhenPrimaryDown || e.PrimaryDown;
-            if (procMatch && typeMatch && buttonMatch && (ns.ProcessName is not null || ns.ControlType is not null))
+            foreach (var ns in Config.NativeSuppressions)
             {
-                return Suppress($"native-suppression:{ns.Id}");
+                var procMatch = ns.ProcessName is null || string.Equals(ns.ProcessName, name, StringComparison.OrdinalIgnoreCase);
+                var typeMatch = ns.ControlType is null || string.Equals(ns.ControlType, e.ControlType, StringComparison.Ordinal) ||
+                                string.Equals(ns.ControlType, e.Element?.ParentControlType, StringComparison.Ordinal);
+                var buttonMatch = !ns.OnlyWhenPrimaryDown || e.PrimaryDown;
+                if (procMatch && typeMatch && buttonMatch && (ns.ProcessName is not null || ns.ControlType is not null))
+                {
+                    return Suppress($"native-suppression:{ns.Id}");
+                }
             }
         }
 
-        if (rule.Value.Kind == IntentKind.Hover && e.PointerSpeedPxPerSec > Config.HoverMaxPointerSpeedPxPerSec)
+        if (rule.IsLand && e.PointerSpeedPxPerSec > Config.HoverMaxPointerSpeedPxPerSec)
         {
             return Suppress("fast-flick");
         }
@@ -257,10 +346,16 @@ public sealed class HapticPolicy
             return Suppress("coalesced-with-group-boundary");
         }
 
-        if (e.ElementKey is not null && rule.Value.Kind == IntentKind.Hover &&
+        if (e.ElementKey is not null && rule.IsLand &&
             _lastByElement.TryGetValue(e.ElementKey, out var lastEl) && nowMs - lastEl < Config.SameElementReentryCooldownMs)
         {
             return Suppress("reentry-cooldown");
+        }
+
+        var densityLimit = app?.DensityLandsPer2s ?? Config.DensityLandsPer2s;
+        if (rule.IsLand && densityLimit > 0 && _backoffUntil.TryGetValue(e.ProcessId, out var until) && nowMs < until)
+        {
+            return Suppress("density-backoff");
         }
 
         if (nowMs - _lastEmitMs < Config.MinimumGlobalSpacingMs)
@@ -283,14 +378,15 @@ public sealed class HapticPolicy
             return Suppress("rate-limit:per-minute");
         }
 
+        var multiplier = rule.Multiplier * (app?.IntensityMultiplier ?? 1.0) * (rule.IsLand ? app?.LandIntensityMultiplier ?? 1.0 : 1.0);
         var intent = new HapticIntent(
             $"i{++_intentSeq}",
-            rule.Value.Kind,
-            rule.Value.Kind.ToString(),
-            Math.Clamp(Config.IntensityScale * rule.Value.IntensityMultiplier, 0, 1),
+            rule.Kind,
+            rule.Kind.ToString(),
+            Math.Clamp(Config.IntensityScale * multiplier, 0, 1),
             e.PointerTimestampMs + Config.SemanticIntentExpiryMs,
             e.Confidence,
-            rule.Value.Rule,
+            rule.Name,
             e.ProcessId,
             e.PointerTimestampMs,
             e.ElementKey);
@@ -301,6 +397,26 @@ public sealed class HapticPolicy
         if (e.ElementKey is not null)
         {
             _lastByElement[e.ElementKey] = nowMs;
+        }
+
+        if (rule.IsLand && densityLimit > 0)
+        {
+            if (!_landsByPid.TryGetValue(e.ProcessId, out var lands))
+            {
+                _landsByPid[e.ProcessId] = lands = new Queue<double>();
+            }
+
+            lands.Enqueue(nowMs);
+            while (lands.Count > 0 && nowMs - lands.Peek() > 2000)
+            {
+                lands.Dequeue();
+            }
+
+            if (lands.Count >= densityLimit)
+            {
+                _backoffUntil[e.ProcessId] = nowMs + Config.DensityBackoffMs;
+                lands.Clear();
+            }
         }
 
         if (Config.Mode == HapticsMode.ObserveOnly)
@@ -318,19 +434,48 @@ public sealed class HapticPolicy
 
     private bool RuleEnabled(string rule) => rule switch
     {
-        "hover-enter-control" => Config.HoverEnabled,
-        "group-boundary" => Config.GroupBoundaryEnabled,
+        "land" or "land-large" => Config.HoverEnabled,
+        "detent" => Config.DetentsEnabled,
+        "group-entry" => Config.GroupBoundaryEnabled,
+        "strip-edge" => Config.EdgeBumpsEnabled,
         "range-step" => Config.RangeStepsEnabled,
         "range-limit" => Config.RangeLimitsEnabled,
+        "cooperative" => Config.CooperativeEnabled,
         _ => false,
     };
 
-    private static (string Rule, IntentKind Kind, double IntensityMultiplier)? RuleFor(SemanticEventKind kind) => kind switch
+    /// <summary>The haptic vocabulary: Land (Hover/Click), Detent (Step), Edge (Collide). One meaning per sensation.</summary>
+    private Rule? RuleFor(SemanticEvent e)
     {
-        SemanticEventKind.EnterControl => ("hover-enter-control", IntentKind.Hover, 1.0),
-        SemanticEventKind.CrossGroupBoundary => ("group-boundary", IntentKind.Step, 1.2),
-        SemanticEventKind.RangeStep => ("range-step", IntentKind.Step, 1.2),
-        SemanticEventKind.RangeLimit => ("range-limit", IntentKind.Collide, 1.6),
-        _ => null,
-    };
+        switch (e.Kind)
+        {
+            case SemanticEventKind.EnterControl:
+                if (SemanticVocabulary.DetentTypes.Contains(e.ControlType))
+                {
+                    return new Rule("detent", IntentKind.Step, Config.DetentIntensity, false);
+                }
+
+                return IsLarge(e.Element)
+                    ? new Rule("land-large", IntentKind.Click, Config.LargeIntensity, true)
+                    : new Rule("land", IntentKind.Hover, Config.LandIntensity, true);
+            case SemanticEventKind.CrossGroupBoundary:
+                return new Rule("group-entry", IntentKind.Step, Config.GroupIntensity, false);
+            case SemanticEventKind.GroupEdge:
+                return new Rule("strip-edge", IntentKind.Collide, Config.EdgeIntensity, false);
+            case SemanticEventKind.RangeStep:
+                return new Rule("range-step", IntentKind.Step, 1.2, false);
+            case SemanticEventKind.RangeLimit:
+                return new Rule("range-limit", IntentKind.Collide, 1.6, false);
+            case SemanticEventKind.Cooperative when Enum.TryParse<IntentKind>(e.RequestedWaveform, true, out var kind):
+                return new Rule("cooperative", kind, 1.0, false);
+            default:
+                return null;
+        }
+    }
+
+    private bool IsLarge(ElementSnapshot? s) =>
+        s is { LogicalHeight: { } h, LogicalWidth: { } w } &&
+        (h >= Config.LargeTargetLogicalHeight || (h >= Config.LargeTargetLogicalSide && w >= Config.LargeTargetLogicalSide));
+
+    private readonly record struct Rule(string Name, IntentKind Kind, double Multiplier, bool IsLand);
 }

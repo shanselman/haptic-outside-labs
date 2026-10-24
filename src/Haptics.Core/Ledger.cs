@@ -73,7 +73,8 @@ public static class ExperimentCatalog
         new("EXP-081", "Privacy/security static scan", "auto", [], ["H8"], true, false,
             "Scans production assemblies' P/Invoke imports and type references for forbidden input/automation APIs."),
         new("EXP-082", "Fault tolerance / power events", "physical", ["EXP-010", "EXP-030"], ["H5"], false, true, "Not implemented yet."),
-        new("EXP-090", "Human usefulness A/B", "physical", ["EXP-070"], ["H8"], false, true, "Requires a positive output gate first."),
+        new("EXP-090", "Human usefulness A/B (blind style comparison)", "physical", ["EXP-020"], ["H8"], true, true,
+            "Showcase → Compare styles: Quiet / Focused / Everything in random 60 s blocks, rated helpful/annoying."),
     ];
 
     public static ExperimentInfo? Find(string id) =>
