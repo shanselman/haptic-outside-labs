@@ -19,6 +19,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _foreground = new() { Interval = 1000 };
     private ObservationPipeline? _pipeline;
     private CapturedController? _controller;
+    private IReadOnlyDictionary<long, CapturedController> _controllers = new Dictionary<long, CapturedController>();
     private string? _lastApp;
 
     public TrayContext()
@@ -44,17 +45,29 @@ internal sealed class TrayContext : ApplicationContext
 
     private void TryPrime()
     {
-        var c = HapticsApi.TryCaptureCurrentController(HapticDeviceType.Mouse);
-        if (c is not null)
+        // Any haptic device that just moved over our own UI (mouse, touchpad, pen) — whatever the user wiggled.
+        var c = HapticsApi.TryCaptureCurrentController();
+        if (c is null)
         {
-            _controller = c;
-            if (_pipeline is not null)
-            {
-                _pipeline.Controller = c;
-            }
-
-            UpdateIcon();
+            return;
         }
+
+        _controller = c;
+        var handle = _pipeline?.LastDeviceHandle ?? 0;
+        if (_controllers.TryGetValue(handle, out var known) && known.IdHash == c.IdHash)
+        {
+            return; // Same device, already primed: nothing to do (this runs on every mouse move over our UI).
+        }
+
+        // Associate it with the raw device that is moving right now, so each device buzzes itself.
+        _controllers = new Dictionary<long, CapturedController>(_controllers) { [handle] = c };
+        if (_pipeline is not null)
+        {
+            _pipeline.Controller = c;
+            _pipeline.Controllers = _controllers;
+        }
+
+        UpdateIcon();
     }
 
     private void Apply()
@@ -77,16 +90,20 @@ internal sealed class TrayContext : ApplicationContext
             _pipeline.Policy.ConsentGiven = true; // Launching the sample is the opt-in.
             _pipeline.Policy.OutputRouteVerified = true;
             _pipeline.Controller = _controller;
+            _pipeline.Controllers = _controllers;
         }
 
         UpdateIcon();
     }
 
+    private string Devices() =>
+        string.Join(" + ", _controllers.Values.Select(c => c.DeviceType.ToString()).Append(_controller?.DeviceType.ToString() ?? "").Where(s => s.Length > 0).Distinct());
+
     private void UpdateIcon()
     {
         _icon.Text = !_settings.Enabled ? "Haptics Everywhere: Off"
             : _controller is null ? "Haptics Everywhere: On (needs prime)"
-            : "Haptics Everywhere: On";
+            : $"Haptics Everywhere: On ({Devices()})";
         var old = _icon.Icon;
         _icon.Icon = MakeIcon(!_settings.Enabled ? Color.Gray : _controller is null ? Color.FromArgb(200, 120, 0) : Color.FromArgb(16, 124, 16));
         old?.Dispose();
@@ -170,23 +187,28 @@ internal sealed class TrayContext : ApplicationContext
             TextAlign = ContentAlignment.MiddleCenter,
             ForeColor = Color.White,
             Font = new Font("Segoe UI", 12f),
-            Text = "Wiggle your haptic mouse over this box.",
+            Text = "Wiggle your haptic mouse or touchpad over this box.",
         };
         f.Controls.Add(l);
+        System.Windows.Forms.Timer? closeTimer = null;
         void OnMove(object? s, MouseEventArgs e)
         {
             TryPrime();
-            if (_controller is not null)
+            if (_controller is null)
             {
-                l.Text = "Got it — haptics are on.";
-                l.MouseMove -= OnMove;
-                var t = new System.Windows.Forms.Timer { Interval = 700 };
-                t.Tick += (_, _) =>
+                return;
+            }
+
+            l.Text = $"Got it: {Devices()}.\nWiggle another haptic device here to add it.";
+            if (closeTimer is null)
+            {
+                closeTimer = new System.Windows.Forms.Timer { Interval = 4000 };
+                closeTimer.Tick += (_, _) =>
                 {
-                    t.Dispose();
+                    closeTimer.Dispose();
                     f.Close();
                 };
-                t.Start();
+                closeTimer.Start();
             }
         }
 

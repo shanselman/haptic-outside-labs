@@ -144,7 +144,7 @@ so unzip and run `haptics-tray.exe`. To build the zips yourself, run `.\scripts\
 
 It's a deliberately simple, aggressive sample:
 
-- It starts **On** in every app. A small box asks you to wiggle the haptic mouse over it once: that's the "prime" that
+- It starts **On** in every app. A small box asks you to wiggle a haptic mouse *or touchpad* over it once (wiggle both to prime both; each device then buzzes itself): that's the "prime" that
   captures the mouse's `SimpleHapticsController` (route R3a, the one EXP-020 proved). Moving the mouse over the tray
   menu re-primes it silently. The icon is green when primed, orange when it needs a prime, and gray when Off.
 - Menu: **On**, **Intensity** (Low/Medium/Strong/Max), **Exclude '<current app>'**, **Status…**, **Quit**.

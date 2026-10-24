@@ -74,6 +74,20 @@ public sealed class ObservationPipeline : IDisposable
     /// <summary>For R3a/R3b: a controller captured on one of our own input threads.</summary>
     public CapturedController? Controller { get; set; }
 
+    /// <summary>
+    /// Optional per-raw-device controllers (e.g. mouse and touchpad both primed). Output goes to the controller of the
+    /// device that produced the latest input, falling back to <see cref="Controller"/>. Replace the whole map to update.
+    /// </summary>
+    public IReadOnlyDictionary<long, CapturedController>? Controllers { get; set; }
+
+    /// <summary>Raw device handle of the most recent mouse input (0 = no handle, e.g. some precision touchpads).</summary>
+    public long LastDeviceHandle => Interlocked.Read(ref _lastDevice);
+
+    private long _lastDevice;
+
+    private CapturedController? ControllerForLatestInput() =>
+        Controllers is { } map && map.TryGetValue(LastDeviceHandle, out var c) ? c : Controller;
+
     public bool Running => _thread is not null;
 
     public uint RawThreadId => _thread?.ThreadId ?? 0;
@@ -142,6 +156,7 @@ public sealed class ObservationPipeline : IDisposable
 
         var (x, y) = DesktopContext.CursorPosition();
         var fg = DesktopContext.Foreground().Pid;
+        Interlocked.Exchange(ref _lastDevice, raw.DeviceHandle);
         var obs = new PointerObservation(raw.TimestampMs, x, y, raw.Origin, _primaryDown, fg, raw.DeviceHandle);
         bool moved;
         lock (_lock)
@@ -244,8 +259,8 @@ public sealed class ObservationPipeline : IDisposable
         HapticAttempt? a = Route switch
         {
             OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(Route, intent.Waveform, intent.Intensity, intent.PointerTimestampMs),
-            OutputRoutes.CachedController => HapticsApi.SendViaController(Route, Controller, intent.Waveform, intent.Intensity, intent.PointerTimestampMs),
-            OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(Route, Controller, intent.Waveform, intent.Intensity, intent.PointerTimestampMs),
+            OutputRoutes.CachedController => HapticsApi.SendViaController(Route, ControllerForLatestInput(), intent.Waveform, intent.Intensity, intent.PointerTimestampMs),
+            OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(Route, ControllerForLatestInput(), intent.Waveform, intent.Intensity, intent.PointerTimestampMs),
             _ => null,
         };
 
