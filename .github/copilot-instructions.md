@@ -32,6 +32,9 @@ src\Haptics.Lab\bin\Debug\net10.0-windows10.0.26100.0\haptics-lab.exe run-all   
 Windows projects target `net10.0-windows10.0.26100.0` with `WindowsSdkPackageVersion=10.0.28000.87`
 (the .NET 10 SDK does not know the 28000 TFM yet; ADR 0005).
 
+Releases: pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which tests, publishes, signs (Azure Trusted
+Signing) and attaches win-arm64/win-x64 zips to a GitHub release. See [`docs/RELEASING.md`](../docs/RELEASING.md).
+
 ## Adding an experiment
 
 1. Add it to `ExperimentCatalog` (`src/Haptics.Core/Ledger.cs`) with hypotheses and dependencies.

@@ -1,0 +1,97 @@
+name: release
+
+# Signed release, adapted from shanselman/WindowsEdgeLight's build.yml (Azure Trusted Signing). See docs/RELEASING.md.
+# Push a tag like v0.3.0 to publish a GitHub release. Run it by hand to get signed zips as a build artifact only.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: "true"
+    steps:
+      - name: Check signing secrets
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          if (-not ($env:AZURE_TENANT_ID -and $env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET)) {
+            throw 'Set AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET first (docs/RELEASING.md).'
+          }
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Test
+        run: dotnet test HapticsEverywhere.slnx -c Release
+
+      - name: Version
+        shell: pwsh
+        run: |
+          $v = "$(([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version)-ci.$env:GITHUB_RUN_NUMBER"
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $v = $env:GITHUB_REF_NAME.TrimStart('v') }
+          "VERSION=$v" >> $env:GITHUB_ENV
+
+      - name: Publish win-arm64 and win-x64
+        shell: pwsh
+        run: ./scripts/publish.ps1 -Version $env:VERSION -NoZip
+
+      - name: Sign executables with Trusted Signing
+        uses: azure/trusted-signing-action@v1
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://wus2.codesigning.azure.net/
+          signing-account-name: hanselman
+          certificate-profile-name: WindowsEdgeLight
+          files-folder: ${{ github.workspace }}\publish
+          files-folder-filter: exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          foreach ($rid in 'win-arm64', 'win-x64') {
+            Compress-Archive -Path "publish/stage-$rid/*" -DestinationPath "publish/HapticsEverywhere-$env:VERSION-$rid.zip"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HapticsEverywhere-${{ env.VERSION }}
+          path: publish/*.zip
+
+      - name: Create release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/*.zip
+          generate_release_notes: true
+          body: |
+            ## Haptics Everywhere ${{ env.VERSION }}
+
+            | Download | For |
+            |---|---|
+            | `HapticsEverywhere-${{ env.VERSION }}-win-arm64.zip` | Snapdragon / ARM64 PCs (most current Surfaces) |
+            | `HapticsEverywhere-${{ env.VERSION }}-win-x64.zip` | Intel / AMD PCs |
+
+            Signed and self-contained: unzip, run `haptics-tray.exe`, and wiggle your haptic mouse or touchpad over its
+            window once. Needs Windows 11 (build 26100+) and a haptic mouse or touchpad. Passive only: it never moves,
+            clicks or focuses anything, and nothing leaves your PC.
+
+            Tried it on a new device, or something felt wrong?
+            [Tell us](https://github.com/shanselman/haptic-outside-labs/issues/new?template=tester-report.yml).
