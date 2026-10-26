@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
     # Hosted runner: x64, no haptic hardware, no human. It can prove logic, safety scans, and process

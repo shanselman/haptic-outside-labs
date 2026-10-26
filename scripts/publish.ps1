@@ -1,15 +1,21 @@
 # Publishes the Haptics Everywhere sample as self-contained, single-file zips (no .NET install needed).
-#   .\scripts\publish.ps1              -> publish\HapticsEverywhere-<version>-win-arm64.zip and -win-x64.zip
+#   .\scripts\publish.ps1                          -> publish\HapticsEverywhere-<version>-win-arm64.zip and -win-x64.zip
+#   .\scripts\publish.ps1 -Version 0.3.0 -NoZip    -> publish\stage-<rid> only (the release workflow signs, then zips)
+param(
+    [string]$Version = ([xml](Get-Content (Join-Path (Split-Path -Parent $PSScriptRoot) 'Directory.Build.props'))).Project.PropertyGroup.Version,
+    [switch]$NoZip
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$version = '0.2.0'
+$version = $Version
 $out = Join-Path $root 'publish'
 Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue
 foreach ($rid in 'win-arm64', 'win-x64') {
     $stage = Join-Path $out "stage-$rid"
     foreach ($proj in 'src\Haptics.Tray\Haptics.Tray.csproj', 'src\Haptics.Lab\Haptics.Lab.csproj', 'samples\MinimalBackgroundHaptics\MinimalBackgroundHaptics.csproj') {
         dotnet publish (Join-Path $root $proj) -c Release -r $rid --self-contained true -o $stage --nologo -v quiet `
-            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none `
+            -p:Version=$version
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
     @"
@@ -35,6 +41,10 @@ Passive only: never moves, clicks, or focuses anything; no keyboard; nothing lea
 Source and evidence: https://github.com/shanselman/haptic-outside-labs
 "@ | Set-Content (Join-Path $stage 'README.txt')
     Get-ChildItem $stage -Filter *.pdb | Remove-Item
+    if ($NoZip) {
+        continue
+    }
+
     $zip = Join-Path $out "HapticsEverywhere-$version-$rid.zip"
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
     Write-Host "$zip  ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"

@@ -1,0 +1,45 @@
+name: Tester report
+description: Tell us how the Haptics Everywhere tray felt on your mouse or touchpad.
+title: "Tester report: "
+labels: [device]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! The app collects nothing, so this form is the only way we hear how it went.
+        Please don't paste personal information.
+  - type: input
+    id: device
+    attributes:
+      label: Haptic device
+      placeholder: Surface Arc Mouse, Surface Laptop 7 touchpad, ...
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: PC and Windows build
+      description: Run `winver` to see the build.
+      placeholder: Surface Pro 11, Windows 11 26200.1234
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Haptics Everywhere version
+      placeholder: "0.3.0"
+  - type: dropdown
+    id: felt
+    attributes:
+      label: Did you feel haptics?
+      options:
+        - Yes, consistently
+        - Sometimes
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What did you try, and what felt right or wrong?
+      placeholder: Hovering buttons in Settings felt good; slider steps in Paint were too strong; nothing in Teams...

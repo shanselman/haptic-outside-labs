@@ -146,6 +146,7 @@ docs/                   design notes, evidence ledger, hypotheses, research, pri
 - [`docs/RESEARCH.md`](docs/RESEARCH.md): verified API surface and observed platform behaviour
 - [`docs/TEST_MATRIX.md`](docs/TEST_MATRIX.md): what each test layer can and cannot prove
 - [`docs/TESTING_WITH_SURFACE_MOUSE.md`](docs/TESTING_WITH_SURFACE_MOUSE.md): operator runbook for the physical experiments
+- [`docs/RELEASING.md`](docs/RELEASING.md): signing secrets and cutting a signed release
 - [`docs/ADR/`](docs/ADR), [`docs/HYPOTHESES.yaml`](docs/HYPOTHESES.yaml), [`docs/SPEC.md`](docs/SPEC.md)
 
 ## What's next
