@@ -22,6 +22,11 @@ needed. Unzip it, then:
 | `haptics-tray.exe` | **The app.** Starts On. Wiggle your haptic mouse and/or touchpad over the little box once, then use Windows. Right-click the tray icon for Style, Intensity, Exclude app, Status, Off. |
 | `haptics-lab.exe` | **The Showcase.** Feel each sensation, try it on real controls, see *why* each tick happened (or didn't), and blind-compare the styles. Also holds the research lab. |
 
+In the Showcase, follow **Start here**: move each haptic device over the window, click **Feel it** next to Land,
+then explore the sample controls or another app while keeping the Showcase open. The status line tells you when
+a controller is captured. **Engine activity** explains decisions, not proof that a pulse was felt; Inspector shows
+output details. Without a haptic device, you can still explore the controls and Inspector.
+
 Requirements: Windows 11 with the haptics API (build 26100+, Universal API Contract 19; built and tested on 28000) and a
 haptic mouse or touchpad.
 
@@ -95,7 +100,7 @@ Press, Release (whatever your device supports).
 ```powershell
 git clone https://github.com/shanselman/haptic-outside-labs
 cd haptic-outside-labs
-dotnet test                      # 78 tests: vocabulary rules, golden traces, policy, safety scans, UIA worker
+dotnet test                      # 79 tests: vocabulary rules, golden traces, policy, safety scans, UIA worker
 .\scripts\run-tray.ps1           # the app
 .\scripts\run-lab.ps1            # the Showcase
 .\scripts\publish.ps1            # self-contained zips for win-arm64 and win-x64
