@@ -29,7 +29,9 @@ public sealed class ShowcaseForm : Form, IExperimentForm, IMessageFilter
     private readonly ControllerBank _bank = new();
     private readonly ConcurrentQueue<PipelineEvent> _events = new();
     private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 100 };
+    private readonly ToolTip _tips = new();
     private readonly Label _status = new() { AutoSize = true, Font = Ui.Body, Margin = new Padding(12, 10, 12, 4) };
+    private readonly Label _intensityValue = new() { Text = "80%", AutoSize = true, Margin = new Padding(0, 6, 8, 4) };
     private readonly ComboBox _style = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130 };
     private readonly TrackBar _intensity = new() { Minimum = 1, Maximum = 10, Value = 8, Width = 160, TickFrequency = 1 };
     private readonly CheckBox _boost = new() { Text = "Boost touchpad", Checked = true, AutoSize = true };
@@ -65,12 +67,20 @@ public sealed class ShowcaseForm : Form, IExperimentForm, IMessageFilter
         _uiTimer.Start();
         Application.AddMessageFilter(this);
         Shown += (_, _) => OnShownCore();
-        FormClosing += (_, _) =>
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
         {
             Application.RemoveMessageFilter(this);
+            _uiTimer.Dispose();
+            _tips.Dispose();
             _pipeline?.Dispose();
             _cooperation?.Dispose();
-        };
+        }
+
+        base.Dispose(disposing);
     }
 
     public string? ResultPath { get; private set; }
@@ -116,13 +126,20 @@ public sealed class ShowcaseForm : Form, IExperimentForm, IMessageFilter
         p.Controls.Add(new Label { Text = "Haptics Everywhere", Font = new Font("Segoe UI Semibold", 18f), AutoSize = true, Margin = new Padding(4, 2, 16, 2) });
         _style.Items.AddRange(["Quiet", "Focused", "Everything"]);
         _style.SelectedIndex = 1;
-        new ToolTip().SetToolTip(_style, "Quiet: structure only (groups, tabs, edges, sliders)\nFocused: plus a tick when you land on a control\nEverything: every crossing (dense)");
+        _tips.SetToolTip(_style, "Quiet: structure only (groups, tabs, edges, sliders)\nFocused: plus a tick when you land on a control\nEverything: every crossing (dense)");
+        _intensity.AccessibleName = "Haptic intensity";
+        _tips.SetToolTip(_intensity, "Start low and increase until the sensations are comfortable.");
+        _tips.SetToolTip(_boost, "Touchpads usually feel lighter than mice. Boost adds 30% for touchpads.");
         _style.SelectedIndexChanged += (_, _) => ApplySettings();
-        _intensity.ValueChanged += (_, _) => ApplySettings();
+        _intensity.ValueChanged += (_, _) =>
+        {
+            _intensityValue.Text = $"{_intensity.Value * 10}%";
+            ApplySettings();
+        };
         _boost.CheckedChanged += (_, _) => ApplySettings();
         _engineOn.CheckedChanged += (_, _) => SetEngine(_engineOn.Checked);
         _compare.Click += (_, _) => StartCompare();
-        p.Controls.AddRange([Ui.Text("Style:"), _style, Ui.Text("Intensity:"), _intensity, _boost, _engineOn, _compare]);
+        p.Controls.AddRange([Ui.Text("Style:"), _style, Ui.Text("Intensity:"), _intensity, _intensityValue, _boost, _engineOn, _compare]);
         p.SetFlowBreak(_compare, true);
         p.Controls.Add(_status);
         return p;
@@ -139,10 +156,45 @@ public sealed class ShowcaseForm : Form, IExperimentForm, IMessageFilter
         split.Controls.Add(DemoPanel(), 1, 0);
         var felt = new Panel { Dock = DockStyle.Fill, Padding = new Padding(6) };
         felt.Controls.Add(_felt);
-        felt.Controls.Add(new Label { Dock = DockStyle.Top, Height = 30, Text = "What you just felt", Font = new Font("Segoe UI Semibold", 12f) });
+        felt.Controls.Add(new Label
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            MaximumSize = new Size(LogicalToDeviceUnits(300), 0),
+            Padding = new Padding(0, 0, 0, 8),
+            Text = "Live engine decisions, not proof of a felt pulse. Open Inspector for output details.",
+        });
+        felt.Controls.Add(new Label { Dock = DockStyle.Top, Height = 30, Text = "Engine activity", Font = new Font("Segoe UI Semibold", 12f) });
         split.Controls.Add(felt, 2, 0);
         page.Controls.Add(split);
+        page.Controls.Add(GettingStartedPanel());
         return page;
+    }
+
+    private Control GettingStartedPanel()
+    {
+        var flow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            Padding = new Padding(12, 8, 12, 10),
+            BackColor = Color.FromArgb(235, 243, 252),
+        };
+        flow.Controls.Add(new Label { Text = "Start here", Font = Ui.Big, AutoSize = true });
+        flow.Controls.Add(Ui.Text("1. Connect: move your haptic mouse or touchpad over this window. Each device needs its own movement."));
+        flow.Controls.Add(Ui.Text("2. Feel: click Feel it next to Land. If nothing plays, check device support and Windows haptic settings."));
+        flow.Controls.Add(Ui.Text("3. Explore: move slowly over the controls below, then try another app. Keep this window open; Engine on controls background feedback."));
+        flow.Controls.Add(Ui.Text("No haptic device? You can still explore the controls and Inspector. Nothing moves or clicks on your behalf."));
+        flow.SizeChanged += (_, _) =>
+        {
+            foreach (Control child in flow.Controls)
+            {
+                child.MaximumSize = new Size(Math.Max(1, flow.ClientSize.Width - flow.Padding.Horizontal - child.Margin.Horizontal), 0);
+            }
+        };
+        return flow;
     }
 
     private Control VocabularyPanel()
@@ -407,15 +459,16 @@ public sealed class ShowcaseForm : Form, IExperimentForm, IMessageFilter
         {
             if (!_status.Text.StartsWith("The tray", StringComparison.Ordinal))
             {
-                _status.Text = "Engine off.";
+                _status.Text = "Engine off. Turn on Engine on to explore feedback; Feel it still previews individual sensations.";
             }
 
+            _status.ForeColor = SystemColors.ControlText;
             return;
         }
 
         _status.Text = _bank.Any
-            ? $"Ready: {_bank.Describe()}. Hover anything here, or in any other app. Wiggle another haptic device over this window to add it."
-            : "Wiggle your haptic mouse or touchpad over this window to begin.";
+            ? $"Controller captured: {_bank.Describe()}. Try Feel it, then explore here or in another app. Only you can confirm what you feel."
+            : "Waiting for a device: move your haptic mouse or touchpad over this window. No background haptics until a controller is captured.";
         _status.ForeColor = _bank.Any ? Color.FromArgb(16, 110, 16) : Color.FromArgb(160, 90, 0);
     }
 
