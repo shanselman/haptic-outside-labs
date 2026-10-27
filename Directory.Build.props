@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Company>Haptics Outside Labs</Company>
     <Product>Haptics Everywhere</Product>
     <!--
