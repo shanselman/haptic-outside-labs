@@ -1,6 +1,7 @@
 # Copilot instructions for this repository
 
 Source of truth: [`docs/SPEC.md`](../docs/SPEC.md). Design rationale: [`docs/DESIGN_NOTES.md`](../docs/DESIGN_NOTES.md).
+Session handoff and remaining review work: [`docs/HANDOFF.md`](../docs/HANDOFF.md).
 
 ## Invariants (never violate)
 
