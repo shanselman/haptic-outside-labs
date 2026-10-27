@@ -127,7 +127,14 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             return;
         }
 
-        Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+        try
+        {
+            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Cancelled at a SmartScreen or security prompt.
+        }
     }
 
     private void ShowSettings(bool startup)

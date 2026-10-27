@@ -28,6 +28,14 @@ internal static class Program
         wpf.Resources.MergedDictionaries.Add(new Wpf.Ui.Markup.ControlsDictionary());
         Wpf.Ui.Appearance.ApplicationThemeManager.ApplySystemTheme();
 
+        // WPF handler exceptions would otherwise escape the WinForms loop and kill the tray; WinForms menu items
+        // already get a Continue/Quit dialog.
+        wpf.DispatcherUnhandledException += (_, e) =>
+        {
+            MessageBox.Show(e.Exception.Message, "Haptics Everywhere");
+            e.Handled = true;
+        };
+
         Application.Run(new TrayContext());
         return 0;
     }

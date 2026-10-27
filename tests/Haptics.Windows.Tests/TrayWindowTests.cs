@@ -39,14 +39,11 @@ public class TrayWindowTests
         w.IntensitySlider.Value = 0.3;
         Assert.Equal(0.3, host.Settings.IntensityScale);
         Assert.Equal("Low", w.IntensityLabel.Text);
-        w.BoostSwitch.IsChecked = false;
-        Click(w.BoostSwitch);
+        Toggle(w.BoostSwitch);
         Assert.Equal(1.0, host.Settings.TouchpadBoost);
-        w.CooperationSwitch.IsChecked = false;
-        Click(w.CooperationSwitch);
+        Toggle(w.CooperationSwitch);
         Assert.False(host.Settings.CooperationEnabled);
-        w.StartupSwitch.IsChecked = true;
-        Click(w.StartupSwitch);
+        Toggle(w.StartupSwitch);
         Assert.True(host.StartWithWindows);
         Assert.Equal(4, host.Applied);
 
@@ -62,8 +59,7 @@ public class TrayWindowTests
 
         Click(w.ShowcaseButton);
         Assert.Equal(1, host.Showcases);
-        w.EnabledSwitch.IsChecked = false;
-        Click(w.EnabledSwitch);
+        Toggle(w.EnabledSwitch);
         Assert.False(host.Settings.Enabled);
         Assert.Equal("Off", w.StatusText.Text);
     });
@@ -111,6 +107,10 @@ public class TrayWindowTests
         Assert.NotEmpty(names);
         Assert.All(names, n => Assert.True((int)Enum.Parse<Wpf.Ui.Controls.SymbolRegular>(n) <= 0xFFFF, n));
     }
+
+    // What Narrator does: the UIA toggle flips IsChecked without raising Click.
+    private static void Toggle(System.Windows.Controls.Primitives.ToggleButton toggle) =>
+        ((System.Windows.Automation.Provider.IToggleProvider)new System.Windows.Automation.Peers.ToggleButtonAutomationPeer(toggle)).Toggle();
 
     private static void Click(System.Windows.UIElement element) =>
         element.RaiseEvent(new System.Windows.RoutedEventArgs(WpfButtonBase.ClickEvent));

@@ -33,10 +33,11 @@ internal partial class SettingsWindow
         var version = typeof(SettingsWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
         VersionText.Text = $"Version {version.Split('+')[0]}";
 
-        EnabledSwitch.Click += (_, _) => Change(s => s.Enabled = EnabledSwitch.IsChecked == true);
-        BoostSwitch.Click += (_, _) => Change(s => s.TouchpadBoost = BoostSwitch.IsChecked == true ? 1.3 : 1.0);
-        CooperationSwitch.Click += (_, _) => Change(s => s.CooperationEnabled = CooperationSwitch.IsChecked == true);
-        StartupSwitch.Click += (_, _) => SetStartup(StartupSwitch.IsChecked == true);
+        // Checked/Unchecked rather than Click: Narrator's toggle action flips IsChecked without raising Click.
+        OnToggled(EnabledSwitch, on => Change(s => s.Enabled = on));
+        OnToggled(BoostSwitch, on => Change(s => s.TouchpadBoost = on ? 1.3 : 1.0));
+        OnToggled(CooperationSwitch, on => Change(s => s.CooperationEnabled = on));
+        OnToggled(StartupSwitch, SetStartup);
         StyleBox.SelectionChanged += (_, _) =>
         {
             if (!_syncing && StyleBox.SelectedIndex >= 0)
@@ -121,6 +122,19 @@ internal partial class SettingsWindow
     {
         edit(_host.Settings);
         _host.Apply();
+    }
+
+    private void OnToggled(System.Windows.Controls.Primitives.ToggleButton toggle, Action<bool> apply)
+    {
+        System.Windows.RoutedEventHandler handler = (_, _) =>
+        {
+            if (!_syncing)
+            {
+                apply(toggle.IsChecked == true);
+            }
+        };
+        toggle.Checked += handler;
+        toggle.Unchecked += handler;
     }
 
     private void SetStartup(bool on)
