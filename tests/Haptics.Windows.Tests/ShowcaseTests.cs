@@ -38,7 +38,7 @@ public class ShowcaseTests
         }
     }
 
-    private static void OnStaThread(Action action)
+    internal static void OnStaThread(Action action)
     {
         Exception? failure = null;
         var thread = new Thread(() =>
@@ -54,7 +54,7 @@ public class ShowcaseTests
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(15)), "Showcase construction timed out.");
+        Assert.True(thread.Join(TimeSpan.FromSeconds(15)), "STA test timed out.");
         if (failure is not null)
         {
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();

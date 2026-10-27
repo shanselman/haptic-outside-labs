@@ -22,11 +22,13 @@ foreach ($rid in 'win-arm64', 'win-x64') {
 Haptics Everywhere $version ($rid) — sample
 
 haptics-tray.exe   (the app)
-  Run it, wiggle your haptic mouse and/or touchpad over the little box once, then use Windows.
+  Run it. Its settings window opens: wiggle your haptic mouse and/or touchpad over it once (it closes itself),
+  then use Windows.
   Land on something you can DO (button, menu command, checkbox, link, taskbar button) -> light tick.
   Big ribbon buttons -> firmer click. New toolbar / ribbon group / tab or option -> detent.
   Sliding off the end of a toolbar or tab strip -> edge bump. Flying past things stays quiet.
-  Right-click the tray icon for Style (Quiet / Focused / Everything), Intensity, Exclude app, Status, Off, Quit.
+  Click the tray icon (it may be under the ^ overflow) for settings: Style (Quiet / Focused / Everything),
+  Intensity, excluded apps, start with Windows. Right-click it for the quick menu: On/Off, Exclude app, Quit.
 
 haptics-lab.exe    (the Showcase)
   Feel each sensation, try them on a demo surface, see why each tick happened (or didn't), and blind-compare
@@ -40,6 +42,7 @@ Requires Windows 11 with the haptics API (build 26100+; tested on 28000) and a h
 Passive only: never moves, clicks, or focuses anything; no keyboard; nothing leaves your PC.
 Source and evidence: https://github.com/shanselman/haptic-outside-labs
 "@ | Set-Content (Join-Path $stage 'README.txt')
+    Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.txt') $stage
     Get-ChildItem $stage -Filter *.pdb | Remove-Item
     if ($NoZip) {
         continue

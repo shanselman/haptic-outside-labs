@@ -18,6 +18,19 @@ public sealed class TraySettings
 
     public List<string> ExcludedProcesses { get; set; } = new();
 
+    internal static readonly EffectProfile[] Styles = [EffectProfile.Quiet, EffectProfile.Focused, EffectProfile.Everything];
+
+    internal static readonly (string Name, double Value)[] IntensityLevels = [("Low", 0.3), ("Medium", 0.55), ("Strong", 0.8), ("Max", 1.0)];
+
+    internal static string Describe(EffectProfile style) => style switch
+    {
+        EffectProfile.Quiet => "structure only (groups, tabs, edges, sliders)",
+        EffectProfile.Focused => "plus a tick when you land on a control",
+        _ => "every crossing (dense)",
+    };
+
+    internal static string IntensityName(double value) => IntensityLevels.MinBy(l => Math.Abs(l.Value - value)).Name;
+
     public static string PathOnDisk => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HapticsEverywhere", "tray.json");
 
     public static TraySettings Load()

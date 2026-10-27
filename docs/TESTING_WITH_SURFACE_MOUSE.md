@@ -86,9 +86,10 @@ felt nothing.
 .\scripts\run-tray.ps1
 ```
 
-It starts On. Wiggle the haptic mouse over the small box it shows (that primes the controller), then use any app.
-Right-click the icon for Intensity, *Exclude '<app>'*, *Status…*, or *On* to toggle off. Moving the mouse over the
-menu re-primes it.
+It starts On and opens its settings window. Wiggle the haptic mouse over the window (that primes the controller;
+the window closes itself a few seconds later), then use any app. Click the tray icon to reopen settings (Style,
+Intensity, excluded apps, start with Windows, Details); right-click it for the quick menu (*Exclude '<app>'*,
+*Settings…*, *On* to toggle off). Moving the mouse over the window or the menu re-primes it.
 
 ## 5. Record what happened
 
