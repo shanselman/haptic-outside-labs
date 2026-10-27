@@ -16,7 +16,7 @@ Source of truth: [`docs/SPEC.md`](../docs/SPEC.md). Design rationale: [`docs/DES
 - Every haptic intent goes through `HapticPolicy.Evaluate`. No new source may emit around it.
 - The tray is a deliberately simple sample (user decision, 2026-10-23): starts On with route R3a, auto-primes, all apps.
   It must still not reference `Haptics.Lab` or fixtures, stay passive, and keep password/exclusion silence.
-- The playground is the **Showcase** (`ShowcaseForm`, `haptics-lab` with no args); experiments live on its Lab tab and
+- The playground is the **Showcase** (`ShowcaseWindow`, `haptics-lab` with no args); experiments live on its Lab tab and
   are optional for users. Haptic meaning is fixed: Land=Hover, Land big=Click, Detent=Step, Edge=Collide;
   Align/Success/Error only from cooperating apps.
 - Never invent results. Update `docs/EVIDENCE_LEDGER.md` only with real runs (`haptics-lab evidence summarize <run>`).

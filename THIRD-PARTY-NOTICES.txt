@@ -2,7 +2,7 @@ Haptics Everywhere - third-party notices
 
 The Haptics Everywhere downloads include the following third-party software:
 
-1. WPF UI 4.3.0 (https://github.com/lepoco/wpfui), MIT License. Gives the tray's settings window its Windows 11 look.
+1. WPF UI 4.3.0 (https://github.com/lepoco/wpfui), MIT License. Gives the tray settings and Showcase their Windows 11 look.
    Its license and its own third-party notices are reproduced below.
 2. .NET runtime, Windows Forms and WPF (https://github.com/dotnet/runtime, https://github.com/dotnet/winforms,
    https://github.com/dotnet/wpf), MIT License, bundled by the self-contained build.

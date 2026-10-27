@@ -7,8 +7,8 @@ using System.Text.Json.Nodes;
 namespace Haptics.Windows;
 
 /// <summary>
-/// Haptic controllers captured per raw input device ("whatever haptic device is wiggled"). Capture only works on a
-/// thread whose own window just received input from that device; call <see cref="TryCapture"/> from such a window.
+/// Haptic controllers matched to raw input devices. Manual priming requires input to our own UI.
+/// Automatically discovered controllers are matched strictly; they never become the fallback for another device.
 /// </summary>
 public sealed class ControllerBank
 {
@@ -18,7 +18,18 @@ public sealed class ControllerBank
 
     public IReadOnlyDictionary<long, CapturedController> Map => _map;
 
-    public bool Any => Latest is not null;
+    public bool Any => Latest is not null || _map.Count > 0;
+
+    public void AddDiscovered(ControllerDiscoveryResult discovery)
+    {
+        var map = new Dictionary<long, CapturedController>(_map);
+        foreach (var (handle, controller) in discovery.Controllers)
+        {
+            map.TryAdd(handle, controller); // Don't overwrite a controller already primed by the user.
+        }
+
+        _map = map;
+    }
 
     /// <summary>Capture the device that just moved over our UI. Returns true if something new was added.</summary>
     public bool TryCapture(long deviceHandle)
@@ -29,10 +40,11 @@ public sealed class ControllerBank
             return false;
         }
 
+        var fallbackChanged = Latest?.IdHash != c.IdHash || Latest?.DeviceType != c.DeviceType;
         Latest = c;
-        if (_map.TryGetValue(deviceHandle, out var known) && known.IdHash == c.IdHash)
+        if (_map.TryGetValue(deviceHandle, out var known) && known.IdHash == c.IdHash && known.DeviceType == c.DeviceType)
         {
-            return false;
+            return fallbackChanged;
         }
 
         _map = new Dictionary<long, CapturedController>(_map) { [deviceHandle] = c };
@@ -40,7 +52,8 @@ public sealed class ControllerBank
     }
 
     public string Describe() =>
-        Latest is null ? "nothing yet" : string.Join(" + ", _map.Values.Append(Latest).Select(c => c.DeviceType.ToString()).Distinct());
+        !Any ? "nothing yet" : string.Join(" + ", _map.Values.Concat(Latest is { } latest ? [latest] : [])
+            .Select(c => c.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Generic ? "Haptic device" : c.DeviceType.ToString()).Distinct());
 
     public void ApplyTo(ObservationPipeline? pipeline)
     {

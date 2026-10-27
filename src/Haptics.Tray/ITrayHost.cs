@@ -14,6 +14,8 @@ internal interface ITrayHost
     /// <summary>Primed device types, e.g. "Mouse + Touchpad".</summary>
     string Devices { get; }
 
+    string DiscoveryStatus { get; }
+
     /// <summary>The app that was in front before ours (what "Exclude" would silence).</summary>
     string? LastApp { get; }
 

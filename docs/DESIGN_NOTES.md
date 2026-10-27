@@ -184,7 +184,20 @@ tabs, choices, a WPF slider that exposes RangeValue, and a row of things that sh
 *reason* behind every tick or skip. The experiments live on a Lab tab, and nobody needs to run them to use the app.
 EXP-090 (blind style comparison) is the first experiment about *taste* rather than capability.
 
+**The Showcase gets the tray's Fluent shell (2026-10).** `ShowcaseWindow` uses the same WPF-UI 4.3.0 theme,
+rounded cards, typography and shared icon as the tray; light/dark changes follow Windows. The demo now uses real
+WPF menus, toolbars, groups, tabs, options and a RangeValue slider, rather than painted stand-ins. The silent row
+retains disabled/tiny targets, a password control and a deliberately non-interactive painted surface. Inspector
+and Lab tables remain embedded WinForms surfaces, and experiment/fixture windows and CLI runners are unchanged.
+The WinForms message loop hosts the WPF shell, retaining real-pointer priming on the same UI thread and the
+existing per-device controller bank. No routing or policy changes were needed. A running tray still pauses the
+Showcase engine. During blind comparisons, settings, live decisions and Inspector are hidden; Stop and Engine
+off remain available. Closing the window stops timers and unfinished trials without inventing results.
+Expected filesystem and native startup failures are reported at the operation boundary, not swallowed by a
+blanket dispatcher handler. Failed engine startup deauthorizes and disposes its uncommitted pipeline, turns the
+switch off, and reports the error. Comparison artifacts are created before changing the style or hiding controls.
+Unexpected programming errors still propagate.
+
 **Things we chose not to do:** per-pixel "texture" while moving (the device can't localize it, and it reads as
 vibration); Grow on drag (we can't tell a drag from a selection reliably without reading content); scroll texture
 (Windows already does wheel detents on the mouse).
-

@@ -9,5 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Haptics.Core\Haptics.Core.csproj" />
+    <InternalsVisibleTo Include="Haptics.Windows.Tests" />
   </ItemGroup>
 </Project>

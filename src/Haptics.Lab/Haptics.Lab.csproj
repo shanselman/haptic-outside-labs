@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Haptics Everywhere Showcase + Lab: showcase UI, inspector, CLI, experiment runners, fixtures.
-       WPF is enabled only to host a real WPF Slider (it exposes RangeValue, so slider detents can be felt). -->
+  <!-- Fluent Showcase shell with real WPF demo controls; the Lab and experiment fixtures remain WinForms. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
@@ -9,10 +8,14 @@
     <AssemblyName>haptics-lab</AssemblyName>
     <RootNamespace>Haptics.Lab</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Haptics.Core\Haptics.Core.csproj" />
     <ProjectReference Include="..\Haptics.Windows\Haptics.Windows.csproj" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+    <EmbeddedResource Include="..\..\assets\app.ico" LogicalName="app.ico" />
+    <InternalsVisibleTo Include="Haptics.Windows.Tests" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="System.IO" />

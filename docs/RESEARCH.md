@@ -69,6 +69,53 @@ SimpleHapticsController: Id, SupportedFeedback, IsIntensitySupported, IsPlayCoun
 - `[UNVERIFIED]` Whether the haptic touchpad behaves the same way (rerun EXP-010/020 with `--target touchpad`).
 - `[UNVERIFIED]` Whether `GetForCurrentThread()` routing differs on other OS builds or architectures.
 
+## Experimental acquisition without window input (2026-10-27)
+
+`[OBSERVED]` On the development machine, `Windows.Internal.Devices.Input.HapticDevice` is registered to
+`InputHost.dll` 10.0.28000.3231. Its factory's `IInspectable.GetIids` advertises
+`IHapticDeviceStatics` IID `0e929425-9118-5f26-a73d-73b879f9de3d`.
+The matching [Microsoft public symbols](https://msdl.microsoft.com/download/symbols/InputHost.pdb/27E0B45D1E00EDD7C6881F3E7B7B43BA1/InputHost.pdb)
+identify the interface's sole additional method:
+`GetControllerForPointerDevice(unsigned __int64, ISimpleHapticsController**)`, after the six IInspectable slots.
+
+A fresh native ARM64 console process, with no window, input registration, or synthetic input, obtained a
+controller for one of two enumerated raw mouse handles. Its eight discrete waveforms and intensity support
+were readable. The public thread manager had no controller before or after lookup. Null-handle, touchscreen,
+pen, and the other raw mouse handle controls returned S_OK with null controllers. No waveforms were sent.
+This is an ad-hoc acquisition observation, **not PHYSICAL evidence**, and does not update the evidence ledger.
+The separate documented `VibrationDevice.FindAllAsync` probe failed with `0x80070005` (access denied); that
+does not prove no devices exist, and no permissions or privileges were changed to get past it.
+
+An additional production-code probe acquired one controller on a background thread, left the public thread
+manager empty, and verified that the bank's manual fallback stayed null. The self-contained ARM64 tray then
+started with no priming window. In an **unblinded operator smoke check**, the operator reported ticks from the
+Surface Mouse over other apps without opening Settings. This is encouraging usability feedback, not a blinded
+PHYSICAL result; the touchpad and other Windows builds have not been established by this check.
+
+A subsequent off/on check stopped every tray and Showcase process: the operator reported the added ticks
+disappeared. A new self-contained tray process started with no priming window, and the operator reported the
+ticks returned over the same controls without opening Settings. This remains an unblinded functional check;
+cold-boot and reconnect behavior are not established.
+
+The tray's `ControllerDiscovery` now tries this interface on a background task, gated by the public API's
+presence and the exact private IID. Missing classes/interfaces and platform errors produce a diagnostic in
+Settings > Details, not success. The normal priming window remains available and opens after a failed lookup
+or a two-second wait; a late successful lookup can still be used. Nothing alters pointer input or other apps.
+The existing policy and output path are unchanged.
+
+The private interface returns no device type. Automatic controllers therefore have type Generic and are
+mapped only to the exact nonzero raw device handle, never the fallback for unknown/handleless input.
+Normal priming can later establish the device type and replace the entry. Lookup is currently a startup
+operation: touchpads, devices connected afterward, and reconnect/lifetime failures retain manual priming.
+Availability across builds/architectures, reconnect behavior, and physical feedback through this acquisition
+path still need operator validation. Do not treat this private interface as a supported Windows contract.
+
+**Prototype decision:** keep lookup enabled on `main`, retain manual priming, and collect the missing
+lifecycle/architecture evidence rather than add another opt-in switch. No release accompanies this decision.
+[AUTOMATIC_PRIMING_TEST_PLAN.md](AUTOMATIC_PRIMING_TEST_PLAN.md) records the pending cold-boot, sleep/resume,
+reconnect, x64 and unhealthy-platform checks, plus TODOs for recovering when an acquired controller later fails.
+That runtime recovery is not implemented by the startup timeout.
+
 ## Design-relevant documentation facts (from SPEC §2.1, rechecked)
 
 - `[DOC]` Raw Input with `RIDEV_INPUTSINK` delivers background input to a registered HWND; only one window per

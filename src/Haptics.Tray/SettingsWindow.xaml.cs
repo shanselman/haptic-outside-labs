@@ -186,7 +186,7 @@ internal partial class SettingsWindow
             ? ("SystemFillColorNeutralBrush", "Off", "Turn Haptics on to feel the controls under your pointer.")
             : !_host.Primed
                 ? ("SystemFillColorCautionBrush", "Waiting for your haptic device",
-                    "Move your haptic mouse or touchpad over this window once. Windows only lets the window under the pointer use its haptics.")
+                    "Move your haptic mouse or touchpad over this window once. This is the fallback when automatic device lookup isn't available.")
                 : ("SystemFillColorSuccessBrush", $"Ready: {_host.Devices}", _autoClose
                     ? "You're set. This window closes by itself; click the tray icon to come back."
                     : "Land on buttons, tabs and sliders in any app. To add another haptic device, move it over this window.");
@@ -204,11 +204,12 @@ internal partial class SettingsWindow
     {
         if (_host.Stats is not { } s)
         {
-            return "The engine is stopped while Haptics is off.";
+            return $"The engine is stopped while Haptics is off.\n{_host.DiscoveryStatus}";
         }
 
         return string.Join('\n',
             $"Devices        {_host.Devices}",
+            $"Startup        {_host.DiscoveryStatus}",
             $"Landing speed  {_host.LandingSpeed:0} px/s (learns from your clicks)",
             $"Raw events     {s.RawEvents} (background {s.BackgroundRawEvents})",
             $"UIA lookup     p50 {s.LookupP50:0.0} ms · p95 {s.LookupP95:0.0} ms",

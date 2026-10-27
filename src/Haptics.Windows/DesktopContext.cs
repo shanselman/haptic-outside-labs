@@ -73,9 +73,25 @@ public static partial class RawInputDevices
 {
     public static IReadOnlyList<RawDeviceInfo> EnumerateMice()
     {
+        try
+        {
+            return EnumerateMouseHandles().Select(Describe).ToList();
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return [];
+        }
+    }
+
+    internal static IReadOnlyList<long> EnumerateMouseHandles()
+    {
         uint count = 0;
         var size = (uint)Marshal.SizeOf<Native.RAWINPUTDEVICELIST>();
-        Native.GetRawInputDeviceList(null, ref count, size);
+        if (Native.GetRawInputDeviceList(null, ref count, size) == uint.MaxValue)
+        {
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+
         if (count == 0)
         {
             return [];
@@ -85,10 +101,10 @@ public static partial class RawInputDevices
         var got = Native.GetRawInputDeviceList(list, ref count, size);
         if (got == uint.MaxValue)
         {
-            return [];
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         }
 
-        return list.Take((int)got).Where(d => d.dwType == Native.RIM_TYPEMOUSE).Select(d => Describe((long)d.hDevice)).ToList();
+        return list.Take((int)got).Where(d => d.dwType == Native.RIM_TYPEMOUSE).Select(d => d.hDevice.ToInt64()).ToArray();
     }
 
     public static RawDeviceInfo Describe(long handle)

@@ -5,10 +5,10 @@ using Haptics.Windows;
 namespace Haptics.Tray;
 
 /// <summary>
-/// The sample tray: starts On, drives haptic devices from the background through controllers captured from our own UI
-/// (route R3a, physically confirmed by EXP-020). Priming is automatic: the settings window opens at startup, and any
-/// haptic device moving over it or the tray menu is primed again silently. Passive only — never moves, clicks, or
-/// focuses anything in other apps.
+/// The sample tray: starts On, drives haptic devices from the background through acquired controllers
+/// (route R3a). Startup tries optional device discovery; unavailable devices retain real-input priming in our
+/// settings window/menu. Discovery is not physical evidence. Passive only — never moves, clicks, or focuses
+/// anything in other apps.
 /// </summary>
 internal sealed class TrayContext : ApplicationContext, ITrayHost
 {
@@ -19,6 +19,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     private ObservationPipeline? _pipeline;
     private CooperativeServer? _cooperation;
     private SettingsWindow? _window;
+    private StartupPriming? _startupPriming;
 
     public TrayContext()
     {
@@ -32,12 +33,17 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
         };
         _menu.Opening += (_, _) => BuildMenu();
         _menu.MouseMove += (_, _) => TryPrime(); // Any haptic device moving over our own menu refreshes its controller.
-        _foreground.Tick += (_, _) => TrackForeground();
+        _foreground.Tick += (_, _) =>
+        {
+            TrackForeground();
+            PollStartupPriming();
+        };
         _foreground.Start();
         Apply();
         if (Settings.Enabled)
         {
-            ShowSettings(startup: true);
+            DiscoveryStatus = "Looking for haptic devices without window input...";
+            _startupPriming = new StartupPriming(Task.Run(ControllerDiscovery.Discover), Environment.TickCount64);
         }
     }
 
@@ -48,6 +54,8 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     public bool Primed => _bank.Any;
 
     public string Devices => _bank.Describe();
+
+    public string DiscoveryStatus { get; private set; } = "Automatic lookup has not run.";
 
     public string? LastApp { get; private set; }
 
@@ -68,6 +76,34 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             _bank.ApplyTo(_pipeline);
             UpdateIcon();
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void PollStartupPriming()
+    {
+        if (_startupPriming is null)
+        {
+            return;
+        }
+
+        var (result, showFallback) = _startupPriming.Poll(Environment.TickCount64, Settings.Enabled, _bank.Any);
+        if (result is not null)
+        {
+            _bank.AddDiscovered(result);
+            _bank.ApplyTo(_pipeline);
+            DiscoveryStatus = result.Diagnostic;
+            UpdateIcon();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        if (showFallback)
+        {
+            if (result is null)
+            {
+                DiscoveryStatus = "Automatic lookup is taking too long; move over this window to prime instead.";
+            }
+
+            ShowSettings(startup: true);
         }
     }
 

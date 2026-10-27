@@ -86,10 +86,18 @@ felt nothing.
 .\scripts\run-tray.ps1
 ```
 
-It starts On and opens its settings window. Wiggle the haptic mouse over the window (that primes the controller;
-the window closes itself a few seconds later), then use any app. Click the tray icon to reopen settings (Style,
+It starts On and tries experimental automatic controller lookup without taking window input. If a controller is
+found, the tray stays in the background: try moving over controls in another app without first opening Settings.
+If lookup fails or is slow, Settings opens instead. Move the haptic device over that window to prime it
+(the window closes itself a few seconds later), then use any app. Click the tray icon to reopen settings (Style,
 Intensity, excluded apps, start with Windows, Details); right-click it for the quick menu (*Exclude '<app>'*,
 *Settings…*, *On* to toggle off). Moving the mouse over the window or the menu re-primes it.
+
+In Details, **Startup** reports whether automatic lookup found a controller or why manual priming was needed.
+An automatically found controller can be labeled **Haptic device** until normal priming identifies its type.
+Try both the mouse and touchpad: unknown/handleless input must not buzz the automatically found mouse.
+Newly connected devices may need manual priming. This acquisition path is undocumented and does not inherit
+the older foreground-capture route's physical evidence; record operator results honestly.
 
 ## 5. Record what happened
 

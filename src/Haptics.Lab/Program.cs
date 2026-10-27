@@ -48,7 +48,7 @@ internal static class Program
         if (args.Length == 0)
         {
             FreeConsole();
-            Application.Run(new ShowcaseForm());
+            RunShowcase();
             return 0;
         }
 
@@ -87,8 +87,29 @@ internal static class Program
 
     private static int RunDashboard()
     {
-        Application.Run(new ShowcaseForm());
+        RunShowcase();
         return 0;
+    }
+
+    private static string? RunShowcase(bool startCompare = false)
+    {
+        // Create the real application before WPF-UI accesses its resources. The WinForms loop also pumps WPF
+        // and keeps the existing Lab/fixture surfaces and physical-rating panels on their original UI thread.
+        var wpf = new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+        wpf.Resources.MergedDictionaries.Add(new Wpf.Ui.Markup.ThemesDictionary { Theme = Wpf.Ui.Appearance.ApplicationTheme.Light });
+        wpf.Resources.MergedDictionaries.Add(new Wpf.Ui.Markup.ControlsDictionary());
+        Wpf.Ui.Appearance.ApplicationThemeManager.ApplySystemTheme();
+        // Recoverable Showcase operations report errors after rolling back their own state. Do not blanket-handle
+        // DispatcherUnhandledException: an unexpected handler bug must not leave the engine running as if it succeeded.
+        using var context = new ApplicationContext();
+        using var window = new ShowcaseWindow(startCompare);
+        window.Closed += (_, _) => context.ExitThread();
+        System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(window);
+        Wpf.Ui.Appearance.SystemThemeWatcher.Watch(window);
+        window.Show();
+        Application.Run(context);
+        wpf.Shutdown();
+        return window.ResultPath;
     }
 
     private static int CoopSend(CliOptions opt)
@@ -144,7 +165,7 @@ internal static class Program
             "EXP-043" => Exp043UiaContainment.Run(outDir),
             "EXP-070" => Exp070Replay.Run(outDir, opt.Get("trace")),
             "EXP-081" => Exp081StaticScan.Run(outDir),
-            "EXP-090" => RunForm(() => new ShowcaseForm(startCompare: true)),
+            "EXP-090" => RunShowcase(startCompare: true),
             _ => null,
         };
 

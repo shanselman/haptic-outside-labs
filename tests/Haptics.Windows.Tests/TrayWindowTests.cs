@@ -19,6 +19,8 @@ public class TrayWindowTests
         Assert.Equal(host.Settings.IntensityScale, w.IntensitySlider.Value);
         Assert.Equal(TraySettings.IntensityName(host.Settings.IntensityScale), w.IntensityLabel.Text);
         Assert.Equal("Waiting for your haptic device", w.StatusText.Text);
+        Assert.Contains("fallback", w.StatusHint.Text);
+        Assert.Contains(host.DiscoveryStatus, w.StatsText.Text);
         Assert.Equal(256, ((System.Windows.Media.Imaging.BitmapSource)w.HeroImage.Source).PixelWidth);
         Assert.Equal(0, host.Applied); // Opening the window changes nothing.
 
@@ -124,6 +126,8 @@ public class TrayWindowTests
         public bool Primed { get; set; }
 
         public string Devices => "Mouse";
+
+        public string DiscoveryStatus => "Automatic lookup unavailable; manual priming remains available.";
 
         public string? LastApp => "notepad";
 

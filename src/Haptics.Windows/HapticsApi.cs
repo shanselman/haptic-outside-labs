@@ -15,7 +15,7 @@ public sealed record ThreadManagerState(
     string? ControllerIdHash,
     string? Error);
 
-/// <summary>A controller legitimately obtained from CurrentHapticsController on one of our own input threads.</summary>
+/// <summary>A controller obtained through our own input thread or optional device discovery.</summary>
 public sealed class CapturedController
 {
     internal CapturedController(SimpleHapticsController controller, HapticDeviceType type, uint thread, double at)

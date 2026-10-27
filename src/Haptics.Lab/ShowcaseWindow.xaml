@@ -1,0 +1,257 @@
+<ui:FluentWindow
+    x:Class="Haptics.Lab.ShowcaseWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:forms="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
+    Title="Haptics Everywhere — Showcase"
+    Width="1440" Height="940" MinWidth="900" MinHeight="660"
+    ExtendsContentIntoTitleBar="True"
+    WindowBackdropType="Mica" WindowCornerPreference="Round"
+    WindowStartupLocation="CenterScreen"
+    RenderOptions.BitmapScalingMode="HighQuality">
+    <ui:FluentWindow.Resources>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="LineHeight" Value="18" />
+        </Style>
+        <Style x:Key="Section" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Margin" Value="0,20,0,8" />
+        </Style>
+    </ui:FluentWindow.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Title="Haptics Everywhere" CloseWindowByDoubleClickOnIcon="True">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon x:Name="TitleIcon" Width="16" Height="16" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <StackPanel Grid.Row="1" Margin="24,8,24,16">
+            <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <ui:TextBlock Text="Showcase" FontTypography="Title" />
+                    <TextBlock Margin="0,4,16,0" Style="{StaticResource Hint}"
+                               Text="A few sensations. A more meaningful Windows." />
+                </StackPanel>
+                <ui:Button x:Name="CompareButton" Grid.Column="1" VerticalAlignment="Center"
+                           Content="Compare styles" Icon="{ui:SymbolIcon ArrowSwap24}"
+                           ToolTip="A blinded, three-block comparison. Only you can judge what you feel." />
+            </Grid>
+            <Border Style="{StaticResource Card}" Padding="16,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Image x:Name="HeroImage" Width="48" Height="48" Margin="0,0,16,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,20,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="StatusDot" Width="8" Height="8" Margin="0,0,8,0"
+                                     Fill="{DynamicResource SystemFillColorCautionBrush}" />
+                            <ui:TextBlock x:Name="StatusText" FontTypography="BodyStrong" Text="Waiting for your haptic device" />
+                        </StackPanel>
+                        <TextBlock x:Name="StatusHint" Margin="0,4,0,0" Style="{StaticResource Hint}"
+                                   Text="Move each haptic mouse or touchpad over this window to connect it." />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                        <TextBlock Text="Showcase engine" Margin="0,0,0,6" Style="{StaticResource Hint}" />
+                        <ui:ToggleSwitch x:Name="EngineSwitch" IsChecked="True" AutomationProperties.Name="Showcase engine" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Grid x:Name="FeelSettings" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource Card}" Padding="12" Margin="0,0,8,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                            <TextBlock Text="Style" FontWeight="SemiBold" />
+                            <TextBlock x:Name="StyleHint" Style="{StaticResource Hint}" Text="Land on controls" />
+                        </StackPanel>
+                        <ComboBox x:Name="StyleBox" Grid.Column="1" Width="132" VerticalAlignment="Center"
+                                  AutomationProperties.Name="Haptic style" />
+                    </Grid>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource Card}" Padding="12" Margin="0,0,8,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,20,0" VerticalAlignment="Center">
+                            <TextBlock Text="Intensity" FontWeight="SemiBold" />
+                            <TextBlock x:Name="IntensityLabel" Style="{StaticResource Hint}" Text="80%" />
+                        </StackPanel>
+                        <Slider x:Name="IntensitySlider" Grid.Column="1" Minimum="1" Maximum="10" Value="8"
+                                TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" MinWidth="90"
+                                AutomationProperties.Name="Haptic intensity"
+                                ToolTip="Start low and increase until the sensations are comfortable." />
+                    </Grid>
+                </Border>
+                <Border Grid.Column="2" Style="{StaticResource Card}" Padding="12">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel Margin="0,0,16,0">
+                            <TextBlock Text="Boost touchpad" FontWeight="SemiBold" />
+                            <TextBlock Style="{StaticResource Hint}" Text="30% more intensity" />
+                        </StackPanel>
+                        <ui:ToggleSwitch x:Name="BoostSwitch" IsChecked="True" VerticalAlignment="Center"
+                                         AutomationProperties.Name="Boost touchpad" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </StackPanel>
+
+        <TabControl x:Name="Pages" Grid.Row="2" Margin="24,0,24,24">
+            <TabItem Header="Showcase">
+                <Grid Margin="0,12,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border Style="{StaticResource Card}" Padding="16,12" Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="CursorClick24" FontSize="24" Margin="0,0,16,0"
+                                           Foreground="{DynamicResource SystemAccentColorPrimaryBrush}" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Start here" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                <TextBlock Style="{StaticResource Hint}">
+                                    <Run FontWeight="SemiBold" Text="1. Connect: " /><Run Text="move each device over this window.  " />
+                                    <Run FontWeight="SemiBold" Text="2. Feel: " /><Run Text="try Land's Feel it button.  " />
+                                    <Run FontWeight="SemiBold" Text="3. Explore: " /><Run Text="move slowly over the controls, then try another app." />
+                                </TextBlock>
+                                <TextBlock Style="{StaticResource Hint}" Text="No haptic device? Explore anyway. Nothing moves or clicks on your behalf. Keep the engine running for background feedback." />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Grid x:Name="ExperienceGrid" Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition x:Name="ActivityColumn" Width="256" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition x:Name="ActivityRow" Height="0" />
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource Card}" Padding="0" Margin="0,0,12,0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Margin="16">
+                                    <ui:TextBlock Text="The vocabulary" FontTypography="Subtitle" />
+                                    <TextBlock Margin="0,4,0,12" Style="{StaticResource Hint}" Text="One meaning per sensation. Try each one." />
+                                    <StackPanel x:Name="VocabularyPanel" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+                        <Border Grid.Column="1" Style="{StaticResource Card}" Padding="0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Margin="20">
+                                    <ui:TextBlock Text="Try it for yourself" FontTypography="Subtitle" />
+                                    <TextBlock Margin="0,4,0,12" Style="{StaticResource Hint}" Text="Move slowly, then fast. Stop on a control. These are real controls, not a picture." />
+                                    <ContentControl x:Name="DemoContent" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+                        <Border x:Name="ActivityCard" Grid.Column="2" Style="{StaticResource Card}" Margin="12,0,0,0">
+                            <Expander x:Name="ActivityExpander" IsExpanded="True" HorizontalContentAlignment="Stretch"
+                                      VerticalAlignment="Top" Header="Engine activity" FontWeight="SemiBold">
+                            <Grid x:Name="ActivityBody" Margin="0,8,0,0" TextElement.FontWeight="Normal">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Margin="0,0,0,12" Style="{StaticResource Hint}"
+                                           Text="Live decisions, not proof of a felt pulse. Inspector has output details." />
+                                <TextBlock x:Name="ActivityEmpty" Grid.Row="1" Style="{StaticResource Hint}"
+                                           Text="Your next landing starts here. With the Showcase engine on, decisions appear as you explore." />
+                                <ItemsControl x:Name="ActivityList" Grid.Row="1" AutomationProperties.Name="Recent engine decisions">
+                                    <ItemsControl.Template>
+                                        <ControlTemplate TargetType="ItemsControl">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsPresenter /></ScrollViewer>
+                                        </ControlTemplate>
+                                    </ItemsControl.Template>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="0,10" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                                                <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                            </Expander>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+            <TabItem x:Name="InspectorTab" Header="Inspector">
+                <Grid Margin="0,12,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                        <StackPanel>
+                            <ui:TextBlock Text="Every decision, explained" FontTypography="Subtitle" />
+                            <TextBlock Margin="0,6,0,0" Style="{StaticResource Hint}"
+                                       Text="Passive mouse-only Raw Input + read-only UI Automation: type, bounds and state; never names or text. Nothing here is saved. Accepted API calls are not physical evidence." />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="1" Style="{StaticResource Card}">
+                        <forms:WindowsFormsHost x:Name="InspectorHost" />
+                    </Border>
+                </Grid>
+            </TabItem>
+            <TabItem x:Name="LabTab" Header="Lab">
+                <Grid Margin="0,12,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                        <StackPanel>
+                            <ui:TextBlock Text="The research behind the feeling" FontTypography="Subtitle" />
+                            <TextBlock Margin="0,6,0,0" Style="{StaticResource Hint}"
+                                       Text="Optional experiments, gates and evidence for this machine. You don't need to run anything here to use Haptics Everywhere. Trials and fixtures still open in their own windows." />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="1" Style="{StaticResource Card}">
+                        <forms:WindowsFormsHost x:Name="LabHost" />
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</ui:FluentWindow>

@@ -75,7 +75,7 @@ public sealed class ObservationPipeline : IDisposable
         set => _opt.Route = value;
     }
 
-    /// <summary>For R3a/R3b: a controller captured on one of our own input threads.</summary>
+    /// <summary>For R3a/R3b: the manually primed fallback. Automatic discoveries belong only in the device map.</summary>
     public CapturedController? Controller { get; set; }
 
     /// <summary>

@@ -1,5 +1,5 @@
-# Builds (Release) and starts the Haptics Everywhere tray sample. It starts On; wiggle the haptic mouse over the
-# settings window it shows once to prime it. Click the tray icon for settings; right-click it for the quick menu.
+# Builds (Release) and starts the tray. It tries automatic device lookup, with a Settings-window wiggle as fallback.
+# Click the tray icon for settings; right-click it for the quick menu.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 dotnet build "$root\src\Haptics.Tray\Haptics.Tray.csproj" -c Release --nologo -v quiet

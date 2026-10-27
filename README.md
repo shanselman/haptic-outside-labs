@@ -17,19 +17,31 @@ moved to a new group or choice; an edge tells you that you reached the end of a 
 
 ## Get it
 
+**Main-branch preview:** automatic priming and the Fluent Showcase described below currently require a
+[source build](#build-from-source). They are not in the existing v0.3.0 downloads; no new release is being cut.
+
 Download `HapticsEverywhere-<version>-win-arm64.zip` (Snapdragon Surfaces) or `-win-x64.zip` from
 [**Releases**](https://github.com/shanselman/haptic-outside-labs/releases). It's self-contained, so no .NET install is
 needed. Unzip it, then:
 
 | Run | What it is |
 |---|---|
-| `haptics-tray.exe` | **The app.** Starts On and opens its settings window: wiggle your haptic mouse and/or touchpad over it once (it closes itself), then use Windows. Click the tray icon for settings (Style, Intensity, excluded apps, start with Windows); right-click it for the quick menu. |
+| `haptics-tray.exe` | **The app.** Starts On and tries experimental automatic device lookup. If a controller is found, use Windows without a priming window. Otherwise Settings opens: move your haptic device over it once. Click the tray icon for settings (Style, Intensity, excluded apps, start with Windows); right-click it for the quick menu. |
 | `haptics-lab.exe` | **The Showcase.** Feel each sensation, try it on real controls, see *why* each tick happened (or didn't), and blind-compare the styles. Also holds the research lab. |
 
 In the Showcase, follow **Start here**: move each haptic device over the window, click **Feel it** next to Land,
-then explore the sample controls or another app while keeping the Showcase open. The status line tells you when
+then explore the sample controls or another app while keeping the Showcase open. The status card tells you when
 a controller is captured. **Engine activity** explains decisions, not proof that a pulse was felt; Inspector shows
 output details. Without a haptic device, you can still explore the controls and Inspector.
+
+The Showcase shares the tray's Windows 11 / Fluent design, follows the system's light or dark theme, and scales
+with your display. **Showcase**, **Inspector**, and the optional **Lab** are keyboard-accessible tabs. On narrower
+windows, expand **Engine activity** below the demos. If the tray is already running, the Showcase pauses its own
+engine to avoid duplicate feedback; quit the tray before enabling this engine or starting a blind comparison.
+
+<p align="center">
+  <img src="assets/showcase-window.png" width="900" alt="Light-theme Showcase UI preview: status and settings cards, the haptic vocabulary, real menu and ribbon controls, and engine activity">
+</p>
 
 Requirements: Windows 11 with the haptics API (build 26100+, Universal API Contract 19; built and tested on 28000) and a
 haptic mouse or touchpad.
@@ -63,7 +75,7 @@ Four sensations, one meaning each, so they become a language rather than a buzz:
 
 Intensity runs Low → Max. Touchpads get a boost, because they feel lighter than mice at the same strength.
 
-## How it works (and why the one-time "prime")
+## How it works (automatic startup, with priming as a fallback)
 
 ```mermaid
 flowchart LR
@@ -83,7 +95,21 @@ receiving background input never got a controller (0 of 288 samples). **What wor
 `SimpleHapticsController` once, while you wiggle it over our window, then drive it from the background (felt 6/6 vs
 0/6 silent controls).
 
-That's the "prime". The tray re-primes silently whenever you move over its settings window or menu.
+That's the supported acquisition path we call "prime". The tray also tries an **experimental, undocumented**
+device-lookup interface at startup. On the development machine it acquired a controller from a raw mouse device
+without any window input; this is an API observation, not a new physical-evidence claim. Lookup runs off the UI
+thread. If no controller is available, or it takes more than two seconds, the usual priming window appears.
+Automatically found controllers only receive feedback for their matching raw device. Unknown or handleless
+devices do not fall back to the automatically found mouse.
+
+Touchpads and newly connected devices may still need priming. The private interface does not return a device type,
+so an automatically found controller is labeled **Haptic device** until ordinary priming identifies Mouse or
+Touchpad (and enables the touchpad-specific boost). This is not a guaranteed Windows API; see
+[`docs/RESEARCH.md`](docs/RESEARCH.md#experimental-acquisition-without-window-input-2026-10-27).
+Automatic lookup stays enabled for this proof of concept. The
+[validation checklist and recovery TODOs](docs/AUTOMATIC_PRIMING_TEST_PLAN.md) track cold boots, sleep/resume,
+reconnects, x64, touchpads, and unhealthy platform states.
+The tray re-primes silently whenever you move over its settings window or menu.
 [`samples/MinimalBackgroundHaptics`](samples/MinimalBackgroundHaptics/Program.cs) shows the whole trick in ~150 lines.
 
 ## Cooperating apps
@@ -105,7 +131,7 @@ Press, Release (whatever your device supports).
 ```powershell
 git clone https://github.com/shanselman/haptic-outside-labs
 cd haptic-outside-labs
-dotnet test                      # 87 tests: vocabulary rules, golden traces, policy, safety scans, UIA worker, tray
+dotnet test                      # vocabulary rules, golden traces, policy, safety scans, UIA worker, tray, Showcase
 .\scripts\run-tray.ps1           # the app
 .\scripts\run-lab.ps1            # the Showcase
 .\scripts\publish.ps1            # self-contained zips for win-arm64 and win-x64
@@ -137,7 +163,7 @@ don't need it to use the app. Start with [`docs/EVIDENCE_LEDGER.md`](docs/EVIDEN
 src/Haptics.Core        vocabulary rules (interpreter + policy), evidence model, golden-trace replay, API scanner
 src/Haptics.Windows     raw input, guarded haptics routes, per-device controller bank, UIA worker, cooperative pipe
 src/Haptics.Tray        haptics-tray.exe — the app (tray icon + WPF-UI settings window)
-src/Haptics.Lab         haptics-lab.exe — Showcase (+ Inspector, Lab tab, CLI, experiments, fixtures)
+src/Haptics.Lab         haptics-lab.exe — WPF-UI Showcase + embedded Inspector/Lab, CLI, WinForms experiments/fixtures
 samples/                MinimalBackgroundHaptics — the core trick in ~150 lines
 assets/                 app icon (regenerate with scripts/make-icon.ps1), README screenshot
 tests/                  Core tests (vocabulary, policy, 13 golden traces) + Windows tests (safety scans, worker, tray)
@@ -151,6 +177,7 @@ docs/                   design notes, evidence ledger, hypotheses, research, pri
 - [`docs/PRIVACY_AND_THREAT_MODEL.md`](docs/PRIVACY_AND_THREAT_MODEL.md): what's observed, hard constraints, harms
 - [`docs/RESEARCH.md`](docs/RESEARCH.md): verified API surface and observed platform behaviour
 - [`docs/TEST_MATRIX.md`](docs/TEST_MATRIX.md): what each test layer can and cannot prove
+- [`docs/AUTOMATIC_PRIMING_TEST_PLAN.md`](docs/AUTOMATIC_PRIMING_TEST_PLAN.md): no-wiggle validation checklist and recovery TODOs
 - [`docs/TESTING_WITH_SURFACE_MOUSE.md`](docs/TESTING_WITH_SURFACE_MOUSE.md): operator runbook for the physical experiments
 - [`docs/RELEASING.md`](docs/RELEASING.md): signing secrets and cutting a signed release
 - [`docs/ADR/`](docs/ADR), [`docs/HYPOTHESES.yaml`](docs/HYPOTHESES.yaml), [`docs/SPEC.md`](docs/SPEC.md)

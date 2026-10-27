@@ -22,8 +22,9 @@ foreach ($rid in 'win-arm64', 'win-x64') {
 Haptics Everywhere $version ($rid) — sample
 
 haptics-tray.exe   (the app)
-  Run it. Its settings window opens: wiggle your haptic mouse and/or touchpad over it once (it closes itself),
-  then use Windows.
+  Run it. It tries experimental automatic device lookup and stays in the tray if a controller is found.
+  If Settings opens instead, move your haptic mouse or touchpad over it once to prime it, then use Windows.
+  Touchpads and newly connected devices may still need priming. Settings > Details explains the startup lookup.
   Land on something you can DO (button, menu command, checkbox, link, taskbar button) -> light tick.
   Big ribbon buttons -> firmer click. New toolbar / ribbon group / tab or option -> detent.
   Sliding off the end of a toolbar or tab strip -> edge bump. Flying past things stays quiet.
