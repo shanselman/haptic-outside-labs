@@ -17,7 +17,7 @@ public static class ControllerDiscovery
 {
     public static ControllerDiscoveryResult Discover()
     {
-        if (!HapticsApi.TypePresent)
+        if (!HapticsApi.ControllerTypePresent)
         {
             return new(new Dictionary<long, CapturedController>(), "Automatic lookup unavailable on this Windows build; move over Settings to prime.");
         }

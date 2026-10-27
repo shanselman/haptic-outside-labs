@@ -71,6 +71,7 @@ public sealed class CapturedController
 public static class HapticsApi
 {
     public const string ManagerType = "Windows.Devices.Haptics.InputHapticsManager";
+    public const string ControllerType = "Windows.Devices.Haptics.SimpleHapticsController";
 
     /// <summary>Discrete (non-continuous) waveforms the lab is willing to send.</summary>
     public static readonly IReadOnlyList<string> DiscreteWaveformNames =
@@ -91,6 +92,8 @@ public static class HapticsApi
     private static readonly Lazy<IReadOnlyDictionary<string, ushort>> s_waveforms = new(ResolveWaveforms);
 
     public static bool TypePresent => s_typePresent.Value;
+
+    internal static bool ControllerTypePresent => Safe(() => ApiInformation.IsTypePresent(ControllerType));
 
     public static IReadOnlyDictionary<string, ushort> Waveforms => s_waveforms.Value;
 
@@ -137,7 +140,7 @@ public static class HapticsApi
         var d = new Dictionary<string, object?>
         {
             ["typePresent.InputHapticsManager"] = TypePresent,
-            ["typePresent.SimpleHapticsController"] = Safe(() => ApiInformation.IsTypePresent("Windows.Devices.Haptics.SimpleHapticsController")),
+            ["typePresent.SimpleHapticsController"] = ControllerTypePresent,
             ["typePresent.KnownSimpleHapticsControllerWaveforms"] = Safe(() => ApiInformation.IsTypePresent("Windows.Devices.Haptics.KnownSimpleHapticsControllerWaveforms")),
             ["contract.UniversalApiContract.v19"] = Safe(() => ApiInformation.IsApiContractPresent("Windows.Foundation.UniversalApiContract", 19)),
         };
