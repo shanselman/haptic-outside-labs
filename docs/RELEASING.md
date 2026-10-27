@@ -26,9 +26,14 @@ az ad app credential reset --id <AZURE_CLIENT_ID> --append --display-name haptic
 
 ## Cut a release
 
-1. Set `<Version>` in `Directory.Build.props` (for example `0.3.0`) and merge it to `main`.
-2. Tag and push: `git tag v0.3.0` then `git push origin v0.3.0`.
-3. The workflow creates release `v0.3.0` with `HapticsEverywhere-0.3.0-win-arm64.zip` and `-win-x64.zip`.
+1. Set `<Version>` in `Directory.Build.props` (for example `0.4.0`) and land it on `main`.
+2. Tag and push: `git tag v0.4.0` then `git push origin v0.4.0`.
+3. The workflow creates release `v0.4.0` with `HapticsEverywhere-0.4.0-win-arm64.zip` and `-win-x64.zip`.
+4. Review the generated release notes against current behavior. In 0.4, automatic lookup can avoid the initial
+   wiggle; the workflow's older template still describes manual priming. Include the validation checklist and
+   keep unblinded operator checks distinct from formal physical evidence.
+5. Download both zips and check executable versions/signatures and the bundled `LICENSE` and
+   `THIRD-PARTY-NOTICES.txt`.
 
 Release binaries take their version from the tag; local builds use `Directory.Build.props`. To get signed zips as a
 build artifact without publishing a release, run `gh workflow run release.yml`. To check a signature, run

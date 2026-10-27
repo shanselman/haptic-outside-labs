@@ -1,8 +1,9 @@
 # Automatic priming: proof-of-concept checklist
 
 **Decision (2026-10-27):** keep automatic controller lookup enabled on `main`, with ordinary window-input
-priming as the fallback. This is a proof of concept, not a Store submission or a new release. The Fluent
-Showcase and this startup path are source-build changes; the existing v0.3.0 downloads are unchanged.
+priming as the fallback. This is a proof of concept, not a Store submission. Initially kept on `main`, the
+Fluent Showcase, automatic startup and arrival-based recovery are now included in the requested v0.4.0 tester
+release; the existing v0.3.0 downloads are unchanged.
 An undocumented API is not, by itself, a reason to hide the feature behind another switch.
 
 The acquisition mechanism and its limitations are in [RESEARCH.md](RESEARCH.md#experimental-acquisition-without-window-input-2026-10-27).

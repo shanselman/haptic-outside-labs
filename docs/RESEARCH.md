@@ -121,7 +121,8 @@ Availability across builds/architectures, reconnect behavior, and physical feedb
 path still need operator validation. Do not treat this private interface as a supported Windows contract.
 
 **Prototype decision:** keep lookup enabled on `main`, retain manual priming, and collect the missing
-lifecycle/architecture evidence rather than add another opt-in switch. No release accompanies this decision.
+lifecycle/architecture evidence rather than add another opt-in switch. The work was initially kept on `main`;
+the subsequent v0.4.0 tester release includes it without changing the evidence classification or pending checks.
 [AUTOMATIC_PRIMING_TEST_PLAN.md](AUTOMATIC_PRIMING_TEST_PLAN.md) records the pending cold-boot, sleep/resume,
 reconnect, x64 and unhealthy-platform checks, plus TODOs for recovering when an acquired controller later fails
 without a device notification. The two-second wait is still not native-call cancellation or process isolation.

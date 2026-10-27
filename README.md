@@ -17,8 +17,9 @@ moved to a new group or choice; an edge tells you that you reached the end of a 
 
 ## Get it
 
-**Main-branch preview:** automatic priming and the Fluent Showcase described below currently require a
-[source build](#build-from-source). They are not in the existing v0.3.0 downloads; no new release is being cut.
+**New in 0.4:** the Fluent Showcase, automatic controller lookup without a startup wiggle, and rediscovery
+after device reconnect. This remains a proof-of-concept tester build; the
+[validation checklist](docs/AUTOMATIC_PRIMING_TEST_PLAN.md) records the known results and remaining checks.
 
 Download `HapticsEverywhere-<version>-win-arm64.zip` (Snapdragon Surfaces) or `-win-x64.zip` from
 [**Releases**](https://github.com/shanselman/haptic-outside-labs/releases). It's self-contained, so no .NET install is

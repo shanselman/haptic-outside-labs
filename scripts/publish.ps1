@@ -1,6 +1,6 @@
 # Publishes the Haptics Everywhere sample as self-contained, single-file zips (no .NET install needed).
 #   .\scripts\publish.ps1                          -> publish\HapticsEverywhere-<version>-win-arm64.zip and -win-x64.zip
-#   .\scripts\publish.ps1 -Version 0.3.0 -NoZip    -> publish\stage-<rid> only (the release workflow signs, then zips)
+#   .\scripts\publish.ps1 -Version 0.4.0 -NoZip    -> publish\stage-<rid> only (the release workflow signs, then zips)
 param(
     [string]$Version = ([xml](Get-Content (Join-Path (Split-Path -Parent $PSScriptRoot) 'Directory.Build.props'))).Project.PropertyGroup.Version,
     [switch]$NoZip
@@ -24,7 +24,8 @@ Haptics Everywhere $version ($rid) — sample
 haptics-tray.exe   (the app)
   Run it. It tries experimental automatic device lookup and stays in the tray if a controller is found.
   If Settings opens instead, move your haptic mouse or touchpad over it once to prime it, then use Windows.
-  Touchpads and newly connected devices may still need priming. Settings > Details explains the startup lookup.
+  Device arrivals trigger rediscovery. Touchpads and unavailable devices may still need priming.
+  Settings > Details explains the most recent lookup.
   Land on something you can DO (button, menu command, checkbox, link, taskbar button) -> light tick.
   Big ribbon buttons -> firmer click. New toolbar / ribbon group / tab or option -> detent.
   Sliding off the end of a toolbar or tab strip -> edge bump. Flying past things stays quiet.
@@ -32,8 +33,9 @@ haptics-tray.exe   (the app)
   Intensity, excluded apps, start with Windows. Right-click it for the quick menu: On/Off, Exclude app, Quit.
 
 haptics-lab.exe    (the Showcase)
-  Feel each sensation, try them on a demo surface, see why each tick happened (or didn't), and blind-compare
-  the styles. Quit the tray (or untick "Engine on") so only one of them is driving your mouse.
+  The Fluent Showcase: feel each sensation, try real controls, see why each tick happened (or didn't),
+  and blind-compare styles. It starts its own engine off if the tray is running.
+  Quit the tray before enabling the Showcase engine or comparing styles.
 
 minimal-background-haptics.exe
   The ~150-line core trick on its own: wiggle the mouse over the window, then move it in any app and feel a
@@ -42,7 +44,9 @@ minimal-background-haptics.exe
 Requires Windows 11 with the haptics API (build 26100+; tested on 28000) and a haptic mouse or touchpad.
 Passive only: never moves, clicks, or focuses anything; no keyboard; nothing leaves your PC.
 Source and evidence: https://github.com/shanselman/haptic-outside-labs
+Validation checklist: https://github.com/shanselman/haptic-outside-labs/blob/main/docs/AUTOMATIC_PRIMING_TEST_PLAN.md
 "@ | Set-Content (Join-Path $stage 'README.txt')
+    Copy-Item (Join-Path $root 'LICENSE') $stage
     Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.txt') $stage
     Get-ChildItem $stage -Filter *.pdb | Remove-Item
     if ($NoZip) {
