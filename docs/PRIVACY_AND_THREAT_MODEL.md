@@ -54,7 +54,7 @@ machine unless an operator copies a summary into `docs/EVIDENCE_LEDGER.md`.
 | Harm | Mitigation here |
 |---|---|
 | Privacy: hover patterns reveal work | No persistence in the tray; no names/text; local-only lab artifacts; hashed identities |
-| Accessibility: haptic spam | Land-not-pass filter, per-app density back-off, cooldowns, rate caps, Quiet style, intensity, instant Off |
+| Accessibility: haptic spam | Land-not-pass filter, per-app density thinning, cooldowns, rate caps, Quiet style, intensity, instant Off |
 | Cognitive: false "success" | No Success/Error/drop-accepted in the generic layer; only cooperating apps (which know the outcome) can send them |
 | Security: pressure to over-privilege | No UIAccess/elevation/injection paths exist in code; ADR 0004 requires review to add any |
 | Reliability: hurting target apps | UIA in a separate process, one request in flight, timeouts + quarantine |

@@ -604,7 +604,7 @@ public sealed class ShowcaseForm : Form, IExperimentForm, IMessageFilter
         {
             "coalesced-with-group-boundary" => null, // The detent for the same move already explained it.
             "reentry-cooldown" => "just felt this one",
-            "density-backoff" => "busy app: structure only for a moment",
+            "density-backoff" => "busy app: thinning ticks",
             "disabled-control" => "it's disabled",
             "protected-context" => "password field",
             "process-excluded" => "excluded app",
