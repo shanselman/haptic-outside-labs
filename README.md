@@ -3,6 +3,10 @@
 **Feel the things you can *do* in Windows: buttons, tabs, ribbons, menus, sliders, the taskbar. In any app, with no
 changes to those apps.**
 
+<p align="center">
+  <img src="assets/settings-window.png" width="400" alt="The Haptics Everywhere settings window, ready with a mouse: switches for Haptics, Boost touchpad, Let apps send haptics and Start with Windows, a Style picker, an Intensity slider and Excluded apps">
+</p>
+
 The Surface Mouse (2nd Edition) and Surface haptic touchpads can buzz, but only where an app explicitly asks.
 Haptics Everywhere is a small background app that *observes* your pointer and the UI under it (through Windows
 accessibility) and adds a light, meaningful tick when you land on something actionable. A detent tells you that you
@@ -135,7 +139,7 @@ src/Haptics.Windows     raw input, guarded haptics routes, per-device controller
 src/Haptics.Tray        haptics-tray.exe — the app (tray icon + WPF-UI settings window)
 src/Haptics.Lab         haptics-lab.exe — Showcase (+ Inspector, Lab tab, CLI, experiments, fixtures)
 samples/                MinimalBackgroundHaptics — the core trick in ~150 lines
-assets/                 app icon (regenerate with scripts/make-icon.ps1)
+assets/                 app icon (regenerate with scripts/make-icon.ps1), README screenshot
 tests/                  Core tests (vocabulary, policy, 13 golden traces) + Windows tests (safety scans, worker, tray)
 docs/                   design notes, evidence ledger, hypotheses, research, privacy/threat model, ADRs, SPEC
 ```
