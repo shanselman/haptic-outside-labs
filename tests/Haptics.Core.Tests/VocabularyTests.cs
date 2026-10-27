@@ -105,24 +105,55 @@ public class VocabularyTests
     }
 
     [Fact]
-    public void DenseAppsBackOffLandsButKeepStructure()
+    public void DenseAppsThinLandsButKeepStructure()
     {
+        // Limit 3 lands per 2 s, a land every 200 ms: 3 tick, then lands thin to one per 667 ms instead of stopping.
         var cfg = new PolicyConfig { Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions, MinimumGlobalSpacingMs = 0, GlobalMaxPulsesPerSecond = 100 };
         cfg.AppProfiles["notepad"] = new AppProfile { DensityLandsPer2s = 3 };
         var lines = new List<string> { Ptr(0, 0) };
-        for (var i = 0; i < 6; i++)
+        for (var i = 0; i < 11; i++)
         {
             var t = 200 + (i * 200);
             lines.Add(Ptr(t, 20 + (i * 40)));
             lines.Add(El(t + 2, 20 + (i * 40), "Button", $"b{i}", i * 40));
         }
 
-        lines.Add(Ptr(1500, 20, 100));
-        lines.Add(El(1502, 20, "TabItem", "tab", 0, y: 100, by: 90));
+        lines.Add(Ptr(2500, 420, 100));
+        lines.Add(El(2502, 420, "TabItem", "tab", 400, y: 100, by: 90));
         var o = Run(cfg, [.. lines]);
-        Assert.Equal(3, o.Haptic.Count(d => d.Waveform == "Hover"));
+        Assert.Equal([202, 402, 602, 1402, 2202], o.Haptic.Where(d => d.Waveform == "Hover").Select(d => d.T));
         Assert.Contains(o.Decisions, d => d.Reason == "density-backoff");
         Assert.Equal("Step", o.Haptic.Last().Waveform);
+    }
+
+    [Fact]
+    public void SweepingTheTaskbarThinsTicksButNeverGoesSilent()
+    {
+        // Back and forth over the taskbar at 600 px/s with the tray's own policy. Taskbar buttons are all lands and no
+        // structure, so muting lands in a busy app used to mean 4 s of nothing: it felt broken. Geometry is from a live
+        // UIA probe at 125%: 55x60 px Buttons under a Pane, looked up in 1-2 ms, so every move gets a snapshot.
+        const int left = 620, width = 55, count = 16, top = 1400, y = 1430;
+        var lines = new List<string> { """{"type":"process","pid":100,"name":"explorer"}""" };
+        var (x, dir) = (left + 5, 1);
+        for (var t = 0; t <= 8000; t += 10)
+        {
+            var i = (x - left) / width;
+            lines.Add(Ptr(t, x, y));
+            lines.Add(El(t + 2, x, "Button", $"task{i}", left + (i * width), w: width, h: 60, y: y, parent: "Pane",
+                parentRid: "taskbar", scale: 1.25, by: top));
+            x += dir * 6;
+            if (x >= left + (count * width) - 5 || x <= left + 5)
+            {
+                dir = -dir;
+            }
+        }
+
+        var o = TraceReplay.Run(lines, PolicyConfig.Sample(EffectProfile.Focused, 0.8));
+        var ticks = o.Haptic.Select(d => d.T).ToList();
+        Assert.Contains(o.Decisions, d => d.Reason == "density-backoff");
+        Assert.True(ticks.Count > 25, $"only {ticks.Count} ticks in 8 s of sweeping");
+        var longestSilence = ticks.Zip(ticks.Skip(1), (a, b) => b - a).Max();
+        Assert.True(longestSilence < 600, $"went silent for {longestSilence} ms while sweeping");
     }
 
     [Fact]

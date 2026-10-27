@@ -46,8 +46,9 @@ Four sensations, one meaning each, so they become a language rather than a buzz:
   learns from how fast *you* move just before you click.
 - **Silent on purpose:** windows, panes, text, list, tree and grid rows (files, emails), the tab you're already on,
   disabled controls, tiny targets, links inside running text, password fields, password managers, and sign-in screens.
-- **Busy apps back off:** if an app produces lots of lands quickly, lands pause briefly and structure (detents, edges) keeps
-  working. Browsers, chat and IDEs have lower limits; Office ribbons get softer lands so group detents stand out.
+- **Busy apps thin out:** if an app produces lots of lands quickly, its lands are spaced out for a few seconds (never
+  muted) and structure (detents, edges) keeps working. Browsers, chat and IDEs thin out sooner; Office ribbons get softer
+  lands so group detents stand out.
 - **No faked outcomes.** We can't know whether a drop or save worked, so Success, Error and Align come only from apps
   that tell us (see *Cooperating apps*).
 
@@ -100,7 +101,7 @@ Press, Release (whatever your device supports).
 ```powershell
 git clone https://github.com/shanselman/haptic-outside-labs
 cd haptic-outside-labs
-dotnet test                      # 86 tests: vocabulary rules, golden traces, policy, safety scans, UIA worker, tray
+dotnet test                      # 87 tests: vocabulary rules, golden traces, policy, safety scans, UIA worker, tray
 .\scripts\run-tray.ps1           # the app
 .\scripts\run-lab.ps1            # the Showcase
 .\scripts\publish.ps1            # self-contained zips for win-arm64 and win-x64

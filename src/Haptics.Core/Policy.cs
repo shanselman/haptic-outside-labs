@@ -145,7 +145,10 @@ public sealed class PolicyConfig
     public bool RangeLimitsEnabled { get; set; } = true;
     public bool CooperativeEnabled { get; set; } = true;
 
-    /// <summary>Per app: more than this many "land" ticks in 2 s → land ticks pause (structure still ticks). 0 = off.</summary>
+    /// <summary>
+    /// Per app: this many "land" ticks within 2 s → for <see cref="DensityBackoffMs"/>, lands thin out to this many per
+    /// 2 s, evenly spaced (never muted). Structure still ticks. 0 = off.
+    /// </summary>
     public int DensityLandsPer2s { get; set; } = 10;
 
     public double DensityBackoffMs { get; set; } = 4000;
@@ -235,6 +238,7 @@ public sealed class HapticPolicy
     private readonly Queue<double> _recent = new();
     private readonly Dictionary<int, Queue<double>> _landsByPid = new();
     private readonly Dictionary<int, double> _backoffUntil = new();
+    private readonly Dictionary<int, double> _lastLandByPid = new();
     private double _lastEmitMs = double.NegativeInfinity;
     private long _lastTransitionEmitted = -1;
     private long _intentSeq;
@@ -352,8 +356,11 @@ public sealed class HapticPolicy
             return Suppress("reentry-cooldown");
         }
 
+        // A busy app's lands thin out to its limit, evenly spaced, rather than stopping: on the taskbar (all lands, no
+        // structure) a pause felt like the app had broken.
         var densityLimit = app?.DensityLandsPer2s ?? Config.DensityLandsPer2s;
-        if (rule.IsLand && densityLimit > 0 && _backoffUntil.TryGetValue(e.ProcessId, out var until) && nowMs < until)
+        if (rule.IsLand && densityLimit > 0 && _backoffUntil.TryGetValue(e.ProcessId, out var until) && nowMs < until &&
+            _lastLandByPid.TryGetValue(e.ProcessId, out var lastLand) && nowMs - lastLand < 2000.0 / densityLimit)
         {
             return Suppress("density-backoff");
         }
@@ -401,6 +408,7 @@ public sealed class HapticPolicy
 
         if (rule.IsLand && densityLimit > 0)
         {
+            _lastLandByPid[e.ProcessId] = nowMs;
             if (!_landsByPid.TryGetValue(e.ProcessId, out var lands))
             {
                 _landsByPid[e.ProcessId] = lands = new Queue<double>();

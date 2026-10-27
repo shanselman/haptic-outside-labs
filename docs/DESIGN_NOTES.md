@@ -166,9 +166,10 @@ pipe. The generic layer still never fakes outcomes.
 4. *Size in logical px.* Big targets (≥56 logical px tall, or ≥48 both ways: Office's large ribbon buttons) land with
    Click; tiny ones (<10 logical px) are silent. Physical pixels would make every 150% display "big".
 5. *Edges.* Leaving a toolbar or tab strip off its long-axis end is a Collide: "end of the line".
-6. *Back off in busy apps.* More than N lands in 2 s from one app (10 by default, 6 for browsers, chat, and IDEs)
-   pauses lands for 4 s. Structure (detents, edges) keeps working, so the app becomes "Quiet" exactly when it's
-   too dense.
+6. *Thin out in busy apps.* N lands within 2 s from one app (10 by default, 6 for browsers, chat, and IDEs) thins
+   its lands to N per 2 s, evenly spaced, for 4 s. Structure (detents, edges) is never thinned. This used to *pause*
+   lands for 4 s, making the app "Quiet" exactly when it was too dense, but the taskbar is all lands and no
+   structure: sweeping across it ticked, then stopped, and felt broken (2026-10). Thinning never goes silent.
 7. *Skip inline links* (Hyperlink inside Document/Text/Edit): a paragraph of links would be a rattle.
 
 **Styles replaced profiles.** Quiet (structure only), Focused (default), Everything (no landing filter, no density
