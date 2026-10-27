@@ -25,6 +25,14 @@ public class RuntimeTests
     }
 
     [Fact]
+    public void DiscoveryControllerTypeIsProbedSeparatelyFromManager()
+    {
+        var stat = HapticsApi.ProbeStatic();
+        Assert.Equal(HapticsApi.TypePresent, (bool)stat["typePresent.InputHapticsManager"]!);
+        Assert.Equal(HapticsApi.ControllerTypePresent, (bool)stat["typePresent.SimpleHapticsController"]!);
+    }
+
+    [Fact]
     public void ControllerRoutesWithoutAControllerAreRejectedNotClaimed()
     {
         var a = HapticsApi.SendViaController(OutputRoutes.CachedController, null, "Click", 1.0);
