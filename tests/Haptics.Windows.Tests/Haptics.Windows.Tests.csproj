@@ -4,6 +4,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
@@ -18,5 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- UseWPF drops the implicit System.IO using. -->
+    <Using Include="System.IO" />
   </ItemGroup>
 </Project>

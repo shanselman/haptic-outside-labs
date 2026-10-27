@@ -19,7 +19,7 @@ needed. Unzip it, then:
 
 | Run | What it is |
 |---|---|
-| `haptics-tray.exe` | **The app.** Starts On. Wiggle your haptic mouse and/or touchpad over the little box once, then use Windows. Right-click the tray icon for Style, Intensity, Exclude app, Status, Off. |
+| `haptics-tray.exe` | **The app.** Starts On and opens its settings window: wiggle your haptic mouse and/or touchpad over it once (it closes itself), then use Windows. Click the tray icon for settings (Style, Intensity, excluded apps, start with Windows); right-click it for the quick menu. |
 | `haptics-lab.exe` | **The Showcase.** Feel each sensation, try it on real controls, see *why* each tick happened (or didn't), and blind-compare the styles. Also holds the research lab. |
 
 In the Showcase, follow **Start here**: move each haptic device over the window, click **Feel it** next to Land,
@@ -78,7 +78,7 @@ receiving background input never got a controller (0 of 288 samples). **What wor
 `SimpleHapticsController` once, while you wiggle it over our window, then drive it from the background (felt 6/6 vs
 0/6 silent controls).
 
-That's the "prime". The tray re-primes silently whenever you move over its menu.
+That's the "prime". The tray re-primes silently whenever you move over its settings window or menu.
 [`samples/MinimalBackgroundHaptics`](samples/MinimalBackgroundHaptics/Program.cs) shows the whole trick in ~150 lines.
 
 ## Cooperating apps
@@ -100,7 +100,7 @@ Press, Release (whatever your device supports).
 ```powershell
 git clone https://github.com/shanselman/haptic-outside-labs
 cd haptic-outside-labs
-dotnet test                      # 79 tests: vocabulary rules, golden traces, policy, safety scans, UIA worker
+dotnet test                      # 86 tests: vocabulary rules, golden traces, policy, safety scans, UIA worker, tray
 .\scripts\run-tray.ps1           # the app
 .\scripts\run-lab.ps1            # the Showcase
 .\scripts\publish.ps1            # self-contained zips for win-arm64 and win-x64
@@ -131,9 +131,10 @@ don't need it to use the app. Start with [`docs/EVIDENCE_LEDGER.md`](docs/EVIDEN
 ```text
 src/Haptics.Core        vocabulary rules (interpreter + policy), evidence model, golden-trace replay, API scanner
 src/Haptics.Windows     raw input, guarded haptics routes, per-device controller bank, UIA worker, cooperative pipe
-src/Haptics.Tray        haptics-tray.exe — the app
+src/Haptics.Tray        haptics-tray.exe — the app (tray icon + WPF-UI settings window)
 src/Haptics.Lab         haptics-lab.exe — Showcase (+ Inspector, Lab tab, CLI, experiments, fixtures)
 samples/                MinimalBackgroundHaptics — the core trick in ~150 lines
+assets/                 app icon (regenerate with scripts/make-icon.ps1)
 tests/                  Core tests (vocabulary, policy, 13 golden traces) + Windows tests (safety scans, worker, tray)
 docs/                   design notes, evidence ledger, hypotheses, research, privacy/threat model, ADRs, SPEC
 ```

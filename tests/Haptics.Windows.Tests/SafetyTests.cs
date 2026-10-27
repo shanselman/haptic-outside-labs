@@ -13,6 +13,8 @@ public class SafetyTests
         [typeof(HapticsApi).Assembly.Location],
         [Assembly.Load("haptics-tray").Location],
         [Assembly.Load("haptics-lab").Location],
+        [Assembly.Load("Wpf.Ui").Location], // Third-party code inside the tray process gets the same scan.
+        [Assembly.Load("Wpf.Ui.Abstractions").Location],
     ];
 
     [Theory]
