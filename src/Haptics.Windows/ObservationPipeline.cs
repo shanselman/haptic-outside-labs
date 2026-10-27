@@ -13,6 +13,8 @@ public sealed record OutputEvent(double AtMs, HapticIntent Intent, HapticAttempt
 
 public sealed record DiagnosticEvent(double AtMs, string Message) : PipelineEvent(AtMs);
 
+public sealed record DeviceChangeEvent(double AtMs, long Handle, bool Arrived) : PipelineEvent(AtMs);
+
 /// <summary>Why something stayed silent before reaching policy (e.g. skip:already-selected, passed-through).</summary>
 public sealed record NoteEvent(double AtMs, string Note, ElementSnapshot? Element) : PipelineEvent(AtMs);
 
@@ -237,6 +239,7 @@ public sealed class ObservationPipeline : IDisposable
     {
         lock (_lock)
         {
+            Publish(new DeviceChangeEvent(Now, handle, arrived));
             if (arrived)
             {
                 Publish(new DiagnosticEvent(Now, $"device arrived ({RawInputDevices.Describe(handle).VidPid ?? "unknown"})"));

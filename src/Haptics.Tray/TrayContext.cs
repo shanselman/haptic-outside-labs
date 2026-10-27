@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using Haptics.Core;
 using Haptics.Windows;
 
@@ -19,7 +20,8 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     private ObservationPipeline? _pipeline;
     private CooperativeServer? _cooperation;
     private SettingsWindow? _window;
-    private StartupPriming? _startupPriming;
+    private readonly ConcurrentQueue<DeviceChangeEvent> _deviceChanges = new();
+    private readonly ControllerRefresh _controllerRefresh = new(() => Task.Run(ControllerDiscovery.Discover));
 
     public TrayContext()
     {
@@ -40,11 +42,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
         };
         _foreground.Start();
         Apply();
-        if (Settings.Enabled)
-        {
-            DiscoveryStatus = "Looking for haptic devices without window input...";
-            _startupPriming = new StartupPriming(Task.Run(ControllerDiscovery.Discover), Environment.TickCount64);
-        }
+        PollStartupPriming();
     }
 
     public event EventHandler? Changed;
@@ -81,17 +79,34 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
 
     private void PollStartupPriming()
     {
-        if (_startupPriming is null)
+        var changed = false;
+        while (_deviceChanges.TryDequeue(out var device))
         {
-            return;
+            _controllerRefresh.DeviceChanged(device.Arrived);
+            if (!device.Arrived && _bank.RemoveDevice(device.Handle))
+            {
+                DiscoveryStatus = "A haptic device disconnected; reconnect it or move over Settings to prime.";
+                changed = true;
+            }
         }
 
-        var (result, showFallback) = _startupPriming.Poll(Environment.TickCount64, Settings.Enabled, _bank.Any);
+        var (result, showFallback, started) = _controllerRefresh.Poll(Environment.TickCount64, Settings.Enabled, _bank.Any);
+        if (started)
+        {
+            DiscoveryStatus = "Looking for haptic devices without window input...";
+            changed = true;
+        }
+
         if (result is not null)
         {
             _bank.AddDiscovered(result);
-            _bank.ApplyTo(_pipeline);
             DiscoveryStatus = result.Diagnostic;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            _bank.ApplyTo(_pipeline);
             UpdateIcon();
             Changed?.Invoke(this, EventArgs.Empty);
         }
@@ -113,7 +128,15 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
         if (Settings.Enabled && _pipeline is null)
         {
             _pipeline = new ObservationPipeline(Settings.ToPolicy(), new PipelineOptions { Route = OutputRoutes.CachedController });
+            _pipeline.Event += e =>
+            {
+                if (e is DeviceChangeEvent device)
+                {
+                    _deviceChanges.Enqueue(device);
+                }
+            };
             _pipeline.Start();
+            _controllerRefresh.Request();
         }
         else if (!Settings.Enabled && _pipeline is not null)
         {
@@ -177,6 +200,11 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     {
         if (_window is not null)
         {
+            if (startup)
+            {
+                return; // Automatic recovery must not reactivate a window the user left.
+            }
+
             _window.KeepOpen();
             if (_window.WindowState == System.Windows.WindowState.Minimized)
             {
@@ -188,6 +216,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
         }
 
         var window = new SettingsWindow(this, autoClose: startup);
+        window.ShowActivated = !startup;
         window.Closing += (_, _) =>
         {
             if (window.IsLoaded)

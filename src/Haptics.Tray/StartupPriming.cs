@@ -9,6 +9,8 @@ internal sealed class StartupPriming(Task<ControllerDiscoveryResult> discovery, 
     private bool _resultTaken;
     private bool _fallbackShown;
 
+    internal bool Completed => _resultTaken;
+
     internal (ControllerDiscoveryResult? Result, bool ShowFallback) Poll(long now, bool enabled, bool alreadyPrimed)
     {
         ControllerDiscoveryResult? result = null;

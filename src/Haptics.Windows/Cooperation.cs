@@ -31,6 +31,24 @@ public sealed class ControllerBank
         _map = map;
     }
 
+    public bool RemoveDevice(long handle)
+    {
+        if (!_map.TryGetValue(handle, out var removed))
+        {
+            return false;
+        }
+
+        var map = new Dictionary<long, CapturedController>(_map);
+        map.Remove(handle);
+        _map = map;
+        if (Latest?.IdHash == removed.IdHash)
+        {
+            Latest = null;
+        }
+
+        return true;
+    }
+
     /// <summary>Capture the device that just moved over our UI. Returns true if something new was added.</summary>
     public bool TryCapture(long deviceHandle)
     {

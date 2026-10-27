@@ -93,10 +93,11 @@ If lookup fails or is slow, Settings opens instead. Move the haptic device over 
 Intensity, excluded apps, start with Windows, Details); right-click it for the quick menu (*Exclude '<app>'*,
 *Settings…*, *On* to toggle off). Moving the mouse over the window or the menu re-primes it.
 
-In Details, **Startup** reports whether automatic lookup found a controller or why manual priming was needed.
+In Details, **Startup** reports the most recent automatic lookup, including a lookup after device arrival.
 An automatically found controller can be labeled **Haptic device** until normal priming identifies its type.
 Try both the mouse and touchpad: unknown/handleless input must not buzz the automatically found mouse.
-Newly connected devices may need manual priming. This acquisition path is undocumented and does not inherit
+Arrival-triggered lookup can recover newly connected devices; if it fails, manual priming remains available.
+This acquisition path is undocumented and does not inherit
 the older foreground-capture route's physical evidence; record operator results honestly.
 
 ## 5. Record what happened

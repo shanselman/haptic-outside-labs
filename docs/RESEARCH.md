@@ -97,6 +97,13 @@ disappeared. A new self-contained tray process started with no priming window, a
 ticks returned over the same controls without opening Settings. This remains an unblinded functional check;
 cold-boot and reconnect behavior are not established.
 
+**Lifecycle follow-up:** an unblinded Windows Sleep/wake check passed in the same automatically primed tray
+process without Settings interaction. A BLE power-cycle initially failed: the mouse's hashed interface path
+stayed the same but its raw handle changed, and the startup-only map was not refreshed. Manual priming restored
+ticks without a restart. After adding device-arrival rediscovery, a repeat power-cycle changed the handle again
+and the operator reported automatic recovery in the same process. These are first-case functional observations;
+see the [test plan's session record](AUTOMATIC_PRIMING_TEST_PLAN.md#operator-session-2026-10-27).
+
 The tray's `ControllerDiscovery` now tries this interface on a background task, gated by the public API's
 presence and the exact private IID. Missing classes/interfaces and platform errors produce a diagnostic in
 Settings > Details, not success. The normal priming window remains available and opens after a failed lookup
@@ -105,16 +112,19 @@ The existing policy and output path are unchanged.
 
 The private interface returns no device type. Automatic controllers therefore have type Generic and are
 mapped only to the exact nonzero raw device handle, never the fallback for unknown/handleless input.
-Normal priming can later establish the device type and replace the entry. Lookup is currently a startup
-operation: touchpads, devices connected afterward, and reconnect/lifetime failures retain manual priming.
+Normal priming can later establish the device type and replace the entry. Lookup runs at startup and after raw
+mouse device-arrival notifications. Removal invalidates the old mapping; arrivals coalesce into one in-flight
+lookup, and results are discarded if the device set changed while they were pending. Automatic recovery does
+not reactivate an existing settings window, and a newly shown fallback window does not activate itself.
+Touchpads, unavailable devices, and output failures without a device notification retain manual priming.
 Availability across builds/architectures, reconnect behavior, and physical feedback through this acquisition
 path still need operator validation. Do not treat this private interface as a supported Windows contract.
 
 **Prototype decision:** keep lookup enabled on `main`, retain manual priming, and collect the missing
 lifecycle/architecture evidence rather than add another opt-in switch. No release accompanies this decision.
 [AUTOMATIC_PRIMING_TEST_PLAN.md](AUTOMATIC_PRIMING_TEST_PLAN.md) records the pending cold-boot, sleep/resume,
-reconnect, x64 and unhealthy-platform checks, plus TODOs for recovering when an acquired controller later fails.
-That runtime recovery is not implemented by the startup timeout.
+reconnect, x64 and unhealthy-platform checks, plus TODOs for recovering when an acquired controller later fails
+without a device notification. The two-second wait is still not native-call cancellation or process isolation.
 
 ## Design-relevant documentation facts (from SPEC §2.1, rechecked)
 

@@ -20,6 +20,9 @@ This checklist separates what we have observed from what still needs testing and
 - [x] Automated coverage exercises missing controllers, access-denied diagnostics, zero/duplicate handles,
   the two-second startup fallback, late completion, Off/already-primed behavior, and unexpected exceptions.
 - [x] Existing policy, replay, and static safety tests still pass.
+- [x] One operator Sleep/wake/unlock check kept ticks working in the same tray process, without opening Settings.
+- [x] A Bluetooth mouse power-cycle exposed a changed raw handle and lost ticks; manual priming recovered them.
+  After adding arrival-triggered rediscovery, a repeat power-cycle recovered ticks without the wiggle.
 
 These observations do not establish cold-boot behavior, every device/build, or blinded PHYSICAL evidence.
 Do not promote them into the evidence ledger as such.
@@ -33,7 +36,7 @@ or change another person's Windows session as an unattended test.
 | --- | --- | --- | --- |
 | [ ] | Cold boot and sign-in | Test an actual cold boot separately from restarting the app. Start the tray manually and, separately, through its existing Start with Windows option. Test a connected mouse and one that wakes/connects later. | No prior app priming is required when lookup succeeds; unavailable devices have an understandable manual path. A saved Off preference stays Off. |
 | [ ] | Sleep and resume | Test the sleep states the machine actually supports, including Modern Standby or hibernation where applicable. Try controls after resume before touching Settings. | Whether controllers survive; whether stale ones fail safely and manual priming restores feedback. |
-| [ ] | Bluetooth/USB reconnect | Power-cycle or reconnect the mouse while the tray runs; also launch with it disconnected, then connect it. Record re-pairing separately if the operator chooses to try it. | Handle changes do not misroute output. Document when re-priming is necessary; automatic reacquisition is not implemented yet. |
+| [ ] | Bluetooth/USB reconnect | Repeat power-cycles, test USB if available, and launch disconnected then connect. Record re-pairing separately if the operator chooses to try it. | Handle changes do not misroute output. One BLE power-cycle passed after the fix below; the broader combinations remain pending. |
 | [ ] | Native x64 | Build/run on an Intel/AMD Windows machine, with and without supported haptic hardware. Record OS and InputHost.dll versions. | The native interface/ABI and fallback work on x64. Cross-compiling on ARM64 or passing hardware-free CI is not this check. |
 | [ ] | Touchpad and mixed devices | Test touchpad alone, mouse alone, both, and an ordinary non-haptic mouse. Switch the device producing input. | Unknown/handleless input never buzzes an automatically discovered mouse. Manual priming identifies the device and restores type-specific behavior/boost. |
 | [ ] | Long idle and repeated restarts | Leave the controller idle, restart the tray repeatedly, and try ordinary controls without opening Settings. | Controller lifetime, clean shutdown, no duplicate engines, and no growth in resources or repeated startup prompts. |
@@ -61,16 +64,33 @@ security permissions, or deliberately break live input services to make a test f
 - [ ] **REC-1: Runtime failure to wiggle fallback.** Distinguish a lost/unusable controller from an unsupported
   waveform or one transient rejection. Disable only the affected automatic mapping; explain the failure and
   offer ordinary priming. Do not flood the user with windows or silently route another device's input there.
-- [ ] **REC-2: Reconnect/reacquisition.** Invalidate stale mappings on removal and make bounded attempts after
-  arrival/resume. Preserve manually primed controllers and respect Off. Keep manual priming available if
-  reacquisition fails.
+- [x] **REC-2a: Device-arrival recovery.** Remove a disconnected handle's mapping and stale manual fallback,
+  coalesce arrivals into one lookup at a time, and discard results from an older device set. Preserve other
+  manually primed controllers, respect Off, and retain manual priming if lookup fails or is slow.
+- [ ] **REC-2b: Remaining lifecycle recovery.** Exercise resume without device-change notifications, delayed
+  availability after an arrival, repeated reconnects, and re-pairing. Add bounded retries only where observations
+  show they are needed; controller failure without a device notification still needs REC-1.
 - [ ] **REC-3: Stalled native lookup.** Measure real failure behavior before choosing stronger containment.
   A background task is not process isolation; a native crash cannot be made safe merely by catching HRESULTs.
-- [ ] **REC-4: Failure-state coverage.** Add deterministic tests for REC-1/REC-2, including no-device,
-  mixed-device, late-result and Off cases. Keep absent OS support distinct from a device needing priming.
+- [ ] **REC-4: Remaining failure-state coverage.** Arrival coalescing, stale-result rejection, single in-flight
+  lookup and Off behavior now have deterministic tests. Add the remaining REC-1/REC-2b cases, including
+  mixed-device output failures. Keep absent OS support distinct from a device needing priming.
 
-Startup lookup is implemented; the runtime-recovery TODOs are not. These are follow-up work, not claims that
-all failure paths already recover automatically and not a requirement to cut a release.
+Startup and device-arrival lookup are implemented; the unchecked recovery items are not. These are follow-up
+work, not claims that all failure paths already recover automatically and not a requirement to cut a release.
+
+## Operator session: 2026-10-27
+
+All observations below are unblinded functional checks on the ARM64 development machine with Surface Mouse
+2nd Edition, not formal PHYSICAL results. The baseline was the code checked in as `a6b6796`; the reconnect fix
+was tested from the subsequent working tree before its commit.
+
+| Check | Observation |
+| --- | --- |
+| BLE power-cycle, before fix | The pointer returned but ticks did not. The hashed device path was unchanged, while the raw handle changed. The same tray process remained responsive. |
+| Manual recovery, before fix | Moving over Settings restored ticks without restarting the tray. |
+| Windows Sleep/wake | A fresh automatically primed tray ticked before and after sleep in the same process, with the same mouse handle and no Settings interaction. Other sleep states are not covered. |
+| BLE power-cycle, after fix | The operator reported ticks returned without priming. A different raw handle was present, the same tray process remained responsive, and no Settings window was open at the follow-up check. |
 
 ## Recording a run
 

@@ -102,6 +102,9 @@ thread. If no controller is available, or it takes more than two seconds, the us
 Automatically found controllers only receive feedback for their matching raw device. Unknown or handleless
 devices do not fall back to the automatically found mouse.
 
+Device removal clears its stale mapping, and device arrival triggers another lookup. An initial Bluetooth
+power-cycle check recovered ticks without priming after this was added; broader reconnect testing is still pending.
+
 Touchpads and newly connected devices may still need priming. The private interface does not return a device type,
 so an automatically found controller is labeled **Haptic device** until ordinary priming identifies Mouse or
 Touchpad (and enables the touchpad-specific boost). This is not a guaranteed Windows API; see
