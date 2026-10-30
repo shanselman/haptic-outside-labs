@@ -18,8 +18,19 @@ public sealed record DeviceChangeEvent(double AtMs, long Handle, bool Arrived) :
 /// <summary>Why something stayed silent before reaching policy (e.g. skip:already-selected, passed-through).</summary>
 public sealed record NoteEvent(double AtMs, string Note, ElementSnapshot? Element) : PipelineEvent(AtMs);
 
+public sealed record PipelineOutputRequest(string Route, CapturedController? Controller, HapticIntent Intent, double Intensity);
+
+/// <summary>Optional output seam. Production posts and sends on the raw-input thread when no sink is supplied.</summary>
+public interface IPipelineOutputSink
+{
+    void Post(Action output);
+    HapticAttempt? Send(PipelineOutputRequest request);
+}
+
 public sealed class PipelineOptions
 {
+    public IClock Clock { get; init; } = MonotonicClock.Instance;
+    public IPipelineOutputSink? OutputSink { get; init; }
     public MessageWindowKind WindowKind { get; init; } = MessageWindowKind.MessageOnly;
     public string Route { get; set; } = OutputRoutes.DryRun;
     public UiaClientOptions Uia { get; init; } = new();
@@ -163,7 +174,7 @@ public sealed class ObservationPipeline : IDisposable
         }
     }
 
-    private static double Now => MonotonicClock.Instance.NowMs;
+    private double Now => _opt.Clock.NowMs;
 
     private void Tick()
     {
@@ -282,7 +293,14 @@ public sealed class ObservationPipeline : IDisposable
             Publish(new DecisionEvent(Now, d));
             if (d.Outcome == PolicyOutcome.Emit && d.Intent is { } intent)
             {
-                _thread?.Post(() => Output(intent));
+                if (_opt.OutputSink is { } sink)
+                {
+                    sink.Post(() => Output(intent));
+                }
+                else
+                {
+                    _thread?.Post(() => Output(intent));
+                }
             }
         }
     }
@@ -306,7 +324,9 @@ public sealed class ObservationPipeline : IDisposable
         var intensity = controller?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad
             ? Math.Min(1.0, intent.Intensity * TouchpadBoost)
             : intent.Intensity;
-        HapticAttempt? a = Route switch
+        HapticAttempt? a = _opt.OutputSink is { } sink
+            ? sink.Send(new PipelineOutputRequest(Route, controller, intent, intensity))
+            : Route switch
         {
             OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(Route, intent.Waveform, intensity, intent.PointerTimestampMs),
             OutputRoutes.CachedController => HapticsApi.SendViaController(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),

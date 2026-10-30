@@ -1199,6 +1199,14 @@ A green GitHub Actions build on a hosted runner does **not** mean the haptic har
 
 **Output abstraction:** fallback waveform mapping, unsupported API, exception, `TryStopFeedback`, callback/owning-thread enforcement, queued intents expired before output.
 
+`ObservationPipeline` accepts an optional `IClock` and `IPipelineOutputSink` through `PipelineOptions`.
+The sink controls posting and records the selected controller, route, intent and boosted intensity at send
+time; it is reached only after `HapticPolicy.Evaluate` emits and the output deadline has not expired. Without a sink,
+posting and haptic API calls still run on the raw-input thread, using the monotonic clock by default.
+Tests never start that thread or call a haptic API. Characterizations deliberately retain today's
+latest-input routing, manual `Latest` fallback for unknown/handleless input, and queued output after Off;
+these are known defects for the routing/lifecycle lanes, not newly approved behavior.
+
 **Reporter:** no mock classified as physical, proper experiment dependencies, immutable artifact hashes, no sensitive text in serialized output.
 
 ### 12.3 Golden trace replay suite
