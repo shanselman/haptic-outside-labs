@@ -15,6 +15,15 @@ public enum InputOrigin
     Replay,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<PointerInputClass>))]
+public enum PointerInputClass
+{
+    Handleless,
+    Handle,
+    Promoted,
+}
+
+[method: JsonConstructor]
 public readonly record struct PointerObservation(
     double TimestampMs,
     int X,
@@ -22,7 +31,12 @@ public readonly record struct PointerObservation(
     InputOrigin Origin,
     bool PrimaryDown,
     int ForegroundPid,
-    long DeviceHandle = 0);
+    long DeviceHandle = 0)
+{
+    /// <summary>Attribution metadata only; neither a nonzero handle nor this class proves physical input.</summary>
+    public PointerInputClass InputClass { get; init; } =
+        DeviceHandle == 0 ? PointerInputClass.Handleless : PointerInputClass.Handle;
+}
 
 public sealed record RectD(double X, double Y, double Width, double Height)
 {

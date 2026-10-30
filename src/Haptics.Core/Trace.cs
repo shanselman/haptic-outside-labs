@@ -22,14 +22,20 @@ public sealed class FakeClock : IClock
 
 /// <summary>
 /// Privacy-safe authored traces (JSONL). One object per line with a "type" of
-/// pointer | element | process | device | comment. See tests/traces/README.md.
+/// pointer | element | process | device | foreground | wheel | coop | comment. See tests/traces/README.md.
 /// </summary>
 public static class TraceReplay
 {
     public sealed record ReplayDecision(double T, string EventKind, string ControlType, PolicyOutcome Outcome, string Reason, string? Waveform);
 
+    public sealed record ReplayDeviceChange(double T, long Handle, bool Arrived);
+
     public sealed record ReplayOutput(IReadOnlyList<ReplayDecision> Decisions, IReadOnlyList<string> Notes)
     {
+        public IReadOnlyList<PointerObservation> Pointers { get; init; } = [];
+
+        public IReadOnlyList<ReplayDeviceChange> DeviceChanges { get; init; } = [];
+
         public int Emitted => Decisions.Count(d => d.Outcome == PolicyOutcome.Emit);
 
         public IEnumerable<ReplayDecision> Haptic => Decisions.Where(d => d.Outcome == PolicyOutcome.Emit);
@@ -49,6 +55,9 @@ public static class TraceReplay
         };
         var decisions = new List<ReplayDecision>();
         var notes = new List<string>();
+        var pointers = new List<PointerObservation>();
+        var deviceChanges = new List<ReplayDeviceChange>();
+        int? foregroundOverride = null;
         double lastT = 0;
 
         void Handle(InterpretResult r, double t)
@@ -96,9 +105,19 @@ public static class TraceReplay
                     names[(int)o["pid"]!] = (string)o["name"]!;
                     break;
                 case "pointer":
-                    var p = new PointerObservation(t, (int)o["x"]!, (int)o["y"]!, InputOrigin.Replay,
-                        (bool?)o["primary"] ?? false, (int?)o["fg"] ?? 0);
+                    var p = new PointerObservation(t, (int)o["x"]!, (int)o["y"]!, ReadEnum(o, "origin", InputOrigin.Replay),
+                        (bool?)o["primary"] ?? false, (int?)o["fg"] ?? foregroundOverride ?? 0, (long?)o["handle"] ?? 0);
+                    p = p with { InputClass = ReadEnum(o, "inputClass", p.InputClass) };
+                    pointers.Add(p);
                     Handle(interpreter.OnPointer(p), t);
+                    break;
+                case "foreground":
+                    foregroundOverride = (int)o["pid"]!;
+                    if (interpreter.LastPointer is { } last)
+                    {
+                        Handle(interpreter.OnPointer(last with { TimestampMs = t, ForegroundPid = foregroundOverride.Value }), t);
+                    }
+
                     break;
                 case "element":
                     var snap = ParseElement(o, t, interpreter.LastPointer);
@@ -110,7 +129,8 @@ public static class TraceReplay
                     decisions.Add(new ReplayDecision(t, coop.Kind.ToString(), coop.ControlType, cd.Outcome, cd.Reason, cd.Intent?.Waveform));
                     break;
                 case "device":
-                    var available = (bool?)o["available"] ?? true;
+                    var available = (bool?)o["arrived"] ?? (bool?)o["available"] ?? true;
+                    deviceChanges.Add(new ReplayDeviceChange(t, (long?)o["handle"] ?? 0, available));
                     policy.DeviceAvailable = available;
                     if (!available)
                     {
@@ -128,8 +148,13 @@ public static class TraceReplay
             Handle(interpreter.OnTick(tt), tt);
         }
 
-        return new ReplayOutput(decisions, notes);
+        return new ReplayOutput(decisions, notes) { Pointers = pointers, DeviceChanges = deviceChanges };
     }
+
+    private static T ReadEnum<T>(JsonObject o, string key, T fallback) where T : struct, Enum =>
+        o[key] is not { } node ? fallback :
+        Enum.TryParse<T>((string)node!, ignoreCase: true, out var value) && Enum.IsDefined(value) ? value :
+        throw new InvalidDataException($"Unknown trace {key} '{node}'.");
 
     private static RectD? Rect(JsonNode? n) =>
         n is JsonArray b && b.Count == 4 ? new RectD((double)b[0]!, (double)b[1]!, (double)b[2]!, (double)b[3]!) : null;
