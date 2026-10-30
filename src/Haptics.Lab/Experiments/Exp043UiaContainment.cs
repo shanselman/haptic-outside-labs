@@ -14,13 +14,15 @@ public static class Exp043UiaContainment
         const double timeout = 200;
         using var uia = UiaClient.ForCurrentProcess(new UiaClientOptions { TimeoutMs = timeout, AllowFaultInjection = true });
         var steps = new List<Dictionary<string, object?>>();
+        var delivered = new System.Collections.Concurrent.ConcurrentQueue<long>();
+        uia.Response += (response, _, _) => delivered.Enqueue(response.Id);
 
         (UiaResponse Resp, double Ms) Do(string cmd, int arg = 0)
         {
             var sw = Stopwatch.StartNew();
             var resp = uia.QueryAsync(arg, 0, cmd).GetAwaiter().GetResult();
             var ms = sw.Elapsed.TotalMilliseconds;
-            steps.Add(new() { ["cmd"] = cmd, ["arg"] = arg, ["ok"] = resp.Ok, ["status"] = resp.ClientStatus, ["error"] = resp.Error, ["elapsedMs"] = Math.Round(ms, 1), ["workerPid"] = resp.WorkerPid });
+            steps.Add(new() { ["id"] = resp.Id, ["cmd"] = cmd, ["arg"] = arg, ["ok"] = resp.Ok, ["status"] = resp.ClientStatus, ["error"] = resp.Error, ["elapsedMs"] = Math.Round(ms, 1), ["workerPid"] = resp.WorkerPid });
             return (resp, ms);
         }
 
@@ -47,7 +49,14 @@ public static class Exp043UiaContainment
 
         Thread.Sleep(800);
         var stats = uia.Stats;
-        s.Assert("no late responses delivered", stats.LateDropped >= 0);
+        var expected = new[] { warm.Resp.Id, after.Resp.Id, afterSlow.Resp.Id, afterCrash.Resp.Id };
+        var actual = delivered.ToArray();
+        s.Assert("only the four successful ping responses delivered, once and in order",
+            actual.SequenceEqual(expected) && stats.Responses == expected.Length,
+            $"expected={string.Join(',', expected)} actual={string.Join(',', actual)} responses={stats.Responses}");
+        s.Assert("failed requests never delivered as responses",
+            !actual.Contains(hang.Resp.Id) && !actual.Contains(slow.Resp.Id) && !actual.Contains(crash.Resp.Id));
+        r.Observations["deliveredResponseIds"] = actual;
         r.Observations["steps"] = steps;
         r.Observations["uiaStats"] = stats;
         r.Method["faultInjection"] = "Worker started with --allow-fault-injection (lab only). hang = sleep forever; slow = sleep 600ms; crash = exit(3).";

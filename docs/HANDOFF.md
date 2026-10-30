@@ -40,6 +40,11 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
   pins today's Step on the first TitleBar caption arrival (Close, Minimize, Maximize) and Hover within
   the group. Lane F changes Close deliberately; Minimize and Maximize must retain their baseline.
   Routing, context-safety and lifecycle fixes are still pending; the data shape does not implement them.
+- [x] **UIA startup/budget failures strand requests.** `UiaClient` returns explicit client failures for
+  failed starts, exhausted budgets and pre-ready exits. Failed starts consume the rolling restart budget;
+  the watchdog retries after backoff/budget refill without waiting for pointer movement. Startup and query
+  deadlines remain separate. `UiaLifecycleTests` covers failure and refill; EXP-043 checks delivered IDs/counts.
+
 - [ ] **Report non-cancellation Showcase launch errors.** `src/Haptics.Tray/TrayContext.cs`,
   `OpenShowcase`, currently swallows every `Win32Exception` as if it were cancellation at a security prompt.
   Handle native error 1223 as user cancellation; surface other launch failures through the existing tray

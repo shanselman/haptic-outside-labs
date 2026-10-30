@@ -356,6 +356,7 @@ public sealed class UiaClient : IDisposable
     private bool _disposed;
     private bool _workerReady;
     private double _workerStartedAt;
+    private double? _retryAt;
 
     public UiaClient(string exe, string[] baseArgs, UiaClientOptions? options = null)
     {
@@ -398,6 +399,11 @@ public sealed class UiaClient : IDisposable
     {
         lock (_gate)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             if (_quarantine.TryGetValue(foregroundPid, out var until) && MonotonicClock.Instance.NowMs < until)
             {
                 _quarantined++;
@@ -422,6 +428,12 @@ public sealed class UiaClient : IDisposable
         var tcs = new TaskCompletionSource<UiaResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
         {
+            if (_disposed)
+            {
+                tcs.SetResult(new UiaResponse { ClientStatus = "disposed", Error = "disposed" });
+                return tcs.Task;
+            }
+
             if (_pending is { } old)
             {
                 _superseded++;
@@ -469,7 +481,13 @@ public sealed class UiaClient : IDisposable
             return;
         }
 
-        if (!EnsureProcessLocked() || !_workerReady)
+        if (EnsureProcessLocked() is { } failure)
+        {
+            FailPendingLocked(failure);
+            return;
+        }
+
+        if (!_workerReady)
         {
             return; // Pending request stays queued (latest-wins) until the worker says it is ready.
         }
@@ -491,15 +509,26 @@ public sealed class UiaClient : IDisposable
         }
     }
 
-    private bool EnsureProcessLocked()
+    private void FailPendingLocked(string status)
+    {
+        if (_pending is not { } pending)
+        {
+            return;
+        }
+
+        _pending = null;
+        CompleteWaiter(pending.Id, new UiaResponse { Id = pending.Id, Error = status, ClientStatus = status });
+    }
+
+    private string? EnsureProcessLocked()
     {
         if (_proc is { HasExited: false })
         {
-            return true;
+            return null;
         }
 
         var now = MonotonicClock.Instance.NowMs;
-        while (_restarts.Count > 0 && now - _restarts.Peek() > 60_000)
+        while (_restarts.Count > 0 && now - _restarts.Peek() >= 60_000)
         {
             _restarts.Dequeue();
         }
@@ -507,9 +536,16 @@ public sealed class UiaClient : IDisposable
         if (_restarts.Count >= _opt.MaxRestartsPerMinute)
         {
             Diagnostic?.Invoke("uia-worker-restart-budget-exhausted");
-            return false;
+            _retryAt = _restarts.Count > 0 ? _restarts.Peek() + 60_000 : null;
+            return "worker-restart-budget-exhausted";
         }
 
+        if (_retryAt is { } retryAt && now < retryAt)
+        {
+            return "worker-restart-backoff";
+        }
+
+        KillLocked();
         var psi = new ProcessStartInfo(_exe)
         {
             UseShellExecute = false,
@@ -524,6 +560,8 @@ public sealed class UiaClient : IDisposable
             psi.ArgumentList.Add(a);
         }
 
+        // Failed starts count too: a missing executable must not cause an unbounded retry loop.
+        _restarts.Enqueue(now);
         try
         {
             var p = Process.Start(psi) ?? throw new InvalidOperationException("Process.Start returned null");
@@ -532,15 +570,16 @@ public sealed class UiaClient : IDisposable
             _workerStartedAt = now;
             _starts++;
             _restartCount = Math.Max(0, _starts - 1);
-            _restarts.Enqueue(now);
+            _retryAt = null;
             var reader = new Thread(() => ReadLoop(p)) { IsBackground = true, Name = "uia-client-reader" };
             reader.Start();
-            return true;
+            return null;
         }
         catch (Exception ex)
         {
             Diagnostic?.Invoke($"uia-worker-start-failed: {ex.Message}");
-            return false;
+            _retryAt = now + _opt.TimeoutMs;
+            return "worker-start-failed";
         }
     }
 
@@ -627,7 +666,8 @@ public sealed class UiaClient : IDisposable
             {
                 Diagnostic?.Invoke("uia-worker-exited-before-ready");
                 KillLocked();
-                PumpLocked();
+                FailPendingLocked("worker-exited-before-ready");
+                _retryAt = MonotonicClock.Instance.NowMs + _opt.TimeoutMs;
                 return;
             }
 
@@ -635,11 +675,8 @@ public sealed class UiaClient : IDisposable
             {
                 Diagnostic?.Invoke($"uia-worker-start-timeout after {_opt.StartupTimeoutMs}ms; killing worker");
                 KillLocked();
-                if (_pending is { } stuck)
-                {
-                    _pending = null;
-                    CompleteWaiter(stuck.Id, new UiaResponse { Id = stuck.Id, Ok = false, Error = "worker-start-timeout", ClientStatus = "worker-start-timeout" });
-                }
+                FailPendingLocked("worker-start-timeout");
+                _retryAt = MonotonicClock.Instance.NowMs + _opt.TimeoutMs;
 
                 return;
             }
@@ -664,9 +701,16 @@ public sealed class UiaClient : IDisposable
                 _outstanding = null;
                 Diagnostic?.Invoke("uia-worker-exited");
                 CompleteWaiter(o2.Id, new UiaResponse { Id = o2.Id, Ok = false, Error = "worker-exited", ClientStatus = "worker-exited" });
-                _proc = null;
+                KillLocked();
                 PumpLocked();
             }
+
+            if (_retryAt is { } retryAt && MonotonicClock.Instance.NowMs >= retryAt)
+            {
+                EnsureProcessLocked();
+            }
+
+            PumpLocked();
         }
     }
 
