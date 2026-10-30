@@ -26,6 +26,14 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
 
 ## Outstanding review TODO
 
+- [x] **Regression net: pipeline clock and recording output.** `PipelineOptions.Clock` defaults to the
+  monotonic clock; optional `IPipelineOutputSink` replaces queueing/sending only. `PipelineOutputTests`
+  uses a manually drained queue and fake clock, never starts the pipeline, and records inert controller
+  identities without calling Windows haptics. `PipelineCharacterizationTests` also runs against the
+  pre-seam pipeline. Single-mouse Hover/Click/Step/Collide, deadline/dwell boundaries, intensity boost
+  and policy admission are pinned. The tests marked "current behavior; lane C/E changes this" deliberately
+  retain latest-input rerouting, unknown/handleless `Latest` fallback and queued output after Off.
+  Update those assertions with the later routing/lifecycle fixes; do not treat them as desired behavior.
 - [x] **Regression net: trace coverage and caption baseline.** Optional input-class, origin, device-handle,
   arrival/removal and foreground trace fields are available without changing the 13 golden traces.
   EXP-070 now fails on unlisted traces and missing expected traces. `CaptionCharacterizationTests`
