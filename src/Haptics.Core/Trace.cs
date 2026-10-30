@@ -22,7 +22,7 @@ public sealed class FakeClock : IClock
 
 /// <summary>
 /// Privacy-safe authored traces (JSONL). One object per line with a "type" of
-/// pointer | element | process | device | foreground | wheel | coop | comment. See tests/traces/README.md.
+/// pointer | element | process | device | foreground | wheel | coop | tick | comment. See tests/traces/README.md.
 /// </summary>
 public static class TraceReplay
 {
@@ -84,7 +84,8 @@ public static class TraceReplay
             if (type != "comment" && type != "process")
             {
                 // A stopped pointer sends no input: simulate the engine's ~10 ms tick so dwell landings resolve on time.
-                for (var tt = lastT + 10; tt < t && interpreter.HasPendingArrival; tt += 10)
+                var skipIntermediate = type == "tick" && ((bool?)o["skipIntermediate"] ?? false);
+                for (var tt = lastT + 10; !skipIntermediate && tt < t && interpreter.HasPendingArrival; tt += 10)
                 {
                     Handle(interpreter.OnTick(tt), tt);
                 }
@@ -96,6 +97,7 @@ public static class TraceReplay
             switch (type)
             {
                 case "comment":
+                case "tick":
                     break;
                 case "wheel":
                     // Scroll texture is off by default (SPEC §8.3); a wheel delta alone never proves content moved.

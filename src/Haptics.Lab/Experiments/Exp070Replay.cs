@@ -25,6 +25,8 @@ public static class Exp070Replay
         ["device-change-pending.jsonl"] = (0, 0),
         ["foreground-change-stationary.jsonl"] = (1, 1),
         ["device-removed-stationary-tap.jsonl"] = (1, 1),
+        ["pending-metadata-safety.jsonl"] = (1, 1),
+        ["pending-late-tick.jsonl"] = (0, 0),
     };
 
     public static string Run(string? outDir, string? traceDir)

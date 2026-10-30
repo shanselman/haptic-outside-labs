@@ -1,0 +1,17 @@
+{"type":"comment","text":"New same-ID password/disabled/offscreen metadata and lookup errors cancel pending lands. A later safe target still lands."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":0,"y":15,"fg":100}
+{"t":10,"type":"pointer","x":20,"y":15,"fg":100}
+{"t":11,"type":"element","req":10,"pid":100,"controlType":"Button","rid":"password","bounds":[0,0,100,30]}
+{"t":21,"type":"element","req":20,"pid":100,"controlType":"Button","rid":"password","bounds":[0,0,100,30],"password":true}
+{"t":300,"type":"pointer","x":200,"y":15,"fg":100}
+{"t":301,"type":"element","req":300,"pid":100,"controlType":"Button","rid":"disabled","bounds":[180,0,100,30]}
+{"t":311,"type":"element","req":310,"pid":100,"controlType":"Button","rid":"disabled","bounds":[180,0,100,30],"enabled":false}
+{"t":600,"type":"pointer","x":500,"y":15,"fg":100}
+{"t":601,"type":"element","req":600,"pid":100,"controlType":"Button","rid":"offscreen","bounds":[480,0,100,30]}
+{"t":611,"type":"element","req":610,"pid":100,"controlType":"Button","rid":"offscreen","bounds":[480,0,100,30],"offscreen":true}
+{"t":900,"type":"pointer","x":900,"y":15,"fg":100}
+{"t":901,"type":"element","req":900,"pid":100,"controlType":"Button","rid":"error","bounds":[880,0,100,30]}
+{"t":911,"type":"element","req":910,"controlType":"Unknown","error":"provider-failed"}
+{"t":1500,"type":"pointer","x":1200,"y":15,"fg":100}
+{"t":1501,"type":"element","req":1500,"pid":100,"controlType":"Button","rid":"safe","bounds":[1180,0,40,30]}

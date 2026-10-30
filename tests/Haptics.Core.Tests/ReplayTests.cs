@@ -6,6 +6,17 @@ namespace Haptics.Core.Tests;
 public class ReplayTests
 {
     [Fact]
+    public void PendingArrivalsUseFreshSafetyMetadataAndExpireAfterSchedulerStalls()
+    {
+        var refreshed = Run("pending-metadata-safety.jsonl");
+        Assert.Equal(["Hover"], refreshed.Haptic.Select(d => d.Waveform));
+        Assert.All(refreshed.Haptic, d => Assert.True(d.T >= 1500));
+        var late = Run("pending-late-tick.jsonl");
+        Assert.Empty(late.Haptic);
+        Assert.Contains(late.Notes, n => n.EndsWith("arrival-expired", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void GenerationChangesRejectOldAnswersAndCancelPendingArrivals()
     {
         var stale = Run("generation-stale-context.jsonl");
