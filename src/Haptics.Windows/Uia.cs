@@ -58,7 +58,8 @@ public static class UiaWorker
     {
         var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
         var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
-        var cache = BuildCacheRequest();
+        var cache = BuildCacheRequest(includeAutomationId: false);
+        CacheRequest? fixtureCache = null;
         var pid = Environment.ProcessId;
 
         // Announce readiness so process start-up never counts against a query's deadline.
@@ -97,7 +98,7 @@ public static class UiaWorker
                     Environment.Exit(3);
                     return 3;
                 case "query":
-                    resp = Query(req, cache);
+                    resp = Query(req, req.AutomationId ? fixtureCache ??= BuildCacheRequest(includeAutomationId: true) : cache);
                     break;
                 default:
                     resp = new UiaResponse { Id = req.Id, Ok = false, Error = "unsupported-command" };
@@ -111,7 +112,7 @@ public static class UiaWorker
         return 0;
     }
 
-    private static CacheRequest BuildCacheRequest()
+    private static CacheRequest BuildCacheRequest(bool includeAutomationId)
     {
         var c = new CacheRequest { TreeScope = TreeScope.Element, AutomationElementMode = AutomationElementMode.Full };
         foreach (var p in new AutomationProperty[]
@@ -120,17 +121,35 @@ public static class UiaWorker
                      AutomationElement.IsEnabledProperty, AutomationElement.IsOffscreenProperty, AutomationElement.IsPasswordProperty,
                      AutomationElement.ProcessIdProperty, AutomationElement.NativeWindowHandleProperty, AutomationElement.FrameworkIdProperty,
                      AutomationElement.ClassNameProperty,
-                     AutomationElement.IsControlElementProperty, AutomationElement.AutomationIdProperty, AutomationElement.RuntimeIdProperty,
-                     AutomationElement.IsRangeValuePatternAvailableProperty, RangeValuePattern.ValueProperty, RangeValuePattern.MinimumProperty,
-                     RangeValuePattern.MaximumProperty, RangeValuePattern.SmallChangeProperty, RangeValuePattern.LargeChangeProperty,
+                     AutomationElement.IsControlElementProperty, AutomationElement.RuntimeIdProperty,
                      AutomationElement.IsSelectionItemPatternAvailableProperty, SelectionItemPattern.IsSelectedProperty,
                  })
         {
             c.Add(p);
         }
 
-        c.Add(RangeValuePattern.Pattern);
+        if (includeAutomationId)
+        {
+            c.Add(AutomationElement.AutomationIdProperty);
+        }
+
         c.Add(SelectionItemPattern.Pattern);
+        return c;
+    }
+
+    private static CacheRequest BuildRangeCacheRequest()
+    {
+        var c = new CacheRequest { TreeScope = TreeScope.Element, AutomationElementMode = AutomationElementMode.None };
+        foreach (var p in new[]
+                 {
+                     AutomationElement.IsRangeValuePatternAvailableProperty,
+                     RangeValuePattern.ValueProperty, RangeValuePattern.MinimumProperty, RangeValuePattern.MaximumProperty,
+                     RangeValuePattern.SmallChangeProperty, RangeValuePattern.LargeChangeProperty,
+                 })
+        {
+            c.Add(p);
+        }
+
         return c;
     }
 
@@ -241,14 +260,18 @@ public static class UiaWorker
     {
         var rect = Get<System.Windows.Rect>(el, AutomationElement.BoundingRectangleProperty);
         RangeInfo? range = null;
-        if (Get<bool>(el, AutomationElement.IsRangeValuePatternAvailableProperty))
+        if (TypeName(el) == "Slider")
         {
-            range = new RangeInfo(
-                Get<double>(el, RangeValuePattern.ValueProperty),
-                Get<double>(el, RangeValuePattern.MinimumProperty),
-                Get<double>(el, RangeValuePattern.MaximumProperty),
-                Get<double>(el, RangeValuePattern.SmallChangeProperty),
-                Get<double>(el, RangeValuePattern.LargeChangeProperty));
+            var slider = el.GetUpdatedCache(BuildRangeCacheRequest());
+            if (Get<bool>(slider, AutomationElement.IsRangeValuePatternAvailableProperty))
+            {
+                range = new RangeInfo(
+                    Get<double>(slider, RangeValuePattern.ValueProperty),
+                    Get<double>(slider, RangeValuePattern.MinimumProperty),
+                    Get<double>(slider, RangeValuePattern.MaximumProperty),
+                    Get<double>(slider, RangeValuePattern.SmallChangeProperty),
+                    Get<double>(slider, RangeValuePattern.LargeChangeProperty));
+            }
         }
 
         return new ElementSnapshot

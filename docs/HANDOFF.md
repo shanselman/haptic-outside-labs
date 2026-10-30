@@ -44,6 +44,10 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
   failed starts, exhausted budgets and pre-ready exits. Failed starts consume the rolling restart budget;
   the watchdog retries after backoff/budget refill without waiting for pointer movement. Startup and query
   deadlines remain separate. `UiaLifecycleTests` covers failure and refill; EXP-043 checks delivered IDs/counts.
+- [x] **UIA acquires unnecessary properties.** The worker's production cache excludes AutomationId and
+  all range properties; fixture requests opt into a separate AutomationId cache. Only an identified Slider
+  (including its Thumb/Button parts) gets a second, read-only range cache. One-hop parent type/bounds and
+  selection metadata remain intact. `UiaCacheTests` pins acquisition, not just serialized output.
 
 - [ ] **Report non-cancellation Showcase launch errors.** `src/Haptics.Tray/TrayContext.cs`,
   `OpenShowcase`, currently swallows every `Win32Exception` as if it were cancellation at a security prompt.

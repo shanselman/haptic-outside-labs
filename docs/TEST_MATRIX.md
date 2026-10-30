@@ -13,6 +13,8 @@
 | **Capability inventory** | target machine | `haptics-lab doctor` | API/contract/waveforms present, guards don't throw | that anything buzzes |
 | **Thread affinity** | target machine | `haptics-lab run EXP-023` | own-process TryGetForThread semantics | cross-process anything (never attempted) |
 | **UIA fixture** | interactive desktop | `haptics-lab run EXP-040` | UIA type/bounds/flags vs fixture truth; lookup latency | real apps (EXP-041) |
+| **UIA property acquisition** | Windows (CI ok) | `UiaCacheTests` | production excludes AutomationId and range properties; fixture adds only AutomationId; slider cache contains only read-only range metadata; parent/selection fields retained | provider correctness (EXP-040/041) |
+| **UIA slider range round trip** | interactive desktop | `UiaCacheTests.WorkerReadsWpfSliderRangeButNotButtonRange` | real WPF Slider range through worker in production/fixture modes, Button has no range, parent metadata retained | skipped without interactive desktop; WinForms EXP-040 TrackBar may not expose RangeValue |
 | **Raw input attribution** | interactive + human | `haptics-lab run EXP-030` | background WM_INPUT per device; callback cost; operator says mouse behaved normally | haptics |
 | **Foreground haptics** | target mouse + human | `haptics-lab run EXP-010` | PHYSICAL pulse from our focused window (blinded) | background output |
 | **Background haptics** | target mouse + human | `haptics-lab run EXP-020` | PHYSICAL pulse per route with another app foreground (blinded); API-level controller presence on the raw thread | usefulness |
