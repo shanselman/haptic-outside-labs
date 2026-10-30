@@ -347,6 +347,11 @@ Requirements:
 
 UIA is the **primary bridge from pixels to meaning**. Use `IUIAutomation::ElementFromPointBuildCache` with a minimal cache request for properties needed for decisions; use window/local ancestry and read-only patterns rather than global descendant traversal. The documentation explicitly explains cross-process caching benefits. [S10] [S11]
 
+The production cache must not acquire AutomationId; fixture requests opt into a separate cache that adds
+only that property. Range properties are acquired in a second cache only after identifying a Slider
+(including a Thumb/Button whose parent is a Slider). Keep one-hop parent control type, identity and bounds
+for structural caption-button recognition; no localized names, text or action patterns are required.
+
 Capture, where available:
 
 - `ControlType`, `AutomationId` (scoped), `BoundingRectangle`, `IsEnabled`, `IsOffscreen`, `IsPassword`, `ProcessId`, relevant container ancestry, `IsControlElement`, `IsContentElement`.
