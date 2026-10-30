@@ -35,8 +35,15 @@ public static class Exp070Replay
             return s.Complete();
         }
 
+        var files = Directory.GetFiles(traceDir, "*.jsonl").OrderBy(f => f).ToArray();
+        var names = files.Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
+        foreach (var missing in Expectations.Keys.Where(name => !names.Contains(name)))
+        {
+            s.Assert($"{missing}: expected trace exists", false, "expectation has no trace");
+        }
+
         var rows = new List<Dictionary<string, object?>>();
-        foreach (var file in Directory.GetFiles(traceDir, "*.jsonl").OrderBy(f => f))
+        foreach (var file in files)
         {
             var name = Path.GetFileName(file);
             var output = TraceReplay.Run(file);
@@ -45,6 +52,10 @@ public static class Exp070Replay
             if (Expectations.TryGetValue(name, out var exp))
             {
                 s.Assert($"{name}: {exp.Min}..{exp.Max} haptics", output.Emitted >= exp.Min && output.Emitted <= exp.Max, $"emitted {output.Emitted}");
+            }
+            else
+            {
+                s.Assert($"{name}: trace has expectation", false, "trace has no expectation");
             }
 
             foreach (var d in output.Decisions)
@@ -56,7 +67,7 @@ public static class Exp070Replay
         r.Observations["traces"] = rows;
         r.Status = r.Assertions.Count > 0 && r.Assertions.All(a => a.Passed) ? ExperimentStatus.PASS : ExperimentStatus.FAIL;
         r.EvidenceClass = EvidenceClass.OBSERVED;
-        r.Explanation = $"{r.Assertions.Count(a => a.Passed)}/{r.Assertions.Count} golden traces produced the expected haptic decisions (logic only, no hardware).";
+        r.Explanation = $"{r.Assertions.Count(a => a.Passed)}/{r.Assertions.Count} golden trace checks passed (coverage and haptic decisions; logic only, no hardware).";
         r.AddLabel(EvidenceLabels.NotTestedOnHardware);
         r.Limitations.Add("Replay validates rules, not OS delivery, UIA timing, or tactile perception.");
         return s.Complete();

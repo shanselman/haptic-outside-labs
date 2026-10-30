@@ -10,7 +10,10 @@
     {
       "properties": {
         "type": { "const": "pointer" }, "t": { "type": "number" }, "x": { "type": "integer" }, "y": { "type": "integer" },
-        "fg": { "type": "integer" }, "primary": { "type": "boolean" }
+        "fg": { "type": "integer" }, "primary": { "type": "boolean" },
+        "handle": { "type": "integer" },
+        "origin": { "enum": ["HardwareRaw", "SyntheticOrUnknown", "Replay"] },
+        "inputClass": { "enum": ["Handle", "Handleless", "Promoted"] }
       },
       "required": ["t", "x", "y"]
     },
@@ -26,7 +29,15 @@
       },
       "required": ["t", "controlType"]
     },
-    { "properties": { "type": { "const": "device" }, "t": { "type": "number" }, "available": { "type": "boolean" } }, "required": ["t", "available"] },
+    {
+      "properties": {
+        "type": { "const": "device" }, "t": { "type": "number" }, "available": { "type": "boolean" },
+        "handle": { "type": "integer" }, "arrived": { "type": "boolean" }
+      },
+      "required": ["t"],
+      "anyOf": [{ "required": ["available"] }, { "required": ["arrived"] }]
+    },
+    { "properties": { "type": { "const": "foreground" }, "t": { "type": "number" }, "pid": { "type": "integer" } }, "required": ["t", "pid"] },
     { "properties": { "type": { "const": "wheel" }, "t": { "type": "number" }, "delta": { "type": "integer" } }, "required": ["t"] }
   ]
 }

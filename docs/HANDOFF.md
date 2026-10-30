@@ -26,6 +26,12 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
 
 ## Outstanding review TODO
 
+- [x] **Regression net: trace coverage and caption baseline.** Optional input-class, origin, device-handle,
+  arrival/removal and foreground trace fields are available without changing the 13 golden traces.
+  EXP-070 now fails on unlisted traces and missing expected traces. `CaptionCharacterizationTests`
+  pins today's Step on the first TitleBar caption arrival (Close, Minimize, Maximize) and Hover within
+  the group. Lane F changes Close deliberately; Minimize and Maximize must retain their baseline.
+  Routing, context-safety and lifecycle fixes are still pending; the data shape does not implement them.
 - [ ] **Report non-cancellation Showcase launch errors.** `src/Haptics.Tray/TrayContext.cs`,
   `OpenShowcase`, currently swallows every `Win32Exception` as if it were cancellation at a security prompt.
   Handle native error 1223 as user cancellation; surface other launch failures through the existing tray

@@ -1220,6 +1220,13 @@ Create privacy-safe authored fixture traces:
 
 For each trace store expected **semantic event and HapticIntent sequence**, plus suppressed decisions and reasons. Verify exact logical events, not time-sensitive OS scheduling. Use a fake monotonic clock for all rate and debounce unit tests.
 
+EXP-070 checks both directions of trace coverage: an unlisted trace or a missing expected trace fails.
+Optional pointer `handle`, `origin` and `inputClass` metadata, device `handle`/`arrived` fields and a
+`foreground` event support authored transition scenarios without changing legacy trace decisions.
+`PointerInputClass` distinguishes Handle, Handleless and Promoted input as data only; it is not physical
+evidence or a new routing rule. Caption characterizations pin the current first-arrival Step on Close,
+Minimize and Maximize, and the Hover when moving within the same TitleBar group.
+
 ### 12.4 Controlled desktop test driver
 
 Build a **fixture-only** automation helper that:

@@ -9,9 +9,10 @@ Each line is one event:
 |---|---|---|
 | `comment` | `text` | Ignored; the first line states the expectation in words. |
 | `process` | `pid`, `name` | Process name for allow/deny lists and native suppression. |
-| `pointer` | `t`, `x`, `y`, `fg`, `primary` | A physical pointer observation (ms, screen px, foreground pid, primary button). |
+| `pointer` | `t`, `x`, `y`, `fg`, `primary`, optional `handle`, `origin`, `inputClass` | An authored pointer observation (ms, screen px, foreground pid, primary button); never physical proof. |
 | `element` | `t`, `req`, `x`, `y`, `pid`, `controlType`, `rid`, `bounds[x,y,w,h]`, `parentType`, `parentRid`, `parentBounds[x,y,w,h]`, `enabled`, `password`, `offscreen`, `selected`, `scale`, `range{value,min,max,small,large}`, `error` | A UIA snapshot answered at `t` for a request made at `req` for point `x,y`. `scale` is monitor DPI / 96 (sizes are judged in logical px). |
-| `device` | `t`, `available` | Haptic device availability change. |
+| `device` | `t`, `available` or `arrived`, optional `handle` | Availability or device arrival/removal. `arrived` takes precedence; replay still uses today's global availability policy. |
+| `foreground` | `t`, `pid` | Foreground change without pointer movement; reuses the interpreter's existing foreground transition. |
 | `wheel` | `t`, `delta` | Wheel input (ignored: scroll texture is off by default). |
 | `coop` | `t`, `pid`, `waveform` | A cooperating app asked for a waveform over the local pipe. |
 
@@ -38,3 +39,11 @@ as unit tests (large targets, tab detents, edges, density back-off, adaptive lan
 `tests/Haptics.Core.Tests/VocabularyTests.cs`.
 
 Changing a rule must change these expectations explicitly (`Exp070Replay.Expectations`, `ReplayTests`).
+EXP-070 fails if any trace lacks an expectation or any expectation lacks its trace, including an empty directory.
+
+Old pointer lines default to `origin: "Replay"`, `handle: 0`, and `inputClass: "Handleless"`.
+A nonzero handle defaults to `"Handle"`; `"Promoted"` can be authored explicitly. Origin and input class
+are independent attribution metadata, not permission to emit or evidence of physical input. Explicit
+unknown enum names fail replay instead of silently changing attribution. A `foreground` event supplies
+the default foreground PID for following pointer lines; an explicit `fg` still wins. Without a
+`foreground` event, omitted `fg` keeps the legacy zero default. The 13 existing traces are unchanged.
