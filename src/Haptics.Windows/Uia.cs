@@ -3,6 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows.Automation;
 using Haptics.Core;
 
@@ -19,6 +20,10 @@ public sealed class UiaRequest
 
 public sealed class UiaResponse
 {
+    /// <summary>Client-only interaction token; never sent to or trusted from the worker.</summary>
+    [JsonIgnore]
+    public long Generation { get; set; }
+
     public long Id { get; set; }
     public bool Ok { get; set; }
     public string? Error { get; set; }
@@ -368,13 +373,13 @@ public sealed class UiaClient : IDisposable
     private readonly string _exe;
     private readonly string[] _baseArgs;
     private readonly Timer _watchdog;
-    private readonly Dictionary<long, TaskCompletionSource<UiaResponse>> _waiters = new();
+    private readonly Dictionary<long, (TaskCompletionSource<UiaResponse> Completion, long Generation)> _waiters = new();
     private readonly Dictionary<int, double> _quarantine = new();
     private readonly Queue<double> _restarts = new();
     private Process? _proc;
     private long _nextId;
-    private (long Id, double SentAt, double PointerTs, int FgPid, int X, int Y)? _outstanding;
-    private (long Id, string Cmd, int X, int Y, double PointerTs, int FgPid)? _pending;
+    private (long Id, double SentAt, double PointerTs, int FgPid, int X, int Y, long Generation)? _outstanding;
+    private (long Id, string Cmd, int X, int Y, double PointerTs, int FgPid, long Generation)? _pending;
     private long _requests, _responses, _superseded, _timeouts, _restartCount, _quarantined, _late, _starts;
     private bool _disposed;
     private bool _workerReady;
@@ -418,7 +423,7 @@ public sealed class UiaClient : IDisposable
     }
 
     /// <summary>Latest-wins: replaces any not-yet-sent request. Never queues per-pixel work.</summary>
-    public void RequestLatest(int x, int y, double pointerTs, int foregroundPid)
+    public void RequestLatest(int x, int y, double pointerTs, int foregroundPid, long generation = 0)
     {
         lock (_gate)
         {
@@ -436,40 +441,40 @@ public sealed class UiaClient : IDisposable
             if (_pending is { } old)
             {
                 _superseded++;
-                CompleteWaiter(old.Id, new UiaResponse { Id = old.Id, ClientStatus = "superseded" });
+                CompleteWaiter(old.Id, new UiaResponse { Id = old.Id, ClientStatus = "superseded", Generation = old.Generation });
             }
 
-            _pending = (++_nextId, "query", x, y, pointerTs, foregroundPid);
+            _pending = (++_nextId, "query", x, y, pointerTs, foregroundPid, generation);
             _requests++;
             PumpLocked();
         }
     }
 
     /// <summary>Sequential query for experiments. Completes with a ClientStatus on timeout/supersede.</summary>
-    public Task<UiaResponse> QueryAsync(int x, int y, string cmd = "query")
+    public Task<UiaResponse> QueryAsync(int x, int y, string cmd = "query", long generation = 0)
     {
         var tcs = new TaskCompletionSource<UiaResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
         {
             if (_disposed)
             {
-                tcs.SetResult(new UiaResponse { ClientStatus = "disposed", Error = "disposed" });
+                tcs.SetResult(new UiaResponse { ClientStatus = "disposed", Error = "disposed", Generation = generation });
                 return tcs.Task;
             }
 
             if (_pending is { } old)
             {
                 _superseded++;
-                CompleteWaiter(old.Id, new UiaResponse { Id = old.Id, ClientStatus = "superseded" });
+                CompleteWaiter(old.Id, new UiaResponse { Id = old.Id, ClientStatus = "superseded", Generation = old.Generation });
             }
 
             var id = ++_nextId;
             lock (_waiters)
             {
-                _waiters[id] = tcs;
+                _waiters[id] = (tcs, generation);
             }
 
-            _pending = (id, cmd, x, y, MonotonicClock.Instance.NowMs, 0);
+            _pending = (id, cmd, x, y, MonotonicClock.Instance.NowMs, 0, generation);
             _requests++;
             PumpLocked();
         }
@@ -487,7 +492,7 @@ public sealed class UiaClient : IDisposable
             {
                 foreach (var w in _waiters.Values)
                 {
-                    w.TrySetResult(new UiaResponse { ClientStatus = "disposed" });
+                    w.Completion.TrySetResult(new UiaResponse { ClientStatus = "disposed", Generation = w.Generation });
                 }
 
                 _waiters.Clear();
@@ -519,7 +524,7 @@ public sealed class UiaClient : IDisposable
         var req = new UiaRequest { Id = next.Id, Cmd = next.Cmd, X = next.X, Y = next.Y, AutomationId = _opt.IncludeAutomationId };
         try
         {
-            _outstanding = (next.Id, MonotonicClock.Instance.NowMs, next.PointerTs, next.FgPid, next.X, next.Y);
+            _outstanding = (next.Id, MonotonicClock.Instance.NowMs, next.PointerTs, next.FgPid, next.X, next.Y, next.Generation);
             _proc!.StandardInput.WriteLine(JsonSerializer.Serialize(req, HapticsJson.Compact));
             _proc.StandardInput.Flush();
         }
@@ -527,7 +532,7 @@ public sealed class UiaClient : IDisposable
         {
             Diagnostic?.Invoke($"uia-write-failed: {ex.Message}");
             _outstanding = null;
-            CompleteWaiter(next.Id, new UiaResponse { Id = next.Id, ClientStatus = "worker-write-failed" });
+            CompleteWaiter(next.Id, new UiaResponse { Id = next.Id, ClientStatus = "worker-write-failed", Generation = next.Generation });
             KillLocked();
         }
     }
@@ -540,7 +545,7 @@ public sealed class UiaClient : IDisposable
         }
 
         _pending = null;
-        CompleteWaiter(pending.Id, new UiaResponse { Id = pending.Id, Error = status, ClientStatus = status });
+        CompleteWaiter(pending.Id, new UiaResponse { Id = pending.Id, Error = status, ClientStatus = status, Generation = pending.Generation });
     }
 
     private string? EnsureProcessLocked()
@@ -652,6 +657,7 @@ public sealed class UiaClient : IDisposable
 
                     pointerTs = _outstanding.Value.PointerTs;
                     sentAt = _outstanding.Value.SentAt;
+                    resp.Generation = _outstanding.Value.Generation;
                     _outstanding = null;
                     _responses++;
                 }
@@ -659,7 +665,7 @@ public sealed class UiaClient : IDisposable
                 var now = MonotonicClock.Instance.NowMs;
                 if (resp.Snapshot is not null)
                 {
-                    resp.Snapshot = resp.Snapshot with { RequestedAtMs = pointerTs, ReceivedAtMs = now };
+                    resp.Snapshot = resp.Snapshot with { RequestedAtMs = pointerTs, ReceivedAtMs = now, Generation = resp.Generation };
                 }
 
                 CompleteWaiter(resp.Id, resp);
@@ -715,7 +721,7 @@ public sealed class UiaClient : IDisposable
                 Diagnostic?.Invoke($"uia-timeout id={o.Id} after {_opt.TimeoutMs}ms; killing worker");
                 _outstanding = null;
                 KillLocked();
-                var timeout = new UiaResponse { Id = o.Id, Ok = false, Error = "timeout", ClientStatus = "timeout" };
+                var timeout = new UiaResponse { Id = o.Id, Ok = false, Error = "timeout", ClientStatus = "timeout", Generation = o.Generation };
                 CompleteWaiter(o.Id, timeout);
                 PumpLocked();
             }
@@ -723,7 +729,7 @@ public sealed class UiaClient : IDisposable
             {
                 _outstanding = null;
                 Diagnostic?.Invoke("uia-worker-exited");
-                CompleteWaiter(o2.Id, new UiaResponse { Id = o2.Id, Ok = false, Error = "worker-exited", ClientStatus = "worker-exited" });
+                CompleteWaiter(o2.Id, new UiaResponse { Id = o2.Id, Ok = false, Error = "worker-exited", ClientStatus = "worker-exited", Generation = o2.Generation });
                 KillLocked();
                 PumpLocked();
             }
@@ -763,12 +769,11 @@ public sealed class UiaClient : IDisposable
 
     private void CompleteWaiter(long id, UiaResponse resp)
     {
-        TaskCompletionSource<UiaResponse>? tcs;
         lock (_waiters)
         {
-            if (_waiters.Remove(id, out tcs))
+            if (_waiters.Remove(id, out var waiter))
             {
-                tcs.TrySetResult(resp);
+                waiter.Completion.TrySetResult(resp);
             }
         }
     }

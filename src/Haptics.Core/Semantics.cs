@@ -81,6 +81,10 @@ public sealed record ElementSnapshot
     /// <summary>Timestamp of the pointer observation this lookup was requested for (t0).</summary>
     public double RequestedAtMs { get; init; }
 
+    /// <summary>Interaction generation captured by the caller when requesting this lookup.</summary>
+    [JsonIgnore]
+    public long Generation { get; init; }
+
     public double ReceivedAtMs { get; init; }
     public int QueryX { get; init; }
     public int QueryY { get; init; }
@@ -223,6 +227,21 @@ public sealed class SemanticInterpreter
 
     public bool HasPendingArrival => _pending is not null;
 
+    public long Generation { get; private set; }
+
+    /// <summary>Revoke pending work and cached context. Callers must serialize this with all observations.</summary>
+    public InterpretResult Invalidate(string reason)
+    {
+        Generation++;
+        ResetElement();
+        _lastGroup = null;
+        _last = null;
+        _speed = 0;
+        _hadSnapshot = false;
+        _movedSinceSnapshot = false;
+        return new InterpretResult([], [$"state-cleared:{reason}"]);
+    }
+
     /// <summary>Landing speed in effect: configured, or learned from this user's pre-click speeds.</summary>
     public double EffectiveLandingSpeed
     {
@@ -257,7 +276,7 @@ public sealed class SemanticInterpreter
                 _speed = _speed <= 0 ? inst : (_speed * 0.6) + (inst * 0.4);
             }
 
-            if (last.ForegroundPid != p.ForegroundPid && last.ForegroundPid != 0)
+            if (last.ForegroundPid != p.ForegroundPid)
             {
                 events.Add(Make(SemanticEventKind.ForegroundChanged, p, null, 1.0, ["foreground-changed"]));
                 if (_current is not null)
@@ -265,9 +284,14 @@ public sealed class SemanticInterpreter
                     events.Add(Make(SemanticEventKind.LeaveControl, p, _current, 1.0, ["foreground-changed"]));
                 }
 
-                ResetElement();
-                _lastGroup = null;
-                notes.Add("state-cleared:foreground-changed");
+                notes.AddRange(Invalidate("foreground-changed").Notes);
+            }
+            else if (last.DeviceHandle != p.DeviceHandle || last.InputClass != p.InputClass)
+            {
+                Generation++;
+                _pending = null;
+                _speed = 0;
+                notes.Add("state-cleared:device-changed");
             }
 
             if (!last.PrimaryDown && p.PrimaryDown && _speed > 0)
@@ -341,7 +365,7 @@ public sealed class SemanticInterpreter
     {
         var p = _last ?? new PointerObservation(nowMs, 0, 0, InputOrigin.SyntheticOrUnknown, false, 0);
         var events = new List<SemanticEvent> { Make(SemanticEventKind.DeviceUnavailable, p with { TimestampMs = nowMs }, null, 1.0, ["device-removed"]) };
-        ResetElement();
+        Invalidate("device-unavailable");
         return new InterpretResult(events, ["state-cleared:device-unavailable"]);
     }
 
@@ -357,6 +381,11 @@ public sealed class SemanticInterpreter
         if (_last is not { } p)
         {
             return new InterpretResult(events, ["no-pointer-yet"]);
+        }
+
+        if (s.Generation != Generation)
+        {
+            return new InterpretResult(events, ["generation-snapshot-discarded"]);
         }
 
         if (nowMs - s.RequestedAtMs > Config.MaxSnapshotAgeMs)

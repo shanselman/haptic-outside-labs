@@ -31,6 +31,8 @@ Each line is one event:
 | `native-duplicate-suppression` | 0 (`native-suppression:*`) |
 | `security-password` | 0 (`protected-context`) |
 | `excluded-app` | 0 (`process-excluded`) |
+| `generation-stale-context` | 1 fresh Hover; old foreground/device answers are discarded |
+| `device-change-pending` | 0; switching cancels the pending arrival without re-arrival |
 
 Run one: `haptics-lab replay tests/traces/menu-nested.jsonl --profile Quiet`. Run all as an experiment: `haptics-lab run EXP-070`.
 Replay ticks the interpreter every 10 ms while an arrival is pending, the same way the live pipeline ticks every 15 ms:
@@ -47,3 +49,9 @@ are independent attribution metadata, not permission to emit or evidence of phys
 unknown enum names fail replay instead of silently changing attribution. A `foreground` event supplies
 the default foreground PID for following pointer lines; an explicit `fg` still wins. Without a
 `foreground` event, omitted `fg` keeps the legacy zero default. The 13 existing traces are unchanged.
+
+An element's optional `generation` is the interaction token captured when its lookup was requested,
+not when answered. Omission means a request in the current generation. Foreground changes, device
+handle/class changes and explicit invalidation advance the token; old answers are rejected even at
+the same point and timestamp. A device switch cancels dwell but retains the current identity so
+staying over the same element cannot manufacture another arrival.

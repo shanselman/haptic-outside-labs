@@ -988,6 +988,11 @@ Track `t6-t0` and `t8-t0` **separately**. `t7` is not physical completion or sen
 - Input observation is an append of small, bounded, non-sensitive events into a bounded channel or latest-state buffer; sample pointer coordinate at a configurable rate.
 - UIA worker receives **latest desired target** and sequence id. If multiple pointer positions arrive, cancel/discard superseded requests; don't launch hundreds of parallel COM lookups.
 - Policy consumes only snapshots whose observed HWND, pointer point, session generation, and age are valid for the current context.
+- The interpreter advances an interaction generation on foreground and device handle/input-class changes.
+  UIA requests capture that generation before dispatch; replies retain it through coalescing and are
+  rejected if it no longer matches, even at the same pointer position and timestamp. Device changes
+  cancel pending arrivals but retain element identity (no re-arrival while staying on the same target).
+  `Invalidate(reason)` revokes pending work, current element, group and pointer state for lifecycle callers.
 - Output sink has a **small queue (ideally one current intent plus critical stop)**. Expired intents are dropped; sustained overflow disables the noisy rule and logs why.
 - Coalesce transitions by semantic key, not raw pixel equivalence. No click suppression or extra global input capture.
 - Use per-process quarantine/backoff on slow UIA providers; cap outstanding workers/process restarts.

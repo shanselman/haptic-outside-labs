@@ -1,0 +1,8 @@
+{"type":"comment","text":"Old answers stay silent across foreground and device changes even at the same point and timestamp. Only the fresh answer lands."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":20,"y":15,"fg":100,"handle":1}
+{"t":10,"type":"foreground","pid":200}
+{"t":11,"type":"element","req":0,"generation":0,"pid":100,"controlType":"Button","rid":"old","bounds":[0,0,40,30]}
+{"t":20,"type":"pointer","x":20,"y":15,"fg":200,"handle":2}
+{"t":21,"type":"element","req":20,"generation":1,"pid":100,"controlType":"Button","rid":"old","bounds":[0,0,40,30]}
+{"t":22,"type":"element","req":20,"pid":100,"controlType":"Button","rid":"fresh","bounds":[0,0,40,30]}

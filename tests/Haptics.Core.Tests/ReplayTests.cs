@@ -5,6 +5,17 @@ namespace Haptics.Core.Tests;
 /// <summary>Golden-trace replay (SPEC §12.3): exact logical decisions, no OS timing.</summary>
 public class ReplayTests
 {
+    [Fact]
+    public void GenerationChangesRejectOldAnswersAndCancelPendingArrivals()
+    {
+        var stale = Run("generation-stale-context.jsonl");
+        Assert.Equal(["Hover"], stale.Haptic.Select(d => d.Waveform));
+        Assert.Equal(2, stale.Notes.Count(n => n.EndsWith("generation-snapshot-discarded", StringComparison.Ordinal)));
+        var switched = Run("device-change-pending.jsonl");
+        Assert.Empty(switched.Haptic);
+        Assert.Contains(switched.Notes, n => n.EndsWith("state-cleared:device-changed", StringComparison.Ordinal));
+    }
+
     private static TraceReplay.ReplayOutput Run(string name, PolicyConfig? cfg = null) =>
         TraceReplay.Run(Path.Combine(AppContext.BaseDirectory, "traces", name), cfg);
 
