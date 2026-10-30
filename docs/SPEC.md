@@ -986,6 +986,9 @@ Track `t6-t0` and `t8-t0` **separately**. `t7` is not physical completion or sen
 - Output sink has a **small queue (ideally one current intent plus critical stop)**. Expired intents are dropped; sustained overflow disables the noisy rule and logs why.
 - Coalesce transitions by semantic key, not raw pixel equivalence. No click suppression or extra global input capture.
 - Use per-process quarantine/backoff on slow UIA providers; cap outstanding workers/process restarts.
+- Failed worker starts and exhausted restart budgets complete pending callers with explicit client failures.
+  Failed starts consume the rolling restart budget. The watchdog retries after bounded backoff or budget
+  refill without requiring new pointer input; startup and query deadlines remain separate.
 
 ### 9.5 Dynamic app state and cache identity
 
