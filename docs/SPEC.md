@@ -995,9 +995,10 @@ Track `t6-t0` and `t8-t0` **separately**. `t7` is not physical completion or sen
   `Invalidate(reason)` revokes pending work, current element, group and pointer state for lifecycle callers.
 - Pending arrivals refresh from newer same-element metadata without restarting dwell; protected, disabled,
   offscreen or failed lookups cancel them. Older same-element answers cannot replace newer metadata.
-  Dwell starts when an accepted lookup first identifies the pending target (not before a slow provider
-  answers). Cause time is that fixed dwell deadline, not callback time. A callback later than the deadline
-  plus 30 ms scheduling tolerance expires silently, as does a delayed pointer observation. Semantic
+  An error inside the current element preserves identity/range history; outside it, normal Leave/reset
+  behavior applies. Dwell is due at the later of pointer arrival plus 80 ms and the first accepted lookup.
+  Cause time is that fixed due time, not callback time. A callback later than the due time
+  plus 45 ms scheduling tolerance expires silently, as does a delayed pointer observation. Semantic
   events retain their interaction generation for downstream routing.
 - Output sink has a **small queue (ideally one current intent plus critical stop)**. Expired intents are dropped; sustained overflow disables the noisy rule and logs why.
 - Coalesce transitions by semantic key, not raw pixel equivalence. No click suppression or extra global input capture.

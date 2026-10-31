@@ -69,7 +69,7 @@ public class PendingArrivalTests
         var interpreter = Pending();
         interpreter.OnSnapshot(new ElementSnapshot { Error = "timeout", RequestedAtMs = 20, QueryX = 20, QueryY = 15 }, 21);
         Assert.False(interpreter.HasPendingArrival);
-        Assert.Null(interpreter.Current);
+        Assert.NotNull(interpreter.Current);
         Assert.Empty(interpreter.OnTick(90).Events);
     }
 
@@ -86,7 +86,7 @@ public class PendingArrivalTests
     }
 
     [Theory]
-    [InlineData(121)]
+    [InlineData(136)]
     [InlineData(5000)]
     public void LateTickExpiresInsteadOfManufacturingAFreshCause(double callback)
     {
@@ -114,23 +114,21 @@ public class PendingArrivalTests
         interpreter.OnPointer(Pointer(100, 0));
         interpreter.OnPointer(Pointer(110, 20));
         interpreter.OnSnapshot(Button(110) with { Generation = interpreter.Generation }, 111);
-        Assert.Equal(interpreter.Generation, Assert.Single(interpreter.OnTick(191).Events).Generation);
+        Assert.Equal(interpreter.Generation, Assert.Single(interpreter.OnTick(190).Events).Generation);
         Assert.Equal(interpreter.Generation, interpreter.Cooperative("Align", 100, 200).Generation);
     }
 
     [Fact]
-    public void SlowValidLookupStartsDwellWhenTheTargetBecomesKnown()
+    public void SlowValidLookupCanLandOnTheNextTickWithoutRestartingDwell()
     {
         var interpreter = new SemanticInterpreter();
         interpreter.OnPointer(Pointer(0, 0));
         interpreter.OnPointer(Pointer(10, 20));
         interpreter.OnSnapshot(Button(), 150);
         Assert.True(interpreter.HasPendingArrival);
-        Assert.Empty(interpreter.OnTick(160).Events);
-        Assert.Empty(interpreter.OnTick(229).Events);
-        var arrival = Assert.Single(interpreter.OnTick(240).Events);
-        Assert.Equal(230, arrival.PointerTimestampMs);
-        Assert.Equal(240, arrival.DecidedAtMs);
+        var arrival = Assert.Single(interpreter.OnTick(160).Events);
+        Assert.Equal(150, arrival.PointerTimestampMs);
+        Assert.Equal(160, arrival.DecidedAtMs);
     }
 
     [Fact]

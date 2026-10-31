@@ -5,6 +5,16 @@ namespace Haptics.Core.Tests;
 /// <summary>Golden-trace replay (SPEC §12.3): exact logical decisions, no OS timing.</summary>
 public class ReplayTests
 {
+    [Theory]
+    [InlineData("dwell-lookup-40ms.jsonl", 90)]
+    [InlineData("dwell-lookup-150ms.jsonl", 170)]
+    public void ProviderLatencyPreservesExistingDwellTiming(string trace, double landedAt)
+    {
+        var output = Run(trace);
+        Assert.Equal(["Hover"], output.Haptic.Select(d => d.Waveform));
+        Assert.Equal(landedAt, Assert.Single(output.Haptic).T);
+    }
+
     [Fact]
     public void PendingArrivalsUseFreshSafetyMetadataAndExpireAfterSchedulerStalls()
     {

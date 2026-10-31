@@ -1,0 +1,6 @@
+{"type":"comment","text":"A 40 ms lookup does not restart dwell: a pointer stop at 10 lands at the fixed 90 ms due time."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":0,"y":15,"fg":100}
+{"t":10,"type":"pointer","x":40,"y":15,"fg":100}
+{"t":50,"type":"element","req":10,"pid":100,"controlType":"Button","rid":"button","bounds":[0,0,100,30]}
+{"t":1000,"type":"pointer","x":40,"y":15,"fg":100}

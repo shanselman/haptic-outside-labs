@@ -1,0 +1,10 @@
+{"type":"comment","text":"Transient lookup failure inside the same slider preserves its identity/range history; the later safe answer must not re-arrive."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":10,"y":15,"fg":100}
+{"t":20,"type":"pointer","x":11,"y":15,"fg":100}
+{"t":21,"type":"element","req":20,"pid":100,"controlType":"Slider","rid":"slider","bounds":[0,0,200,30],"range":{"value":5,"min":0,"max":100,"small":1,"large":10}}
+{"t":1000,"type":"pointer","x":12,"y":15,"fg":100}
+{"t":1001,"type":"element","req":1000,"controlType":"Unknown","error":"provider-failed"}
+{"t":1020,"type":"pointer","x":13,"y":15,"fg":100}
+{"t":1021,"type":"element","req":1020,"pid":100,"controlType":"Slider","rid":"slider","bounds":[0,0,200,30],"range":{"value":5,"min":0,"max":100,"small":1,"large":10}}
+{"t":1200,"type":"pointer","x":13,"y":15,"fg":100}

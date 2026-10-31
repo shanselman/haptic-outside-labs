@@ -38,6 +38,10 @@ Each line is one event:
 | `device-removed-stationary-tap` | 1 Hover; removal and a later stationary tap from a present device do not re-arrive |
 | `pending-metadata-safety` | 1 later safe Hover; pending protected/disabled/offscreen/error arrivals cancel |
 | `pending-late-tick` | 0; a five-second callback delay expires instead of rewriting cause time |
+| `transient-error-button` | 1 Hover; a lookup error inside the same button does not manufacture another arrival |
+| `transient-error-slider` | 1 Hover; a lookup error inside the same slider preserves identity/range history |
+| `dwell-lookup-40ms` | 1 Hover at 90 ms; provider latency does not restart dwell |
+| `dwell-lookup-150ms` | 1 Hover at 170 ms; a slow provider lands on the next tick without restarting dwell |
 
 Run one: `haptics-lab replay tests/traces/menu-nested.jsonl --profile Quiet`. Run all as an experiment: `haptics-lab run EXP-070`.
 Replay ticks the interpreter every 10 ms while an arrival is pending, the same way the live pipeline ticks every 15 ms:

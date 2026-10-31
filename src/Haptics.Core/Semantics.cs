@@ -179,7 +179,7 @@ public sealed class InterpreterConfig
     public double LandingDwellMs { get; set; } = 80;
 
     /// <summary>Maximum timer scheduling delay after the dwell deadline; later arrivals expire silently.</summary>
-    public double LandingTickToleranceMs { get; set; } = 30;
+    public double LandingTickToleranceMs { get; set; } = 45;
 
     /// <summary>Learn the landing speed from how fast this user moves just before clicking (≥ 8 clicks).</summary>
     public bool AdaptiveLanding { get; set; } = true;
@@ -333,7 +333,7 @@ public sealed class SemanticInterpreter
 
         if (_pending is { } a)
         {
-            if (p.TimestampMs > a.Since + Config.LandingDwellMs + Config.LandingTickToleranceMs)
+            if (p.TimestampMs > ArrivalDue(a) + Config.LandingTickToleranceMs)
             {
                 _pending = null;
                 notes.Add("arrival-expired");
@@ -355,12 +355,12 @@ public sealed class SemanticInterpreter
     /// <summary>Resolve a pending arrival once the pointer has rested inside it for the dwell time.</summary>
     public InterpretResult OnTick(double nowMs)
     {
-        if (_pending is not { } a || _last is not { } p || nowMs - a.Since < Config.LandingDwellMs)
+        if (_pending is not { } a || _last is not { } p || nowMs < ArrivalDue(a))
         {
             return InterpretResult.Empty;
         }
 
-        var deadline = a.Since + Config.LandingDwellMs;
+        var deadline = ArrivalDue(a);
         if (nowMs > deadline + Config.LandingTickToleranceMs)
         {
             _pending = null;
@@ -422,10 +422,12 @@ public sealed class SemanticInterpreter
             if (_current?.Bounds is { } cb && !cb.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
             {
                 events.Add(Make(SemanticEventKind.LeaveControl, p, _current, 0.6, ["lookup-error", s.Error]));
+                ResetElement();
             }
-
-            ResetElement();
-            _movedSinceSnapshot = false;
+            else
+            {
+                _pending = null;
+            }
             notes.Add($"lookup-error:{s.Error}");
             return new InterpretResult(events, notes);
         }
@@ -496,8 +498,7 @@ public sealed class SemanticInterpreter
 
         _current = s;
         InitRange(s);
-        // Dwell starts when the target is known, not before a slow lookup has answered.
-        var arrival = new Arrival(s, nowMs);
+        var arrival = new Arrival(s, p.TimestampMs, nowMs);
         if (_speed <= EffectiveLandingSpeed)
         {
             Arrive(arrival, p, p.TimestampMs, _speed, "landed:slow-entry", events);
@@ -657,5 +658,7 @@ public sealed class SemanticInterpreter
 
     private static double Distance(double x1, double y1, double x2, double y2) => Math.Sqrt(Math.Pow(x1 - x2, 2) + Math.Pow(y1 - y2, 2));
 
-    private sealed record Arrival(ElementSnapshot Element, double Since);
+    private double ArrivalDue(Arrival arrival) => Math.Max(arrival.Since + Config.LandingDwellMs, arrival.KnownAt);
+
+    private sealed record Arrival(ElementSnapshot Element, double Since, double KnownAt);
 }
