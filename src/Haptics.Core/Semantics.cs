@@ -284,7 +284,10 @@ public sealed class SemanticInterpreter
                     events.Add(Make(SemanticEventKind.LeaveControl, p, _current, 1.0, ["foreground-changed"]));
                 }
 
-                notes.AddRange(Invalidate("foreground-changed").Notes);
+                Generation++;
+                ResetElement();
+                _lastGroup = null;
+                notes.Add("state-cleared:foreground-changed");
             }
             else if (last.DeviceHandle != p.DeviceHandle || last.InputClass != p.InputClass)
             {

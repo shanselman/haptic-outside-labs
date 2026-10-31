@@ -1,0 +1,8 @@
+{"type":"comment","text":"Click-to-activate changes foreground without pointer movement: the fresh lookup stays silent rather than re-arriving."}
+{"type":"process","pid":100,"name":"app"}
+{"type":"process","pid":200,"name":"other"}
+{"t":0,"type":"pointer","x":20,"y":15,"fg":200,"handle":1}
+{"t":1,"type":"element","req":0,"pid":100,"controlType":"Button","rid":"ok","bounds":[0,0,40,30]}
+{"t":500,"type":"pointer","x":20,"y":15,"fg":200,"handle":1,"primary":true}
+{"t":600,"type":"pointer","x":20,"y":15,"fg":100,"handle":1,"primary":false}
+{"t":605,"type":"element","req":600,"pid":100,"controlType":"Button","rid":"ok","bounds":[0,0,40,30]}

@@ -23,6 +23,7 @@ public static class Exp070Replay
         ["excluded-app.jsonl"] = (0, 0),
         ["generation-stale-context.jsonl"] = (1, 1),
         ["device-change-pending.jsonl"] = (0, 0),
+        ["foreground-change-stationary.jsonl"] = (1, 1),
     };
 
     public static string Run(string? outDir, string? traceDir)
