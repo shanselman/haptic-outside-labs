@@ -6,6 +6,31 @@ namespace Haptics.Windows.Tests;
 
 public class TrayDefaultsTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ToPolicyMapsCloseButtonHover(bool enabled)
+    {
+        var cfg = new TraySettings { CloseButtonHover = enabled }.ToPolicy();
+        Assert.Equal(enabled, cfg.CloseButtonHoverEnabled);
+    }
+
+    [Fact]
+    public void CloseHoverSettingControlsCaptionReplay()
+    {
+        var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
+        var path = Path.Combine(traces, "caption-close-hover.jsonl");
+        var on = TraceReplay.Run(path, new TraySettings().ToPolicy());
+        Assert.Equal(["Hover", "Hover", "Hover"], on.Haptic.Select(d => d.Waveform));
+        Assert.Equal(["Button", "Button", "Button"], on.Haptic.Select(d => d.ControlType));
+        Assert.DoesNotContain(on.Decisions, d => d.Reason == "coalesced-with-group-boundary");
+        Assert.Contains(on.Decisions, d => d.Reason == "native-suppression:windows-snap-titlebar-drag");
+
+        var off = TraceReplay.Run(path, new TraySettings { CloseButtonHover = false }.ToPolicy());
+        Assert.Equal(["Hover"], off.Haptic.Select(d => d.Waveform));
+        Assert.Equal(3, off.Decisions.Count(d => d.Reason == "rule-disabled:close-hover"));
+    }
+
     [Fact]
     public void CloseButtonHoverDefaultsOn()
     {

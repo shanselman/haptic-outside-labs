@@ -72,6 +72,7 @@ public sealed class TraySettings
     {
         var p = PolicyConfig.Sample(Style, IntensityScale);
         p.Mode = Enabled ? HapticsMode.On : HapticsMode.Off;
+        p.CloseButtonHoverEnabled = CloseButtonHover;
         p.CooperativeEnabled = CooperationEnabled;
         p.ExcludedProcesses.AddRange(ExcludedProcesses);
         return p;
