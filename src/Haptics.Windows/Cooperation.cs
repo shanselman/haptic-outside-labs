@@ -42,9 +42,10 @@ public sealed class ControllerBank
         _map = map;
     }
 
-    public bool RemoveDevice(long handle)
+    public bool RemoveDevice(long handle, CapturedController? expected = null)
     {
-        if (!_map.TryGetValue(handle, out var removed))
+        if (!_map.TryGetValue(handle, out var removed) ||
+            expected is not null && !ReferenceEquals(expected, removed))
         {
             return false;
         }
@@ -52,17 +53,37 @@ public sealed class ControllerBank
         var map = new Dictionary<long, CapturedController>(_map);
         foreach (var (mappedHandle, controller) in map.ToArray())
         {
-            if (mappedHandle == handle || ControllerRouting.SameController(removed, controller))
+            if (mappedHandle == handle || ControllerRouting.IsHandlelessAlias(mappedHandle, controller, removed))
             {
                 map.Remove(mappedHandle);
             }
         }
 
         _map = map;
-        if (_latestHandle == handle || Latest is { } latest && ControllerRouting.SameController(removed, latest))
+        if (_latestHandle == handle ||
+            Latest is { } latest && ControllerRouting.IsHandlelessAlias(_latestHandle, latest, removed))
         {
             Latest = null;
             _latestHandle = 0;
+        }
+
+        return true;
+    }
+
+    public bool RemoveLostController(long handle, CapturedController expected)
+    {
+        var current = ControllerRouting.Resolve(_map, handle,
+            handle == 0 ? PointerInputClass.Handleless : PointerInputClass.Handle).Controller;
+        if (!ReferenceEquals(current, expected))
+        {
+            return false;
+        }
+
+        foreach (var mappedHandle in _map.Where(pair =>
+                     ControllerRouting.AffectedByLoss(handle, pair.Key, pair.Value, expected))
+                     .Select(pair => pair.Key).ToArray())
+        {
+            RemoveDevice(mappedHandle);
         }
 
         return true;
@@ -135,6 +156,16 @@ internal readonly record struct ControllerRoute(CapturedController? Controller, 
 
 internal static class ControllerRouting
 {
+    internal static bool AffectedByLoss(long inputHandle, long mappedHandle, CapturedController candidate, CapturedController lost) =>
+        mappedHandle == inputHandle || IsHandlelessAlias(mappedHandle, candidate, lost) ||
+        inputHandle == 0 && candidate.DeviceType is HapticDeviceType.Generic or HapticDeviceType.Touchpad &&
+        SameController(lost, candidate);
+
+    internal static bool IsHandlelessAlias(long handle, CapturedController candidate, CapturedController removed) =>
+        handle == 0 &&
+        candidate.DeviceType is HapticDeviceType.Touchpad or HapticDeviceType.Generic &&
+        SameController(removed, candidate);
+
     internal static bool SameController(CapturedController left, CapturedController right) =>
         ReferenceEquals(left, right) ||
         left.Controller is { } controller && ReferenceEquals(controller, right.Controller) ||

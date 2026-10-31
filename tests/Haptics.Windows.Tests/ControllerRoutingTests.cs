@@ -124,6 +124,35 @@ public class ControllerRoutingTests
     }
 
     [Fact]
+    public void RemovingOneSameIdentityHandlePreservesOtherNonzeroHandles()
+    {
+        var old = Controller(HapticDeviceType.Generic, "mouse");
+        var current = Controller(HapticDeviceType.Generic, "mouse");
+        var bank = new ControllerBank();
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [12] = current, [14] = old }, "ready"));
+        Assert.True(bank.RemoveDevice(14));
+        Assert.Same(current, Assert.Single(bank.Map).Value);
+        Assert.True(bank.Any);
+    }
+
+    [Fact]
+    public void HandlelessControllerLossRemovesItsDiscoveryAliasesButKeepsOtherDevices()
+    {
+        var pad = Controller(HapticDeviceType.Touchpad, "pad");
+        var generic = Controller(HapticDeviceType.Generic, "pad");
+        var mouse = Controller(HapticDeviceType.Mouse, "mouse");
+        var bank = new ControllerBank(() => pad);
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [12] = mouse, [34] = generic }, "ready"));
+        Assert.True(bank.TryCapture(0, PointerInputClass.Handleless, 100, 100));
+        Assert.True(bank.RemoveLostController(0, pad));
+        Assert.Equal(12, Assert.Single(bank.Map).Key);
+        Assert.Null(bank.Latest);
+        Assert.False(bank.RemoveLostController(0, pad));
+    }
+
+    [Fact]
     public void ManualCaptureCannotMapOneControllerToAnotherRawHandle()
     {
         var known = Controller(HapticDeviceType.Mouse, "same-controller");

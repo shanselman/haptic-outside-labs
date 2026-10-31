@@ -21,6 +21,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     private CooperativeServer? _cooperation;
     private SettingsWindow? _window;
     private readonly ConcurrentQueue<DeviceChangeEvent> _deviceChanges = new();
+    private readonly ConcurrentQueue<ControllerLostEvent> _lostControllers = new();
     private readonly ControllerRefresh _controllerRefresh = new(() => Task.Run(ControllerDiscovery.Discover));
 
     public TrayContext()
@@ -82,6 +83,15 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     private void PollStartupPriming()
     {
         var changed = false;
+        while (_lostControllers.TryDequeue(out var lost))
+        {
+            if (HandleControllerLoss(_bank, _controllerRefresh, lost))
+            {
+                DiscoveryStatus = "A haptic controller was lost; looking again, or move over Settings to prime.";
+                changed = true;
+            }
+        }
+
         while (_deviceChanges.TryDequeue(out var device))
         {
             _controllerRefresh.DeviceChanged(device.Arrived);
@@ -124,6 +134,17 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
         }
     }
 
+    internal static bool HandleControllerLoss(ControllerBank bank, ControllerRefresh refresh, ControllerLostEvent lost)
+    {
+        if (!bank.RemoveLostController(lost.Handle, lost.Controller))
+        {
+            return false;
+        }
+
+        refresh.Request();
+        return true;
+    }
+
     public void Apply()
     {
         var saved = RevokeAndSave(Settings, _pipeline, Settings.Save);
@@ -136,6 +157,10 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
                 if (e is DeviceChangeEvent device)
                 {
                     _deviceChanges.Enqueue(device);
+                }
+                else if (e is ControllerLostEvent lost)
+                {
+                    _lostControllers.Enqueue(lost);
                 }
             };
             _pipeline.Start();

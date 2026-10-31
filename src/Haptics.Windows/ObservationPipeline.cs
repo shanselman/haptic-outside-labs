@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using Haptics.Core;
 
 namespace Haptics.Windows;
@@ -14,6 +15,8 @@ public sealed record OutputEvent(double AtMs, HapticIntent Intent, HapticAttempt
 public sealed record DiagnosticEvent(double AtMs, string Message) : PipelineEvent(AtMs);
 
 public sealed record DeviceChangeEvent(double AtMs, long Handle, bool Arrived) : PipelineEvent(AtMs);
+
+public sealed record ControllerLostEvent(double AtMs, long Handle, CapturedController Controller) : PipelineEvent(AtMs);
 
 /// <summary>Why something stayed silent before reaching policy (e.g. skip:already-selected, passed-through).</summary>
 public sealed record NoteEvent(double AtMs, string Note, ElementSnapshot? Element) : PipelineEvent(AtMs);
@@ -72,6 +75,7 @@ public sealed class ObservationPipeline : IDisposable
     private readonly ConcurrentDictionary<int, (string? Name, double At)> _names = new();
     private readonly HashSet<long> _removedDevices = new();
     private readonly Dictionary<long, CapturedController> _removedControllers = new();
+    private readonly ConditionalWeakTable<CapturedController, HashSet<long>> _revokedMappings = new();
     private readonly Dictionary<(double TimestampMs, long Generation), InputRouteContext> _requestRoutes = new();
     private readonly Queue<double> _lookup = new();
     private readonly Queue<double> _inputToCall = new();
@@ -114,36 +118,15 @@ public sealed class ObservationPipeline : IDisposable
         {
             lock (_lock)
             {
-                var previous = _controllers;
                 _controllers = value;
-                var touchpad = value?.GetValueOrDefault(0);
-                var previousTouchpad = previous?.GetValueOrDefault(0);
-                if (touchpad?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad &&
-                    !ReferenceEquals(touchpad, previousTouchpad) &&
-                    _removedControllers.TryGetValue(0, out var removedAlias) &&
-                    ControllerRouting.SameController(removedAlias, touchpad))
-                {
-                    _removedControllers.Remove(0);
-                }
-
                 foreach (var handle in _removedDevices.ToArray())
                 {
                     var current = value?.GetValueOrDefault(handle);
-                    var replacedAtHandle = current is not null &&
-                        (!_removedControllers.TryGetValue(handle, out var removed) || !ReferenceEquals(current, removed));
-                    var handlelessReprime = current is null &&
-                        touchpad?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad &&
-                        !ReferenceEquals(touchpad, previousTouchpad) &&
-                        _removedControllers.TryGetValue(handle, out var removedController) &&
-                        ControllerRouting.SameController(removedController, touchpad);
-                    if (replacedAtHandle)
+                    if (current is null || !_removedControllers.TryGetValue(handle, out var removed) ||
+                        !ReferenceEquals(current, removed))
                     {
                         _removedDevices.Remove(handle);
                         _removedControllers.Remove(handle);
-                    }
-                    else if (handlelessReprime)
-                    {
-                        _removedControllers.Remove(0);
                     }
                 }
             }
@@ -373,20 +356,29 @@ public sealed class ObservationPipeline : IDisposable
                 return;
             }
 
-            _removedDevices.Add(handle);
-            if (Controllers is { } controllers && controllers.TryGetValue(handle, out var controller))
-            {
-                foreach (var (mappedHandle, mappedController) in controllers)
-                {
-                    if (ControllerRouting.SameController(controller, mappedController))
-                    {
-                        _removedControllers[mappedHandle] = mappedController;
-                    }
-                }
-            }
+            RevokeDeviceMapping(handle);
 
             HandleLocked(_interpreter.OnDeviceUnavailable(Now), Now);
             Publish(new DiagnosticEvent(Now, "device removed: its route is disabled until rediscovery or priming"));
+        }
+    }
+
+    private void RevokeDeviceMapping(long handle)
+    {
+        if (_controllers is not { } controllers || !controllers.TryGetValue(handle, out var controller))
+        {
+            return;
+        }
+
+        foreach (var (mappedHandle, mappedController) in controllers)
+        {
+            if (mappedHandle == handle ||
+                ControllerRouting.IsHandlelessAlias(mappedHandle, mappedController, controller))
+            {
+                _removedDevices.Add(mappedHandle);
+                _removedControllers[mappedHandle] = mappedController;
+                _revokedMappings.GetOrCreateValue(mappedController).Add(mappedHandle);
+            }
         }
     }
 
@@ -565,6 +557,33 @@ public sealed class ObservationPipeline : IDisposable
             {
                 Push(_inputToCall, itc);
             }
+
+            if (a is not null && controller is not null && input is not null &&
+                ControllerHealth.Classify(a) == ControllerFailure.Lost)
+            {
+                RevokeDeviceMapping(input.DeviceHandle);
+                if (_controllers is { } mappings)
+                {
+                    foreach (var alias in mappings.Where(pair =>
+                                 ControllerRouting.AffectedByLoss(input.DeviceHandle, pair.Key, pair.Value, controller)))
+                    {
+                        RevokeDeviceMapping(alias.Key);
+                    }
+
+                    Controllers = mappings.Where(pair =>
+                        !ControllerRouting.AffectedByLoss(input.DeviceHandle, pair.Key, pair.Value, controller))
+                        .ToDictionary();
+                }
+
+                if (ReferenceEquals(_controller, controller))
+                {
+                    _controller = null;
+                }
+
+                _interpreter.Invalidate("controller-lost");
+                _requestRoutes.Clear();
+                Publish(new ControllerLostEvent(Now, input.DeviceHandle, controller));
+            }
         }
 
         Publish(new OutputEvent(Now, intent, a, a is null ? "dry-run-route" : a.Accepted ? "api-accepted" : $"api-rejected:{a.Error ?? "false"}"));
@@ -587,9 +606,10 @@ public sealed class ObservationPipeline : IDisposable
 
         var route = ControllerRouting.Resolve(Controllers, input.DeviceHandle, input.InputClass);
         if (route.Controller is { } mapped &&
-            _removedControllers.Any(pair =>
-                ControllerRouting.SameController(pair.Value, mapped) &&
-                (pair.Key == input.DeviceHandle || ReferenceEquals(pair.Value, mapped))))
+            _revokedMappings.TryGetValue(mapped, out var handles) &&
+            (handles.Contains(input.DeviceHandle) ||
+             input.DeviceHandle == 0 && _controllers is not null &&
+             _controllers.Any(pair => ReferenceEquals(pair.Value, mapped) && handles.Contains(pair.Key))))
         {
             return new(null, "skip:removed-device");
         }

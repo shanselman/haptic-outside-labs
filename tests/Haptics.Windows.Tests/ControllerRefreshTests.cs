@@ -8,7 +8,7 @@ public class ControllerRefreshTests
         new(new Dictionary<long, CapturedController>(), "No controller");
 
     [Fact]
-    public void ArrivalStartsANewLookupButRemovalAloneDoesNot()
+    public void ArrivalAndRemovalEachRequestOneLookup()
     {
         var calls = 0;
         var refresh = new ControllerRefresh(() =>
@@ -20,10 +20,12 @@ public class ControllerRefreshTests
         Assert.True(refresh.Poll(0, true, false).Started);
         Assert.NotNull(refresh.Poll(1, true, false).Result);
         refresh.DeviceChanged(arrived: false);
-        Assert.False(refresh.Poll(2, true, false).Started);
+        Assert.True(refresh.Poll(2, true, false).Started);
+        Assert.NotNull(refresh.Poll(3, true, false).Result);
+        Assert.False(refresh.Poll(4, true, false).Started);
         refresh.DeviceChanged(arrived: true);
-        Assert.True(refresh.Poll(3, true, false).Started);
-        Assert.Equal(2, calls);
+        Assert.True(refresh.Poll(5, true, false).Started);
+        Assert.Equal(3, calls);
     }
 
     [Fact]
@@ -52,6 +54,30 @@ public class ControllerRefreshTests
         var fresh = EmptyResult;
         jobs[1].SetResult(fresh);
         Assert.Same(fresh, refresh.Poll(3, true, false).Result);
+    }
+
+    [Fact]
+    public void BurstOfLossRequestsCoalescesAndDoesNotPollAfterCompletion()
+    {
+        var calls = 0;
+        var refresh = new ControllerRefresh(() =>
+        {
+            calls++;
+            return Task.FromResult(EmptyResult);
+        });
+        for (var i = 0; i < 10; i++)
+        {
+            refresh.Request();
+        }
+
+        Assert.True(refresh.Poll(0, true, false).Started);
+        Assert.NotNull(refresh.Poll(1, true, false).Result);
+        for (var i = 2; i < 100; i++)
+        {
+            Assert.False(refresh.Poll(i, true, false).Started);
+        }
+
+        Assert.Equal(1, calls);
     }
 
     [Fact]

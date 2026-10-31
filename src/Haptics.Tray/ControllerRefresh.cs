@@ -19,7 +19,7 @@ internal sealed class ControllerRefresh(Func<Task<ControllerDiscoveryResult>> di
     internal void DeviceChanged(bool arrived)
     {
         _revision++;
-        _requested |= arrived;
+        _requested = true;
     }
 
     internal (ControllerDiscoveryResult? Result, bool ShowFallback, bool Started) Poll(long now, bool enabled, bool alreadyPrimed)
