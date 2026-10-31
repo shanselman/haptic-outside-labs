@@ -76,12 +76,10 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
   (including its Thumb/Button parts) gets a second, read-only range cache. One-hop parent type/bounds and
   selection metadata remain intact. `UiaCacheTests` pins acquisition, not just serialized output.
 
-- [ ] **Report non-cancellation Showcase launch errors.** `src/Haptics.Tray/TrayContext.cs`,
-  `OpenShowcase`, currently swallows every `Win32Exception` as if it were cancellation at a security prompt.
-  Handle native error 1223 as user cancellation; surface other launch failures through the existing tray
-  error UI rather than silently ignoring them. Add focused regression coverage for cancellation versus a
-  genuine launch failure, and ensure the tray remains usable. Do not bypass SmartScreen or security prompts.
-  This is recorded work only; no launch-error behavior was changed during this handoff.
+- [x] **Report non-cancellation Showcase launch errors.** `TrayContext.OpenShowcase` now treats only
+  native error 1223 as user cancellation. Other `Win32Exception` failures use the existing tray error UI,
+  and a later launch remains usable. `ShowcaseLaunchTests` exercises cancellation, missing executable,
+  access denied and unexpected bugs through an inert launch helper. No security prompt is bypassed.
 
 ## Automatic priming: retain the existing checklist
 
@@ -106,6 +104,8 @@ Do not replace those records with this summary.
   delayed availability and physical re-pairing still need operator evidence. REC-3 and remaining REC-4 checks stay open:
   stalled native-call containment and remaining failure-state coverage.
   REC-2a (device-arrival recovery) is implemented.
+- The Showcase does not subscribe to `ControllerLostEvent`, so its bank stays stale until the next prime;
+  the tray recovers on its own. Lane G owns Showcase changes; this is a documented limitation.
 - The two-second fallback is not native-call cancellation or process isolation. The acquisition interface
   is undocumented. Functional/operator observations must not be promoted to blinded PHYSICAL evidence.
   Disruptive operator checks require an available, consenting operator.
@@ -116,9 +116,12 @@ Do not replace those records with this summary.
 
 `PipelineOutputTests` covers mouse-only, touchpad-only and real tray auto-priming with a recording sink, plus generation mismatch, alias removal/re-priming, same-identity reconnect, cooperative expiry, and Showcase reconnect. These tests are hardware-free; physical delivery and touchpad identification from discovery alone remain unverified. Keep Raw Input mouse-only and do not register the precision-touchpad collection; discovery-only touchpads stay silent until primed.
 
+## Lane E: output lifecycle and bounded cooperation (2026-10-30)
+
+[#15](https://github.com/shanselman/haptic-outside-labs/issues/15) (Lane E: Off, output authorization, controller health and pipe robustness): Off revokes queued output before persistence, explicit controller loss drops readiness and recovers silently, cooperative clients have a 256-character incremental line limit, 64-line cap and absolute one-second connection deadline, and Dispose closes the active client/listener and joins the pipe loop. `CooperativeServerTests` injects held/slow clients, unterminated oversized input and disposal; maximum valid LF/CR/CRLF messages remain accepted. These checks are hardware-free; neither API acceptance nor recording-sink output is PHYSICAL evidence.
+
 ## Next-session entry point
 
-Start with the outstanding launch-error TODO above, or select an unchecked task from the automatic-priming
-test plan. Existing focused UI coverage runs with
+Select an unchecked operator task from the automatic-priming test plan. Existing focused UI coverage runs with
 `dotnet test tests\Haptics.Windows.Tests --filter TrayWindowTests`.
 Do not infer authorization to commit, push or release from this handoff.

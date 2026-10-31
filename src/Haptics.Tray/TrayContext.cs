@@ -233,13 +233,23 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             return;
         }
 
+        TryLaunchShowcase(() => Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true }),
+            message => MessageBox.Show(message, "Haptics Everywhere"));
+    }
+
+    internal static void TryLaunchShowcase(Action launch, Action<string> reportError)
+    {
         try
         {
-            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+            launch();
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
-            // Cancelled at a SmartScreen or security prompt.
+            // The user cancelled a security prompt; never bypass it.
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            reportError($"Couldn't open the Showcase.\n\n{ex.Message}");
         }
     }
 
