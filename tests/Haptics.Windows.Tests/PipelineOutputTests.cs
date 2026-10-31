@@ -260,6 +260,60 @@ public class PipelineOutputTests
     }
 
     [Fact]
+    public void LostMappingCannotReviveWhenTheOldBankMapIsReapplied()
+    {
+        using var rig = new Rig();
+        var oldMap = new Dictionary<long, CapturedController> { [12] = rig.Mouse };
+        rig.Pipeline.Controllers = oldMap;
+        rig.Sink.OnSend = request => new HapticAttempt
+        {
+            Route = request.Route, HResult = unchecked((int)0x80010108),
+        };
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+        rig.Pipeline.Controllers = oldMap;
+        rig.Observe(1000, 12, Snapshot(1000) with { QueryX = 21, RuntimeIdHash = "old-map" });
+        rig.Flush(1010);
+        Assert.Single(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:removed-device");
+
+        var fresh = Controller();
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = fresh };
+        rig.Sink.OnSend = null;
+        rig.Observe(2000, 12, Snapshot(2000) with { QueryX = 22, RuntimeIdHash = "fresh-map" });
+        rig.Flush(2010);
+        Assert.Equal(2, rig.Sink.Requests.Count);
+        Assert.Same(fresh, rig.Sink.Requests.Last().Controller);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void LostDeviceDoesNotSilenceTheOtherDevice(bool loseMouse)
+    {
+        using var rig = new Rig();
+        var pad = Controller();
+        SetController(pad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "pad");
+        SetController(rig.Mouse, global::Windows.Devices.Haptics.HapticDeviceType.Mouse, "mouse");
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = rig.Mouse, [0] = pad };
+        rig.Sink.OnSend = request => new HapticAttempt
+        {
+            Route = request.Route, HResult = unchecked((int)0x80010108),
+        };
+        rig.Observe(100, loseMouse ? 12 : 0, Snapshot(100));
+        rig.Flush(110);
+        var remaining = Assert.Single(rig.Pipeline.Controllers!);
+        Assert.Equal(loseMouse ? 0 : 12, remaining.Key);
+        Assert.Same(loseMouse ? pad : rig.Mouse, remaining.Value);
+        rig.Sink.OnSend = null;
+        rig.Observe(1000, loseMouse ? 0 : 12,
+            Snapshot(1000) with { QueryX = 21, RuntimeIdHash = "survivor" });
+        rig.Flush(1010);
+        Assert.Equal(2, rig.Sink.Requests.Count);
+        Assert.Same(remaining.Value, rig.Sink.Requests.Last().Controller);
+    }
+
+    [Fact]
     public void LostHandlelessControllerMappedAtNonzeroHandleCannotKeepReady()
     {
         using var rig = new Rig();
