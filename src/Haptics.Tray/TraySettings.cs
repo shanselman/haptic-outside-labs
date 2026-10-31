@@ -54,14 +54,7 @@ public sealed class TraySettings
         try
         {
             File.WriteAllText(temporary, JsonSerializer.Serialize(this, HapticsJson.Indented));
-            if (File.Exists(path))
-            {
-                File.Replace(temporary, path, destinationBackupFileName: null);
-            }
-            else
-            {
-                File.Move(temporary, path);
-            }
+            File.Move(temporary, path, overwrite: true);
         }
         finally
         {

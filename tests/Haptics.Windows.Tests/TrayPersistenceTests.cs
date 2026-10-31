@@ -72,11 +72,20 @@ public class TrayPersistenceTests
         {
             new TraySettings().Save(path);
             var original = File.ReadAllText(path);
-            using var opened = new FileStream(path, FileMode.Open, FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
+            using (var opened = new FileStream(path, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete))
+            {
+                var error = Record.Exception(() => new TraySettings { Enabled = false }.Save(path));
+                Assert.True(error is null or IOException or UnauthorizedAccessException, error?.ToString());
+                using var reader = new StreamReader(opened);
+                Assert.Equal(original, reader.ReadToEnd());
+                if (error is not null)
+                {
+                    Assert.Equal(original, File.ReadAllText(path));
+                }
+            }
+
             new TraySettings { Enabled = false }.Save(path);
-            using var reader = new StreamReader(opened);
-            Assert.Equal(original, reader.ReadToEnd());
             Assert.False(JsonSerializer.Deserialize<TraySettings>(File.ReadAllText(path), HapticsJson.Indented)!.Enabled);
         }
         finally
