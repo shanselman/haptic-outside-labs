@@ -16,11 +16,14 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
   old UIA answers after foreground/device changes and explicit `Invalidate(reason)` calls. Request tokens
   stay client-side through UIA coalescing, failures and disposal; device switches cancel dwell without
   re-arrival on the same target. Pending arrivals refresh newer same-ID safety metadata, cancel on unsafe
-  or failed lookups, and expire past their fixed dwell deadline plus 30 ms tolerance instead of rewriting
-  cause time. Dwell starts after the target is known so slow valid providers do not create expired work.
+  or failed lookups, and expire past their fixed due time plus 45 ms tolerance instead of rewriting
+  cause time. Due time is the later of pointer arrival plus dwell and first accepted lookup, preserving
+  existing timing without letting slow providers create expired work. Transient errors inside the
+  current element retain identity/range history rather than manufacturing another arrival.
   Strip-edge Collide checks a separate destination, and cooperative events carry even non-interactive
   or failed lookup context. Everything's density-off setting overrides per-app thinning.
-  `ContextGenerationTests`, `UiaGenerationTests`, `PendingArrivalTests`, `DestinationContextTests` and eight
+  `ContextGenerationTests`, `UiaGenerationTests`, `PendingArrivalTests`, `PendingRegressionTests`,
+  `DestinationContextTests` and twelve
   new golden traces cover these rules; the original 13 traces are unchanged. Output-device routing and
   lifecycle wiring remain owned by their coordinated lanes, not proved by these Core tests.
 
