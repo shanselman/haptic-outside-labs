@@ -126,6 +126,20 @@ public static class SemanticVocabulary
 
     /// <summary>Parents that mean a hyperlink is inline in running text, not a standalone command.</summary>
     public static readonly IReadOnlySet<string> TextContainers = new HashSet<string>(StringComparer.Ordinal) { "Document", "Text", "Edit" };
+
+    /// <summary>
+    /// How far (logical px) Close's right edge may sit from its TitleBar's outer right edge. A WinForms caption at 150%
+    /// measured a 1 px overhang for Close and a full button width (~47 logical px) for Maximize.
+    /// </summary>
+    public const double CaptionCloseEdgeTolerancePx = 2;
+
+    /// <summary>
+    /// A window's Close button, from geometry only: a Button whose one-hop parent is a TitleBar and whose bounds touch
+    /// that TitleBar's outer right edge. No layout direction is read, so a mirrored (RTL) Close stays generic.
+    /// </summary>
+    public static bool IsCaptionClose(ElementSnapshot? s) =>
+        s is { ControlType: "Button", ParentControlType: "TitleBar", Bounds: { IsEmpty: false } b, ParentBounds: { IsEmpty: false } p } &&
+        Math.Abs((p.X + p.Width) - (b.X + b.Width)) / Math.Max(0.5, s.Scale) <= CaptionCloseEdgeTolerancePx;
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<SemanticEventKind>))]
@@ -535,12 +549,17 @@ public sealed class SemanticInterpreter
             confidence += 0.1;
         }
 
+        if (SemanticVocabulary.IsCaptionClose(s))
+        {
+            evidence.Add("caption-close");
+        }
+
         _transition++;
         var when = p with { TimestampMs = at };
         if (s.GroupKey is { } g)
         {
             var known = _lastGroup is { } lg && lg.Key == g && at - lg.At <= Config.GroupMemoryMs;
-            if (!known)
+            if (!known && !SemanticVocabulary.IsCaptionClose(s))
             {
                 events.Add(Make(SemanticEventKind.CrossGroupBoundary, when, s, Math.Min(1, confidence), [.. evidence, $"group:{s.ParentControlType}"], speed) with { DecidedAtMs = decidedAt ?? at });
             }

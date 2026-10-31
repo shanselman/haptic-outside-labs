@@ -777,6 +777,7 @@ The table below is **a proposed design space**, not a promise of universal detec
 | Menu item entered | Light `Hover` | UIA `MenuItem`, point transition | MVP+ | Nested menus/popups and fast movement |
 | Disabled control | **None** | UIA `IsEnabled` | MVP | A disabled affordance is not a success |
 | Window minimize/maximize button hover | Light `Hover` (optional) | UIA TitleBar/Window controls | Early | Native/shell conflicts; optional by default |
+| Window Close button hover | One light `Hover`, no group `Step` | UIA Button touching its TitleBar's right edge | Early | Default On (`CloseButtonHoverEnabled`); RTL captions stay generic |
 | Start menu / taskbar control | Selective boundary cue | Shell UIA correctness | Early/manual | Native behavior and layout change |
 | Slider step or tick | `Step` | `RangeValuePattern` and physical gesture | **High-value** | Avoid imaginary ticks |
 | Slider endpoint | `Collide` | Verified bound reached | High-value | Some widgets clamp values silently |
@@ -1258,8 +1259,15 @@ EXP-070 checks both directions of trace coverage: an unlisted trace or a missing
 Optional pointer `handle`, `origin` and `inputClass` metadata, device `handle`/`arrived` fields and a
 `foreground` event support authored transition scenarios without changing legacy trace decisions.
 `PointerInputClass` distinguishes Handle, Handleless and Promoted input as data only; it is not physical
-evidence or a new routing rule. Caption characterizations pin the current first-arrival Step on Close,
-Minimize and Maximize, and the Hover when moving within the same TitleBar group.
+evidence or a new routing rule. Caption characterizations pin the first-arrival Step on Minimize and
+Maximize, and the Hover when moving within the same TitleBar group. Close is the one deliberate change:
+a Button whose one-hop TitleBar parent's outer right edge it touches (within 2 logical px) lands with a
+single `close-hover` Hover, never a group Step or large-target Click, gated by
+`PolicyConfig.CloseButtonHoverEnabled` (default On; Off is silent). Dwell, cooldown, exclusion, password,
+disabled and `windows-snap-titlebar-drag` still apply. The tolerance comes from an interactive WinForms UIA
+fixture (`CaptionCloseUiaTests`, 150%: Close overhangs by 1 px, Maximize sits ~47 logical px away). No
+direction field is read, so mirrored (RTL) captions, where Close is at the left, and title bars without
+parent bounds keep the generic Step/Hover behavior; that is the coverage limit.
 
 ### 12.4 Controlled desktop test driver
 

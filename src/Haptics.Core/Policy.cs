@@ -145,6 +145,9 @@ public sealed class PolicyConfig
     public bool RangeLimitsEnabled { get; set; } = true;
     public bool CooperativeEnabled { get; set; } = true;
 
+    /// <summary>A window's Close button lands with one light Hover; Off makes Close silent.</summary>
+    public bool CloseButtonHoverEnabled { get; set; } = true;
+
     /// <summary>
     /// Per app: this many "land" ticks within 2 s → for <see cref="DensityBackoffMs"/>, lands thin out to this many per
     /// 2 s, evenly spaced (never muted). Structure still ticks. 0 = off.
@@ -468,6 +471,7 @@ public sealed class HapticPolicy
     private bool RuleEnabled(string rule) => rule switch
     {
         "land" or "land-large" => Config.HoverEnabled,
+        "close-hover" => Config.HoverEnabled && Config.CloseButtonHoverEnabled,
         "detent" => Config.DetentsEnabled,
         "group-entry" => Config.GroupBoundaryEnabled,
         "strip-edge" => Config.EdgeBumpsEnabled,
@@ -486,6 +490,11 @@ public sealed class HapticPolicy
                 if (SemanticVocabulary.DetentTypes.Contains(e.ControlType))
                 {
                     return new Rule("detent", IntentKind.Step, Config.DetentIntensity, false);
+                }
+
+                if (SemanticVocabulary.IsCaptionClose(e.Element))
+                {
+                    return new Rule("close-hover", IntentKind.Hover, Config.LandIntensity, true);
                 }
 
                 return IsLarge(e.Element)

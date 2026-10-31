@@ -22,6 +22,92 @@ public class VocabularyTests
 
     private static TraceReplay.ReplayOutput Run(params string[] lines) => Run(null, lines);
 
+    private static string Caption(double t, int x, string rid, int bx, int w, int[] tb, bool primary = false, string extra = "") =>
+        Ptr(t, x, 140, primary) + "\n" +
+        "{" + $"\"t\":{t + 2},\"type\":\"element\",\"req\":{t},\"x\":{x},\"y\":140,\"pid\":100,\"controlType\":\"Button\",\"rid\":\"{rid}\"," +
+        $"\"bounds\":[{bx},121,{w},44],\"scale\":1.5,\"parentType\":\"TitleBar\",\"parentRid\":\"caption\",\"parentBounds\":[{string.Join(',', tb)}]{extra}" + "}";
+
+    private static TraceReplay.ReplayOutput RunCaption(PolicyConfig? cfg, params string[] lines) =>
+        Run(cfg, [Ptr(0, 300, 250), .. lines.SelectMany(l => l.Split('\n')), Ptr(2000, 300, 250)]);
+
+    // WinForms caption at 150%, measured by CaptionCloseUiaTests: TitleBar [131,131,398,34].
+    private static readonly int[] MeasuredTitleBar = [131, 131, 398, 34];
+
+    [Fact]
+    public void CloseLandsWithOneLightHoverNeverStepOrClick()
+    {
+        var o = RunCaption(null, Caption(300, 494, "close", 459, 71, MeasuredTitleBar));
+        var d = Assert.Single(o.Haptic);
+        Assert.Equal(("Hover", "EnterControl"), (d.Waveform, d.EventKind));
+        Assert.DoesNotContain(o.Decisions, x => x.EventKind == "CrossGroupBoundary");
+
+        // Even a Close big enough to count as a large target stays a light Hover.
+        var large = RunCaption(null, Ptr(300, 300, 40) + "\n" +
+            El(302, 300, "Button", "close", 276, w: 44, h: 80, y: 40, parent: "TitleBar", parentRid: "tb", parentBounds: [0, 0, 320, 80]));
+        Assert.Equal(["Hover"], large.Haptic.Select(x => x.Waveform));
+    }
+
+    [Fact]
+    public void CloseHoverOffMakesCloseSilentOnly()
+    {
+        var cfg = new PolicyConfig { Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions, CloseButtonHoverEnabled = false };
+        var o = RunCaption(cfg, Caption(300, 494, "close", 459, 71, MeasuredTitleBar), Caption(600, 424, "max", 389, 70, MeasuredTitleBar));
+        Assert.Equal(["Hover"], o.Haptic.Select(x => x.Waveform));
+        Assert.Contains(o.Decisions, x => x.Reason == "rule-disabled:close-hover");
+        Assert.True(Assert.Single(o.Haptic).T >= 600);
+    }
+
+    [Theory]
+    [InlineData("ltr-min", 318, 70, false)]
+    [InlineData("ltr-max", 389, 70, false)]
+    [InlineData("rtl-close", 130, 71, false)]
+    [InlineData("rtl-max", 201, 70, false)]
+    [InlineData("rtl-min", 271, 71, false)]
+    [InlineData("ltr-close", 459, 71, true)]
+    public void OnlyTheButtonTouchingTheTitleBarRightEdgeIsClose(string rid, int bx, int w, bool close)
+    {
+        // Measured fixture geometry. No direction field is trusted, so mirrored (RTL) captions keep generic behavior.
+        var o = RunCaption(null, Caption(300, bx + 10, rid, bx, w, MeasuredTitleBar));
+        Assert.Equal(close ? "Hover" : "Step", Assert.Single(o.Haptic).Waveform);
+    }
+
+    [Fact]
+    public void RightEdgeButtonsOutsideTheTitleBarOrWithoutParentBoundsStayGeneric()
+    {
+        var toolbar = RunCaption(null, Ptr(300, 300) + "\n" +
+            El(302, 300, "Button", "tbEnd", 280, parent: "ToolBar", parentRid: "tb", parentBounds: [0, 0, 320, 30]));
+        Assert.Equal(["Step"], toolbar.Haptic.Select(x => x.Waveform));
+        var noParentBounds = RunCaption(null, Ptr(300, 300) + "\n" + El(302, 300, "Button", "close", 280, parent: "TitleBar", parentRid: "tb"));
+        Assert.Equal(["Step"], noParentBounds.Haptic.Select(x => x.Waveform));
+        Assert.False(SemanticVocabulary.IsCaptionClose(null));
+    }
+
+    [Theory]
+    [InlineData(",\"enabled\":false", false, "notepad")]
+    [InlineData(",\"password\":true", false, "notepad")]
+    [InlineData("", true, "notepad")]
+    [InlineData("", false, "KeePass")]
+    public void CloseKeepsEverySafetySilence(string extra, bool primary, string process)
+    {
+        var o = TraceReplay.Run([$$"""{"type":"process","pid":100,"name":"{{process}}"}""",
+            Ptr(0, 300, 250), .. Caption(300, 494, "close", 459, 71, MeasuredTitleBar, primary, extra).Split('\n'), Ptr(1000, 494, 141, primary)]);
+        Assert.Empty(o.Haptic);
+    }
+
+    [Fact]
+    public void CloseKeepsDwellAndReentryCooldown()
+    {
+        // Flying across Close does not land; coming straight back inside the 500 ms cooldown is silent.
+        var flyBy = RunCaption(null, Ptr(290, 420, 140), Caption(300, 494, "close", 459, 71, MeasuredTitleBar), Ptr(310, 540, 140),
+            "{\"t\":312,\"type\":\"element\",\"req\":310,\"x\":540,\"y\":140,\"pid\":100,\"controlType\":\"Pane\",\"rid\":\"desktop\",\"bounds\":[0,0,2000,2000],\"scale\":1.5}");
+        Assert.Empty(flyBy.Haptic);
+        Assert.Contains(flyBy.Notes, n => n.EndsWith("passed-through", StringComparison.Ordinal));
+        var back = RunCaption(null, Caption(300, 494, "close", 459, 71, MeasuredTitleBar), Caption(500, 424, "max", 389, 70, MeasuredTitleBar),
+            Caption(700, 494, "close", 459, 71, MeasuredTitleBar));
+        Assert.Equal(["Hover", "Hover"], back.Haptic.Select(x => x.Waveform));
+        Assert.Contains(back.Decisions, x => x.Reason == "reentry-cooldown");
+    }
+
     [Fact]
     public void FlyingPastIsSilentStoppingLands()
     {

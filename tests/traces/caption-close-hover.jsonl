@@ -1,0 +1,15 @@
+{"type":"comment","text":"Caption geometry measured on a WinForms window at 150% (Close overhangs its TitleBar by 1 px). Expect Close Hover (no Step), Maximize Hover, Close Hover again after cooldown; a primary-down drag onto Close stays silent (windows-snap-titlebar-drag)."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":300,"y":250,"fg":100,"primary":false}
+{"t":5,"type":"element","req":0,"x":300,"y":250,"pid":100,"controlType":"Pane","rid":"client","bounds":[131,165,398,155],"scale":1.5}
+{"t":300,"type":"pointer","x":494,"y":140,"fg":100,"primary":false}
+{"t":306,"type":"element","req":300,"x":494,"y":140,"pid":100,"controlType":"Button","rid":"close","bounds":[459,121,71,44],"parentType":"TitleBar","parentRid":"caption","parentBounds":[131,131,398,34],"scale":1.5}
+{"t":600,"type":"pointer","x":424,"y":140,"fg":100,"primary":false}
+{"t":606,"type":"element","req":600,"x":424,"y":140,"pid":100,"controlType":"Button","rid":"maximize","bounds":[389,121,70,44],"parentType":"TitleBar","parentRid":"caption","parentBounds":[131,131,398,34],"scale":1.5}
+{"t":900,"type":"pointer","x":494,"y":140,"fg":100,"primary":false}
+{"t":906,"type":"element","req":900,"x":494,"y":140,"pid":100,"controlType":"Button","rid":"close","bounds":[459,121,71,44],"parentType":"TitleBar","parentRid":"caption","parentBounds":[131,131,398,34],"scale":1.5}
+{"t":1200,"type":"pointer","x":494,"y":250,"fg":100,"primary":false}
+{"t":1206,"type":"element","req":1200,"x":494,"y":250,"pid":100,"controlType":"Pane","rid":"client","bounds":[131,165,398,155],"scale":1.5}
+{"t":1500,"type":"pointer","x":494,"y":141,"fg":100,"primary":true}
+{"t":1506,"type":"element","req":1500,"x":494,"y":141,"pid":100,"controlType":"Button","rid":"close","bounds":[459,121,71,44],"parentType":"TitleBar","parentRid":"caption","parentBounds":[131,131,398,34],"scale":1.5}
+{"t":1800,"type":"pointer","x":494,"y":141,"fg":100,"primary":false}

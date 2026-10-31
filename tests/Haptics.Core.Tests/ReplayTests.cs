@@ -115,6 +115,19 @@ public class ReplayTests
     }
 
     [Fact]
+    public void CaptionCloseLandsWithOneHoverAndNoGroupStep()
+    {
+        var o = Run("caption-close-hover.jsonl");
+        Assert.Equal(["Hover", "Hover", "Hover"], o.Haptic.Select(d => d.Waveform));
+        Assert.Equal(["Button", "Button", "Button"], o.Haptic.Select(d => d.ControlType));
+        Assert.DoesNotContain(o.Decisions, d => d.Reason == "coalesced-with-group-boundary");
+        Assert.Contains(o.Decisions, d => d.Reason == "native-suppression:windows-snap-titlebar-drag");
+        var off = Run("caption-close-hover.jsonl", new PolicyConfig { Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions, CloseButtonHoverEnabled = false });
+        Assert.Equal(["Hover"], off.Haptic.Select(d => d.Waveform));
+        Assert.Equal(3, off.Decisions.Count(d => d.Reason == "rule-disabled:close-hover"));
+    }
+
+    [Fact]
     public void MenuGroupBoundaryEmitsStepAndCoalescesHover()
     {
         var o = Run("menu-nested.jsonl");
