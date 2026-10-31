@@ -366,19 +366,52 @@ public class PipelineOutputTests
     }
 
     [Fact]
-    public void OffWhileOutputIsQueuedStillReachesSink()
+    public void OffWhileOutputIsQueuedNeverReachesSink()
     {
-        // current behavior; lane C/E changes this.
         using var rig = new Rig();
         rig.Observe(100, 12, Snapshot(100));
         rig.Pipeline.Policy.Config.Mode = HapticsMode.Off;
         rig.Flush(110);
 
-        Assert.Equal("Hover", Assert.Single(rig.Sink.Requests).Intent.Waveform);
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:output-not-authorized");
         rig.Clock.NowMs = 120;
         rig.Pipeline.SubmitCooperative("Align", 0);
         Assert.Equal(0, rig.Sink.Pending);
         Assert.Equal("mode-off", rig.Events.OfType<DecisionEvent>().Last().Decision.Reason);
+    }
+
+    [Theory]
+    [InlineData(HapticsMode.ObserveOnly, true, true)]
+    [InlineData(HapticsMode.On, false, true)]
+    [InlineData(HapticsMode.On, true, false)]
+    public void QueuedOutputRechecksCurrentAuthorization(HapticsMode mode, bool consent, bool verified)
+    {
+        using var rig = new Rig();
+        rig.Observe(100, 12, Snapshot(100));
+        Assert.Equal(1, rig.Sink.Pending);
+        rig.Pipeline.Policy.Config.Mode = mode;
+        rig.Pipeline.Policy.ConsentGiven = consent;
+        rig.Pipeline.Policy.OutputRouteVerified = verified;
+        rig.Flush(110);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:output-not-authorized");
+        Assert.Equal(1, rig.Pipeline.Stats().Emits);
+    }
+
+    [Fact]
+    public void DisposeInvalidatesQueuedOutputEvenIfAuthorizationIsRestored()
+    {
+        using var rig = new Rig();
+        rig.Observe(100, 12, Snapshot(100));
+        var generation = rig.Pipeline.Interpreter.Generation;
+        rig.Pipeline.Dispose();
+        Assert.True(rig.Pipeline.Interpreter.Generation > generation);
+        rig.Pipeline.Policy.Config.Mode = HapticsMode.On;
+        rig.Pipeline.Policy.ConsentGiven = true;
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
     }
 
     [Theory]
