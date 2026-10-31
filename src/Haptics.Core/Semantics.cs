@@ -162,7 +162,8 @@ public sealed record SemanticEvent(
     bool PrimaryDown,
     double PointerSpeedPxPerSec,
     ElementSnapshot? Element,
-    string? RequestedWaveform = null);
+    string? RequestedWaveform = null,
+    long Generation = 0);
 
 public sealed class InterpreterConfig
 {
@@ -176,6 +177,9 @@ public sealed class InterpreterConfig
 
     /// <summary>Time inside a target after which an arrival fires even if the pointer was fast (it has stopped there).</summary>
     public double LandingDwellMs { get; set; } = 80;
+
+    /// <summary>Maximum timer scheduling delay after the dwell deadline; later arrivals expire silently.</summary>
+    public double LandingTickToleranceMs { get; set; } = 45;
 
     /// <summary>Learn the landing speed from how fast this user moves just before clicking (≥ 8 clicks).</summary>
     public bool AdaptiveLanding { get; set; } = true;
@@ -329,7 +333,12 @@ public sealed class SemanticInterpreter
 
         if (_pending is { } a)
         {
-            if (a.Element.Bounds is { } b && !b.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
+            if (p.TimestampMs > ArrivalDue(a) + Config.LandingTickToleranceMs)
+            {
+                _pending = null;
+                notes.Add("arrival-expired");
+            }
+            else if (a.Element.Bounds is { } b && !b.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
             {
                 _pending = null;
                 notes.Add("passed-through");
@@ -346,9 +355,16 @@ public sealed class SemanticInterpreter
     /// <summary>Resolve a pending arrival once the pointer has rested inside it for the dwell time.</summary>
     public InterpretResult OnTick(double nowMs)
     {
-        if (_pending is not { } a || _last is not { } p || nowMs - a.Since < Config.LandingDwellMs)
+        if (_pending is not { } a || _last is not { } p || nowMs < ArrivalDue(a))
         {
             return InterpretResult.Empty;
+        }
+
+        var deadline = ArrivalDue(a);
+        if (nowMs > deadline + Config.LandingTickToleranceMs)
+        {
+            _pending = null;
+            return new InterpretResult([], ["arrival-expired"]);
         }
 
         if (a.Element.Bounds is { } b && !b.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
@@ -359,8 +375,7 @@ public sealed class SemanticInterpreter
 
         var events = new List<SemanticEvent>();
 
-        // The cause is "the pointer has stopped here", so the event is timed now and the pointer counts as still.
-        Arrive(a, p, nowMs, 0, "landed:dwell", events);
+        Arrive(a, p, deadline, 0, "landed:dwell", events, nowMs);
         return new InterpretResult(events, []);
     }
 
@@ -376,7 +391,7 @@ public sealed class SemanticInterpreter
     /// <summary>An app-reported event (cooperative integration). The app knows the outcome; we only arbitrate.</summary>
     public SemanticEvent Cooperative(string waveform, int processId, double nowMs) =>
         new(SemanticEventKind.Cooperative, ++_transition, nowMs, nowMs, processId, "App", null, null, 1.0,
-            ["cooperative-app"], _last?.PrimaryDown ?? false, 0, null, waveform);
+            ["cooperative-app"], _last?.PrimaryDown ?? false, 0, null, waveform, Generation);
 
     public InterpretResult OnSnapshot(ElementSnapshot s, double nowMs)
     {
@@ -409,9 +424,17 @@ public sealed class SemanticInterpreter
                 events.Add(Make(SemanticEventKind.LeaveControl, p, _current, 0.6, ["lookup-error", s.Error]));
                 ResetElement();
             }
-
+            else
+            {
+                _pending = null;
+            }
             notes.Add($"lookup-error:{s.Error}");
             return new InterpretResult(events, notes);
+        }
+
+        if (_current is not null && s.ElementKey == _current.ElementKey && s.RequestedAtMs < _current.RequestedAtMs)
+        {
+            return new InterpretResult(events, ["older-snapshot-discarded"]);
         }
 
         var interactive = IsTarget(s, notes);
@@ -421,6 +444,13 @@ public sealed class SemanticInterpreter
         if (_current is not null && s.ElementKey == _current.ElementKey)
         {
             _current = s;
+            if (_pending is { } pending)
+            {
+                _pending = !interactive || s.IsPassword || !s.IsEnabled
+                    ? null
+                    : pending with { Element = s };
+            }
+
             if (s.ControlType == "Slider" && s.Range is { } r)
             {
                 RangeTransitions(p, s, r, events);
@@ -468,7 +498,7 @@ public sealed class SemanticInterpreter
 
         _current = s;
         InitRange(s);
-        var arrival = new Arrival(s, p.TimestampMs);
+        var arrival = new Arrival(s, p.TimestampMs, nowMs);
         if (_speed <= EffectiveLandingSpeed)
         {
             Arrive(arrival, p, p.TimestampMs, _speed, "landed:slow-entry", events);
@@ -482,7 +512,7 @@ public sealed class SemanticInterpreter
         return new InterpretResult(events, notes);
     }
 
-    private void Arrive(Arrival a, PointerObservation p, double at, double speed, string how, List<SemanticEvent> events)
+    private void Arrive(Arrival a, PointerObservation p, double at, double speed, string how, List<SemanticEvent> events, double? decidedAt = null)
     {
         _pending = null;
         var s = a.Element;
@@ -507,13 +537,13 @@ public sealed class SemanticInterpreter
             var known = _lastGroup is { } lg && lg.Key == g && at - lg.At <= Config.GroupMemoryMs;
             if (!known)
             {
-                events.Add(Make(SemanticEventKind.CrossGroupBoundary, when, s, Math.Min(1, confidence), [.. evidence, $"group:{s.ParentControlType}"], speed));
+                events.Add(Make(SemanticEventKind.CrossGroupBoundary, when, s, Math.Min(1, confidence), [.. evidence, $"group:{s.ParentControlType}"], speed) with { DecidedAtMs = decidedAt ?? at });
             }
 
             _lastGroup = (g, at);
         }
 
-        events.Add(Make(SemanticEventKind.EnterControl, when, s, Math.Min(1, confidence), evidence, speed));
+        events.Add(Make(SemanticEventKind.EnterControl, when, s, Math.Min(1, confidence), evidence, speed) with { DecidedAtMs = decidedAt ?? at });
     }
 
     private void RangeTransitions(PointerObservation p, ElementSnapshot s, RangeInfo r, List<SemanticEvent> events)
@@ -624,9 +654,11 @@ public sealed class SemanticInterpreter
 
     private SemanticEvent Make(SemanticEventKind kind, PointerObservation p, ElementSnapshot? s, double confidence, IReadOnlyList<string> evidence, double? speed = null) =>
         new(kind, _transition, p.TimestampMs, p.TimestampMs, s?.ProcessId ?? p.ForegroundPid, s?.ControlType ?? "None",
-            s?.ElementKey, s?.GroupKey, confidence, evidence, p.PrimaryDown, speed ?? _speed, s);
+            s?.ElementKey, s?.GroupKey, confidence, evidence, p.PrimaryDown, speed ?? _speed, s, Generation: Generation);
 
     private static double Distance(double x1, double y1, double x2, double y2) => Math.Sqrt(Math.Pow(x1 - x2, 2) + Math.Pow(y1 - y2, 2));
 
-    private sealed record Arrival(ElementSnapshot Element, double Since);
+    private double ArrivalDue(Arrival arrival) => Math.Max(arrival.Since + Config.LandingDwellMs, arrival.KnownAt);
+
+    private sealed record Arrival(ElementSnapshot Element, double Since, double KnownAt);
 }

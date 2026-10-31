@@ -1,0 +1,6 @@
+{"type":"comment","text":"A slow valid lookup at 160 is already past pointer dwell; the next tick at 170 lands with cause 160, not a new dwell."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":0,"y":15,"fg":100}
+{"t":10,"type":"pointer","x":40,"y":15,"fg":100}
+{"t":160,"type":"element","req":10,"pid":100,"controlType":"Button","rid":"button","bounds":[0,0,100,30]}
+{"t":1000,"type":"pointer","x":40,"y":15,"fg":100}

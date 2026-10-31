@@ -25,6 +25,12 @@ public static class Exp070Replay
         ["device-change-pending.jsonl"] = (0, 0),
         ["foreground-change-stationary.jsonl"] = (1, 1),
         ["device-removed-stationary-tap.jsonl"] = (1, 1),
+        ["pending-metadata-safety.jsonl"] = (1, 1),
+        ["pending-late-tick.jsonl"] = (0, 0),
+        ["transient-error-button.jsonl"] = (1, 1),
+        ["transient-error-slider.jsonl"] = (1, 1),
+        ["dwell-lookup-40ms.jsonl"] = (1, 1),
+        ["dwell-lookup-150ms.jsonl"] = (1, 1),
     };
 
     public static string Run(string? outDir, string? traceDir)
