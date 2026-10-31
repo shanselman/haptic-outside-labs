@@ -62,15 +62,17 @@ security permissions, or deliberately break live input services to make a test f
 
 ## Recovery TODOs
 
-- [ ] **REC-1: Runtime failure to wiggle fallback.** Distinguish a lost/unusable controller from an unsupported
-  waveform or one transient rejection. Disable only the affected automatic mapping; explain the failure and
-  offer ordinary priming. Do not flood the user with windows or silently route another device's input there.
+- [x] **REC-1: Runtime failure to wiggle fallback.** Explicit disconnected/closed/stale controller errors
+  revoke the affected mapping and update tray readiness, while unsupported waveforms and transient rejection
+  retain it. One coalesced, silent rediscovery (or ordinary priming) restores routing; no output pulse is sent
+  by recovery itself. Recording-sink failure injection proves this logic, not physical delivery.
 - [x] **REC-2a: Device-arrival recovery.** Remove a disconnected handle's mapping and stale manual fallback,
   coalesce arrivals into one lookup at a time, and discard results from an older device set. Preserve other
   manually primed controllers, respect Off, and retain manual priming if lookup fails or is slow.
 - [ ] **REC-2b: Remaining lifecycle recovery.** Exercise resume without device-change notifications, delayed
   availability after an arrival, repeated reconnects, and re-pairing. Add bounded retries only where observations
-  show they are needed; controller failure without a device notification still needs REC-1.
+  show they are needed. Removal-triggered rediscovery, repeated-connect tombstone pruning and runtime failure
+  without a notification now have deterministic coverage; the remaining operator cases stay unchecked.
 - [ ] **REC-3: Stalled native lookup.** Measure real failure behavior before choosing stronger containment.
   A background task is not process isolation; a native crash cannot be made safe merely by catching HRESULTs.
 - [ ] **REC-4: Remaining failure-state coverage.** Arrival coalescing, stale-result rejection, single in-flight

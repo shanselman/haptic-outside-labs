@@ -96,8 +96,15 @@ Do not replace those records with this summary.
   a changed raw handle; arrival-triggered rediscovery now removes stale mappings and rejects stale results.
 - Cold boot/sign-in, native x64 hardware, other Windows builds, touchpads/mixed devices, repeated reconnects,
   long idle, broader sleep/session transitions and unhealthy-platform cases remain on the existing checklist.
-- Recovery TODOs REC-1, REC-2b, REC-3 and REC-4 remain open: runtime output failure to manual fallback,
-  remaining lifecycle recovery, stalled native-call containment and remaining failure-state coverage.
+- REC-1 runtime failure recovery now distinguishes explicit disconnected/closed/stale-controller results
+  from unsupported waveforms and transient rejection. Only explicit loss revokes the affected mapping,
+  updates tray readiness and requests one coalesced, silent rediscovery; fresh discovery or manual priming
+  restores routing. Removal tombstones only the removed raw handle and its key-0 Touchpad/Generic alias,
+  preserving other nonzero handles even with the same identity. Strong tombstones are pruned on map replacement;
+  weak per-controller revocations reject stale map objects without retaining disconnected controllers.
+  REC-2b now covers removals and repeated reconnect cycles in deterministic tests; resume without notifications,
+  delayed availability and physical re-pairing still need operator evidence. REC-3 and remaining REC-4 checks stay open:
+  stalled native-call containment and remaining failure-state coverage.
   REC-2a (device-arrival recovery) is implemented.
 - The two-second fallback is not native-call cancellation or process isolation. The acquisition interface
   is undocumented. Functional/operator observations must not be promoted to blinded PHYSICAL evidence.

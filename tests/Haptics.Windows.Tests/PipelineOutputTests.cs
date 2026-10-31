@@ -167,6 +167,210 @@ public class PipelineOutputTests
     }
 
     [Fact]
+    public void RemovingOneOfTwoSameControllerHandlesPreservesTheLiveRoute()
+    {
+        using var rig = new Rig();
+        SetController(rig.Mouse, global::Windows.Devices.Haptics.HapticDeviceType.Generic, "same");
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = rig.Mouse, [14] = rig.Mouse };
+        Invoke(rig.Pipeline, "OnDeviceChanged", 14L, false);
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+        Assert.Same(rig.Mouse, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
+    public void LateOldHandleRemovalDoesNotRevokeFreshSameIdentityHandle()
+    {
+        using var rig = new Rig();
+        var old = Controller();
+        SetController(old, global::Windows.Devices.Haptics.HapticDeviceType.Generic, "same");
+        SetController(rig.Mouse, global::Windows.Devices.Haptics.HapticDeviceType.Generic, "same");
+        var bank = new ControllerBank();
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [12] = old, [14] = rig.Mouse }, "ready"));
+        bank.ApplyTo(rig.Pipeline);
+        Invoke(rig.Pipeline, "OnDeviceChanged", 12L, false);
+        bank.RemoveDevice(12);
+        bank.ApplyTo(rig.Pipeline);
+        rig.Observe(100, 14, Snapshot(100));
+        rig.Flush(110);
+        Assert.Same(rig.Mouse, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80010108))]
+    [InlineData(unchecked((int)0x80000013))]
+    [InlineData(unchecked((int)0x8007048F))]
+    public void LostControllerDropsMappingAndFreshRediscoveryRecovers(int hresult)
+    {
+        using var rig = new Rig();
+        rig.Sink.OnSend = request => new HapticAttempt { Route = request.Route, HResult = hresult, Error = "fixture lost" };
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+        Assert.Empty(rig.Pipeline.Controllers!);
+        rig.Sink.OnSend = null;
+        var fresh = Controller();
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = fresh };
+        rig.Observe(1000, 12, Snapshot(1000) with { QueryX = 21, RuntimeIdHash = "fresh" });
+        rig.Flush(1010);
+        Assert.Equal(2, rig.Sink.Requests.Count);
+        Assert.Same(fresh, rig.Sink.Requests[1].Controller);
+    }
+
+    [Theory]
+    [InlineData("waveform-not-supported-by-controller", null)]
+    [InlineData("controller-mismatch", null)]
+    [InlineData("fixture-transient", unchecked((int)0x80004005))]
+    [InlineData(null, null)]
+    public void UnsupportedOrTransientFailureKeepsTheController(string? error, int? hresult)
+    {
+        using var rig = new Rig();
+        rig.Sink.OnSend = request => new HapticAttempt { Route = request.Route, Error = error, HResult = hresult };
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+        Assert.Same(rig.Mouse, rig.Pipeline.Controllers![12]);
+    }
+
+    [Fact]
+    public void RepeatedConnectCyclesPruneTombstonesWithoutRevivingStaleMappings()
+    {
+        using var rig = new Rig();
+        var stale = Controller();
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = stale };
+        Invoke(rig.Pipeline, "OnDeviceChanged", 12L, false);
+        for (long i = 1; i <= 200; i++)
+        {
+            rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [i] = Controller() };
+            Invoke(rig.Pipeline, "OnDeviceChanged", i, false);
+            rig.Pipeline.Controllers = new Dictionary<long, CapturedController>();
+        }
+
+        foreach (var name in new[] { "_removedDevices", "_removedControllers" })
+        {
+            var value = typeof(ObservationPipeline).GetField(name,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(rig.Pipeline)!;
+            Assert.Equal(0, (int)value.GetType().GetProperty("Count")!.GetValue(value)!);
+        }
+
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = stale };
+        rig.Observe(1000, 12, Snapshot(1000));
+        rig.Flush(1010);
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:removed-device");
+    }
+
+    [Fact]
+    public void LostMappingCannotReviveWhenTheOldBankMapIsReapplied()
+    {
+        using var rig = new Rig();
+        var oldMap = new Dictionary<long, CapturedController> { [12] = rig.Mouse };
+        rig.Pipeline.Controllers = oldMap;
+        rig.Sink.OnSend = request => new HapticAttempt
+        {
+            Route = request.Route, HResult = unchecked((int)0x80010108),
+        };
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+        rig.Pipeline.Controllers = oldMap;
+        rig.Observe(1000, 12, Snapshot(1000) with { QueryX = 21, RuntimeIdHash = "old-map" });
+        rig.Flush(1010);
+        Assert.Single(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:removed-device");
+
+        var fresh = Controller();
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = fresh };
+        rig.Sink.OnSend = null;
+        rig.Observe(2000, 12, Snapshot(2000) with { QueryX = 22, RuntimeIdHash = "fresh-map" });
+        rig.Flush(2010);
+        Assert.Equal(2, rig.Sink.Requests.Count);
+        Assert.Same(fresh, rig.Sink.Requests.Last().Controller);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void LostDeviceDoesNotSilenceTheOtherDevice(bool loseMouse)
+    {
+        using var rig = new Rig();
+        var pad = Controller();
+        SetController(pad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "pad");
+        SetController(rig.Mouse, global::Windows.Devices.Haptics.HapticDeviceType.Mouse, "mouse");
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = rig.Mouse, [0] = pad };
+        rig.Sink.OnSend = request => new HapticAttempt
+        {
+            Route = request.Route, HResult = unchecked((int)0x80010108),
+        };
+        rig.Observe(100, loseMouse ? 12 : 0, Snapshot(100));
+        rig.Flush(110);
+        var remaining = Assert.Single(rig.Pipeline.Controllers!);
+        Assert.Equal(loseMouse ? 0 : 12, remaining.Key);
+        Assert.Same(loseMouse ? pad : rig.Mouse, remaining.Value);
+        rig.Sink.OnSend = null;
+        rig.Observe(1000, loseMouse ? 0 : 12,
+            Snapshot(1000) with { QueryX = 21, RuntimeIdHash = "survivor" });
+        rig.Flush(1010);
+        Assert.Equal(2, rig.Sink.Requests.Count);
+        Assert.Same(remaining.Value, rig.Sink.Requests.Last().Controller);
+    }
+
+    [Fact]
+    public void LostHandlelessControllerMappedAtNonzeroHandleCannotKeepReady()
+    {
+        using var rig = new Rig();
+        SetController(rig.Mouse, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "pad");
+        var bank = new ControllerBank();
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [12] = rig.Mouse }, "ready"));
+        bank.ApplyTo(rig.Pipeline);
+        rig.Sink.OnSend = request => new HapticAttempt
+        {
+            Route = request.Route, HResult = unchecked((int)0x80000013),
+        };
+        rig.Observe(100, 0, Snapshot(100));
+        rig.Flush(110);
+        Assert.Empty(rig.Pipeline.Controllers!);
+        var lost = Assert.Single(rig.Events.OfType<ControllerLostEvent>());
+        Assert.True(bank.RemoveLostController(lost.Handle, lost.Controller));
+        Assert.False(bank.Any);
+    }
+
+    [Fact]
+    public void LostOutputChangesTrayReadinessAndOneDiscoveryRestoresIt()
+    {
+        using var rig = new Rig();
+        var bank = new ControllerBank();
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [12] = rig.Mouse }, "ready"));
+        bank.ApplyTo(rig.Pipeline);
+        var fresh = Controller();
+        var refresh = new ControllerRefresh(() => Task.FromResult(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [12] = fresh }, "recovered")));
+        rig.Sink.OnSend = request => new HapticAttempt
+        {
+            Route = request.Route, Error = "fixture disconnected", HResult = unchecked((int)0x80010108),
+        };
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+        Assert.True(bank.Any);
+        var lost = Assert.Single(rig.Events.OfType<ControllerLostEvent>());
+        Assert.True(TrayContext.HandleControllerLoss(bank, refresh, lost));
+        Assert.False(bank.Any); // The host's Primed/Ready source.
+        Assert.True(refresh.Poll(0, true, bank.Any).Started);
+        var result = refresh.Poll(1, true, bank.Any).Result;
+        bank.AddDiscovered(Assert.IsType<ControllerDiscoveryResult>(result));
+        bank.ApplyTo(rig.Pipeline);
+        Assert.True(bank.Any);
+        Assert.False(refresh.Poll(2, true, bank.Any).Started);
+        Assert.Single(rig.Sink.Requests); // Acquisition/refresh itself never emits a pulse.
+        Assert.Equal(0, rig.Sink.Pending);
+        Assert.False(TrayContext.HandleControllerLoss(bank, refresh, lost)); // Late loss cannot remove the fresh map.
+        rig.Sink.OnSend = null;
+        rig.Observe(1000, 12, Snapshot(1000) with { QueryX = 21, RuntimeIdHash = "fresh" });
+        rig.Flush(1010);
+        Assert.Same(fresh, rig.Sink.Requests.Last().Controller);
+    }
+
+    [Fact]
     public void MouseRemovalDoesNotSilenceTheMappedTouchpad()
     {
         using var rig = new Rig();

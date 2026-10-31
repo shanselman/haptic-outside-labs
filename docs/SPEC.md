@@ -1243,6 +1243,12 @@ rate limits twice. Stop invalidates pending dwell, queued generations and reques
 Tray Off revokes and stops before attempting settings persistence; a failed save reports a session-only
 change through the tray error UI. Settings are written to a unique file in the same folder and atomically
 replaced, never overwritten in place.
+Explicit disconnected/closed/stale controller errors revoke only the affected route and its handleless
+alias, update tray readiness and request one coalesced rediscovery. Unsupported waveforms or transient
+rejection retain their mapping. Recovery only acquires controllers and never sends a pulse. A lost
+handleless controller also revokes its same-identity Generic discovery aliases. Raw removal instead
+preserves every other nonzero handle, including same-identity mappings. Map replacement prunes strong
+tombstones; weak per-controller revocations keep stale map objects silent without retaining old controllers.
 
 **Reporter:** no mock classified as physical, proper experiment dependencies, immutable artifact hashes, no sensitive text in serialized output.
 
