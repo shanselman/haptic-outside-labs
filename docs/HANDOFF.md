@@ -55,8 +55,9 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
   identities without calling Windows haptics. `PipelineCharacterizationTests` also runs against the
   pre-seam pipeline. Single-mouse Hover/Click/Step/Collide, deadline/dwell boundaries, intensity boost
   and policy admission are pinned. The tests marked "current behavior; lane C/E changes this" deliberately
-  retain latest-input rerouting, unknown/handleless `Latest` fallback and queued output after Off.
-  Update those assertions with the later routing/lifecycle fixes; do not treat them as desired behavior.
+  previously retained latest-input rerouting, unknown/handleless `Latest` fallback and queued output after Off.
+  Lane C replaces the rerouting and fallback assertions with strict source-device routing; queued output after Off
+  remains a Lane E lifecycle case.
 - [x] **Regression net: trace coverage and caption baseline.** Optional input-class, origin, device-handle,
   arrival/removal and foreground trace fields are available without changing the 13 golden traces.
   EXP-070 now fails on unlisted traces and missing expected traces. `CaptionCharacterizationTests`
@@ -98,6 +99,12 @@ Do not replace those records with this summary.
 - The two-second fallback is not native-call cancellation or process isolation. The acquisition interface
   is undocumented. Functional/operator observations must not be promoted to blinded PHYSICAL evidence.
   Disruptive operator checks require an available, consenting operator.
+
+## Lane C: safe device routing (2026-10-28)
+
+[#13](https://github.com/shanselman/haptic-outside-labs/issues/13) (Lane C: route each haptic to its originating device) now routes output only through the input's exact mapped controller or a uniquely known, manually primed handleless touchpad. Discovery-only `Generic` entries remain silent; removed devices and their same-identity aliases are revoked, while a newly captured same-identity controller may reconnect on a new or reused handle without reviving stale aliases. Cooperative intents require a latest eligible input from the same generation within 250 ms both when queued and immediately before dispatch.
+
+`PipelineOutputTests` covers mouse-only, touchpad-only and real tray auto-priming with a recording sink, plus generation mismatch, alias removal/re-priming, same-identity reconnect, cooperative expiry, and Showcase reconnect. These tests are hardware-free; physical delivery and touchpad identification from discovery alone remain unverified. Keep Raw Input mouse-only and do not register the precision-touchpad collection; discovery-only touchpads stay silent until primed.
 
 ## Next-session entry point
 

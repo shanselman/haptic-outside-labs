@@ -1,4 +1,7 @@
 using Haptics.Lab;
+using System.Collections.Concurrent;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
@@ -129,6 +132,29 @@ public class ShowcaseTests
         Assert.Contains("Test startup denied", errors[0].Message);
         Assert.Contains("engine is off", errors[0].Message);
         Assert.Null(window.ResultPath);
+    });
+
+    [Fact]
+    public void DeviceRemovalClearsShowcaseMappingForReconnectPriming() => OnStaThread(() =>
+    {
+        using var window = new ShowcaseWindow();
+        using var pipeline = new ObservationPipeline(Haptics.Core.PolicyConfig.Sample(Haptics.Core.EffectProfile.Focused, 0.8));
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var bank = (ControllerBank)typeof(ShowcaseWindow).GetField("_bank", flags)!.GetValue(window)!;
+        var events = (ConcurrentQueue<PipelineEvent>)typeof(ShowcaseWindow)
+            .GetField("_events", flags)!.GetValue(window)!;
+        var controller = (CapturedController)RuntimeHelpers.GetUninitializedObject(typeof(CapturedController));
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [12] = controller }, "discovered"));
+        bank.ApplyTo(pipeline);
+        pipeline.Event += events.Enqueue;
+        typeof(ShowcaseWindow).GetField("_pipeline", flags)!.SetValue(window, pipeline);
+
+        typeof(ObservationPipeline).GetMethod("OnDeviceChanged", flags)!.Invoke(pipeline, [12L, false]);
+        typeof(ShowcaseWindow).GetMethod("Drain", flags)!.Invoke(window, null);
+
+        Assert.DoesNotContain(12, bank.Map.Keys);
+        Assert.DoesNotContain(12, pipeline.Controllers!.Keys);
     });
 
     [Fact]

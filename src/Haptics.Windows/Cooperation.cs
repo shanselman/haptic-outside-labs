@@ -18,6 +18,7 @@ public sealed class ControllerBank
 
     private readonly Func<CapturedController?> _captureController;
     private IReadOnlyDictionary<long, CapturedController> _map = new Dictionary<long, CapturedController>();
+    private long _latestHandle;
 
     public ControllerBank() : this(() => HapticsApi.TryCaptureCurrentController()) { }
 
@@ -49,19 +50,25 @@ public sealed class ControllerBank
         }
 
         var map = new Dictionary<long, CapturedController>(_map);
-        map.Remove(handle);
+        foreach (var (mappedHandle, controller) in map.ToArray())
+        {
+            if (mappedHandle == handle || ControllerRouting.SameController(removed, controller))
+            {
+                map.Remove(mappedHandle);
+            }
+        }
+
         _map = map;
-        if (Latest?.IdHash == removed.IdHash)
+        if (_latestHandle == handle || Latest is { } latest && ControllerRouting.SameController(removed, latest))
         {
             Latest = null;
+            _latestHandle = 0;
         }
 
         return true;
     }
 
     /// <summary>Capture the device that just moved over our UI. Returns true if something new was added.</summary>
-    public bool TryCapture(long deviceHandle) => CaptureAndMap(deviceHandle, _captureController());
-
     public bool TryCapture(long deviceHandle, PointerInputClass inputClass, double inputTimestampMs, double nowMs)
     {
         if (!ControllerRouting.IsManualCaptureValid(
@@ -76,7 +83,7 @@ public sealed class ControllerBank
             return false;
         }
 
-        var sameController = _map.Where(pair => pair.Key != deviceHandle && pair.Value.IdHash == c.IdHash).ToArray();
+        var sameController = _map.Where(pair => pair.Key != deviceHandle && ControllerRouting.SameController(pair.Value, c)).ToArray();
         var classifiesDiscoveredTouchpad = inputClass == PointerInputClass.Handleless &&
                                            c.DeviceType == HapticDeviceType.Touchpad &&
                                            sameController.All(pair => pair.Value.DeviceType == HapticDeviceType.Generic);
@@ -95,11 +102,15 @@ public sealed class ControllerBank
             return false;
         }
 
-        var fallbackChanged = Latest?.IdHash != c.IdHash || Latest?.DeviceType != c.DeviceType;
+        var latestChanged = Latest?.IdHash != c.IdHash || Latest?.DeviceType != c.DeviceType;
         Latest = c;
-        if (_map.TryGetValue(deviceHandle, out var known) && known.IdHash == c.IdHash && known.DeviceType == c.DeviceType)
+        _latestHandle = deviceHandle;
+        if (_map.TryGetValue(deviceHandle, out var known) &&
+            (ReferenceEquals(known, c) ||
+             known.DeviceType == c.DeviceType && known.IdHash == c.IdHash &&
+             known.Controller is { } knownController && ReferenceEquals(knownController, c.Controller)))
         {
-            return fallbackChanged;
+            return latestChanged;
         }
 
         _map = new Dictionary<long, CapturedController>(_map) { [deviceHandle] = c };
@@ -114,7 +125,7 @@ public sealed class ControllerBank
     {
         if (pipeline is not null)
         {
-            pipeline.Controller = Latest;
+            pipeline.Controller = null;
             pipeline.Controllers = _map;
         }
     }
@@ -124,6 +135,11 @@ internal readonly record struct ControllerRoute(CapturedController? Controller, 
 
 internal static class ControllerRouting
 {
+    internal static bool SameController(CapturedController left, CapturedController right) =>
+        ReferenceEquals(left, right) ||
+        left.Controller is { } controller && ReferenceEquals(controller, right.Controller) ||
+        HasStableId(left) && left.IdHash == right.IdHash;
+
     internal static ControllerRoute Resolve(
         IReadOnlyDictionary<long, CapturedController>? controllers,
         long deviceHandle,
@@ -154,9 +170,10 @@ internal static class ControllerRouting
         var touchpads = new List<CapturedController>();
         foreach (var controller in controllers?.Values ?? [])
         {
+            var hasStableId = !string.IsNullOrEmpty(controller.IdHash) && controller.IdHash != "none";
             if (controller.DeviceType != HapticDeviceType.Touchpad ||
                 touchpads.Any(existing => ReferenceEquals(existing, controller) ||
-                    controller.IdHash != "none" && existing.IdHash == controller.IdHash))
+                    hasStableId && existing.IdHash == controller.IdHash))
             {
                 continue;
             }
@@ -179,6 +196,9 @@ internal static class ControllerRouting
             PointerInputClass.Handleless => deviceType == HapticDeviceType.Touchpad,
             _ => false,
         };
+
+    private static bool HasStableId(CapturedController controller) =>
+        !string.IsNullOrEmpty(controller.IdHash) && controller.IdHash != "none";
 
     internal static bool IsManualCaptureValid(
         long deviceHandle,

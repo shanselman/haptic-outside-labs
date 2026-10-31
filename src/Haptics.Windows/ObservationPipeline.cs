@@ -20,6 +20,8 @@ public sealed record NoteEvent(double AtMs, string Note, ElementSnapshot? Elemen
 
 public sealed record PipelineOutputRequest(string Route, CapturedController? Controller, HapticIntent Intent, double Intensity);
 
+public sealed record LatestPointerInput(long DeviceHandle, PointerInputClass InputClass, double TimestampMs);
+
 /// <summary>Optional output seam. Production posts and sends on the raw-input thread when no sink is supplied.</summary>
 public interface IPipelineOutputSink
 {
@@ -60,11 +62,15 @@ public sealed record PipelineStats(
 /// </summary>
 public sealed class ObservationPipeline : IDisposable
 {
+    private const double CooperativeInputFreshnessMs = 250;
+
     private readonly object _lock = new();
     private readonly PipelineOptions _opt;
     private readonly SemanticInterpreter _interpreter = new();
     private readonly ConcurrentDictionary<int, (string? Name, double At)> _names = new();
     private readonly HashSet<long> _removedDevices = new();
+    private readonly Dictionary<long, CapturedController> _removedControllers = new();
+    private readonly Dictionary<(double TimestampMs, long Generation), InputRouteContext> _requestRoutes = new();
     private readonly Queue<double> _lookup = new();
     private readonly Queue<double> _inputToCall = new();
     private MessageWindowThread? _thread;
@@ -72,6 +78,9 @@ public sealed class ObservationPipeline : IDisposable
     private UiaClient? _uia;
     private bool _primaryDown;
     private (int X, int Y) _lastPos = (int.MinValue, int.MinValue);
+    private InputRouteContext? _latestInputRoute;
+    private CapturedController? _controller;
+    private IReadOnlyDictionary<long, CapturedController>? _controllers;
     private long _raw, _bgRaw, _snaps, _emits, _dry, _supp, _acc, _rej, _exp;
 
     public ObservationPipeline(PolicyConfig config, PipelineOptions? options = null)
@@ -88,22 +97,84 @@ public sealed class ObservationPipeline : IDisposable
         set => _opt.Route = value;
     }
 
-    /// <summary>For R3a/R3b: the manually primed fallback. Automatic discoveries belong only in the device map.</summary>
-    public CapturedController? Controller { get; set; }
+    /// <summary>Explicit single-controller fallback for experiments. Tray and Showcase leave this unset.</summary>
+    public CapturedController? Controller
+    {
+        get { lock (_lock) { return _controller; } }
+        set { lock (_lock) { _controller = value; } }
+    }
 
-    /// <summary>
-    /// Optional per-raw-device controllers (e.g. mouse and touchpad both primed). Output goes to the controller of the
-    /// device that produced the latest input, falling back to <see cref="Controller"/>. Replace the whole map to update.
-    /// </summary>
-    public IReadOnlyDictionary<long, CapturedController>? Controllers { get; set; }
+    /// <summary>Optional exact raw-device mappings. Replace the whole map to update it.</summary>
+    public IReadOnlyDictionary<long, CapturedController>? Controllers
+    {
+        get { lock (_lock) { return _controllers; } }
+        set
+        {
+            lock (_lock)
+            {
+                var previous = _controllers;
+                _controllers = value;
+                var touchpad = value?.GetValueOrDefault(0);
+                var previousTouchpad = previous?.GetValueOrDefault(0);
+                if (touchpad?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad &&
+                    !ReferenceEquals(touchpad, previousTouchpad) &&
+                    _removedControllers.TryGetValue(0, out var removedAlias) &&
+                    ControllerRouting.SameController(removedAlias, touchpad))
+                {
+                    _removedControllers.Remove(0);
+                }
+
+                foreach (var handle in _removedDevices.ToArray())
+                {
+                    var current = value?.GetValueOrDefault(handle);
+                    var replacedAtHandle = current is not null &&
+                        (!_removedControllers.TryGetValue(handle, out var removed) || !ReferenceEquals(current, removed));
+                    var handlelessReprime = current is null &&
+                        touchpad?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad &&
+                        !ReferenceEquals(touchpad, previousTouchpad) &&
+                        _removedControllers.TryGetValue(handle, out var removedController) &&
+                        ControllerRouting.SameController(removedController, touchpad);
+                    if (replacedAtHandle)
+                    {
+                        _removedDevices.Remove(handle);
+                        _removedControllers.Remove(handle);
+                    }
+                    else if (handlelessReprime)
+                    {
+                        _removedControllers.Remove(0);
+                    }
+                }
+            }
+        }
+    }
 
     /// <summary>Raw device handle of the most recent mouse input (0 = no handle, e.g. some precision touchpads).</summary>
-    public long LastDeviceHandle => Interlocked.Read(ref _lastDevice);
+    public long LastDeviceHandle => Volatile.Read(ref _latestInputRoute)?.DeviceHandle ?? 0;
 
-    private long _lastDevice;
+    public PointerInputClass LastInputClass => Volatile.Read(ref _latestInputRoute)?.InputClass ?? PointerInputClass.Promoted;
 
-    private CapturedController? ControllerForLatestInput() =>
-        Controllers is { } map && map.TryGetValue(LastDeviceHandle, out var c) ? c : Controller;
+    public double LastInputTimestampMs => Volatile.Read(ref _latestInputRoute)?.TimestampMs ?? double.NaN;
+
+    public LatestPointerInput? LatestInput
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _latestInputRoute is { } input
+                    ? new LatestPointerInput(input.DeviceHandle, input.InputClass, input.TimestampMs)
+                    : null;
+            }
+        }
+    }
+
+    private CapturedController? ControllerForLatestInput()
+    {
+        lock (_lock)
+        {
+            return Volatile.Read(ref _latestInputRoute) is { } input ? ResolveController(input).Controller : Controller;
+        }
+    }
 
     /// <summary>Touchpads feel lighter than mice at the same intensity; this multiplies their pulses (clamped to 1).</summary>
     public double TouchpadBoost { get; set; } = 1.0;
@@ -118,7 +189,7 @@ public sealed class ObservationPipeline : IDisposable
         lock (_lock)
         {
             var e = _interpreter.Cooperative(waveform, processId, Now);
-            HandleLocked(new InterpretResult([e], []), Now);
+            HandleLocked(new InterpretResult([e], []), Now, FreshCooperativeInput(Now));
         }
     }
 
@@ -183,7 +254,7 @@ public sealed class ObservationPipeline : IDisposable
         {
             if (_interpreter.HasPendingArrival)
             {
-                HandleLocked(_interpreter.OnTick(Now), Now);
+                HandleLocked(_interpreter.OnTick(Now), Now, _latestInputRoute);
             }
         }
     }
@@ -203,8 +274,10 @@ public sealed class ObservationPipeline : IDisposable
 
         var (x, y) = DesktopContext.CursorPosition();
         var fg = DesktopContext.Foreground().Pid;
-        Interlocked.Exchange(ref _lastDevice, raw.DeviceHandle);
-        var obs = new PointerObservation(raw.TimestampMs, x, y, raw.Origin, _primaryDown, fg, raw.DeviceHandle);
+        var obs = new PointerObservation(raw.TimestampMs, x, y, raw.Origin, _primaryDown, fg, raw.DeviceHandle)
+        {
+            InputClass = raw.InputClass,
+        };
         bool moved;
         long generation;
         lock (_lock)
@@ -216,17 +289,19 @@ public sealed class ObservationPipeline : IDisposable
                 _bgRaw++;
             }
 
-            if (_removedDevices.Count > 0 && raw.DeviceHandle != 0 && !_removedDevices.Contains(raw.DeviceHandle))
-            {
-                Policy.DeviceAvailable = true;
-                _removedDevices.Clear();
-            }
-
             var previousGeneration = _interpreter.Generation;
-            HandleLocked(_interpreter.OnPointer(obs), raw.TimestampMs);
-            generation = _interpreter.Generation;
+            var input = ObservePointerLocked(obs);
+            generation = input.Generation;
             moved = (x, y) != _lastPos || previousGeneration != generation;
             _lastPos = (x, y);
+            if (moved || (raw.Buttons & (RawMouseButtons.LeftDown | RawMouseButtons.LeftUp)) != 0)
+            {
+                _requestRoutes[(raw.TimestampMs, input.Generation)] = input;
+                while (_requestRoutes.Count > 64)
+                {
+                    _requestRoutes.Remove(_requestRoutes.Keys.MinBy(key => key.TimestampMs));
+                }
+            }
         }
 
         if (moved || (raw.Buttons & (RawMouseButtons.LeftDown | RawMouseButtons.LeftUp)) != 0)
@@ -243,9 +318,31 @@ public sealed class ObservationPipeline : IDisposable
         {
             _snaps++;
             Push(_lookup, resp.LookupMs);
+            InputRouteContext? input = null;
+            if (_requestRoutes.Remove((pointerTs, resp.Generation), out var requested))
+            {
+                input = requested;
+            }
+            else if (_latestInputRoute is { } latest && latest.TimestampMs == pointerTs)
+            {
+                input = latest;
+            }
+
+            if (input is null)
+            {
+                Publish(new NoteEvent(now, "skip:unknown-input-origin", snap));
+                return;
+            }
+
+            if (input.Generation != _interpreter.Generation || resp.Generation != input.Generation)
+            {
+                Publish(new NoteEvent(now, "skip:stale-device-generation", snap));
+                return;
+            }
+
             var r = _interpreter.OnSnapshot(snap, now);
             Publish(new SnapshotEvent(now, snap, roundTripMs, r.Notes));
-            HandleLocked(r, now);
+            HandleLocked(r, now, input);
         }
     }
 
@@ -261,13 +358,41 @@ public sealed class ObservationPipeline : IDisposable
             }
 
             _removedDevices.Add(handle);
-            Policy.DeviceAvailable = false;
+            if (Controllers is { } controllers && controllers.TryGetValue(handle, out var controller))
+            {
+                foreach (var (mappedHandle, mappedController) in controllers)
+                {
+                    if (ControllerRouting.SameController(controller, mappedController))
+                    {
+                        _removedControllers[mappedHandle] = mappedController;
+                    }
+                }
+            }
+
             HandleLocked(_interpreter.OnDeviceUnavailable(Now), Now);
-            Publish(new DiagnosticEvent(Now, "device removed: output disabled until input arrives from a present device"));
+            Publish(new DiagnosticEvent(Now, "device removed: its route is disabled until rediscovery or priming"));
         }
     }
 
-    private void HandleLocked(InterpretResult r, double now)
+    internal void ObservePointer(PointerObservation observation)
+    {
+        lock (_lock)
+        {
+            ObservePointerLocked(observation);
+        }
+    }
+
+    private InputRouteContext ObservePointerLocked(PointerObservation observation)
+    {
+        var result = _interpreter.OnPointer(observation);
+        var input = new InputRouteContext(
+            observation.DeviceHandle, observation.InputClass, observation.ForegroundPid, observation.TimestampMs, _interpreter.Generation);
+        Volatile.Write(ref _latestInputRoute, input);
+        HandleLocked(result, observation.TimestampMs, input);
+        return input;
+    }
+
+    private void HandleLocked(InterpretResult r, double now, InputRouteContext? input = null)
     {
         foreach (var n in r.Notes)
         {
@@ -296,19 +421,48 @@ public sealed class ObservationPipeline : IDisposable
             Publish(new DecisionEvent(Now, d));
             if (d.Outcome == PolicyOutcome.Emit && d.Intent is { } intent)
             {
+                if (e.Kind == SemanticEventKind.Cooperative)
+                {
+                    input ??= FreshCooperativeInput(now);
+                    if (input is null)
+                    {
+                        Publish(new NoteEvent(now, "skip:no-fresh-input-origin", e.Element));
+                        continue;
+                    }
+                }
+
+                if (input is null)
+                {
+                    Publish(new NoteEvent(now, "skip:unknown-input-origin", e.Element));
+                    continue;
+                }
+
+                if (input.Generation != _interpreter.Generation || e.Generation != input.Generation)
+                {
+                    Publish(new NoteEvent(now, "skip:stale-device-generation", e.Element));
+                    continue;
+                }
+
+                var route = ResolveController(input);
+                if (route.Controller is not { } controller)
+                {
+                    Publish(new NoteEvent(now, route.Reason, e.Element));
+                    continue;
+                }
+
                 if (_opt.OutputSink is { } sink)
                 {
-                    sink.Post(() => Output(intent));
+                    sink.Post(() => Output(intent, input, controller));
                 }
                 else
                 {
-                    _thread?.Post(() => Output(intent));
+                    _thread?.Post(() => Output(intent, input, controller));
                 }
             }
         }
     }
 
-    private void Output(HapticIntent intent)
+    private void Output(HapticIntent intent, InputRouteContext? input = null, CapturedController? controller = null)
     {
         // Raw-input thread. Drop, never replay, late sensations.
         var now = Now;
@@ -323,7 +477,34 @@ public sealed class ObservationPipeline : IDisposable
             return;
         }
 
-        var controller = ControllerForLatestInput();
+        if (input is not null)
+        {
+            string? skip = null;
+            lock (_lock)
+            {
+                if (intent.SourceRule == "cooperative" &&
+                    (now < input.TimestampMs || now - input.TimestampMs > CooperativeInputFreshnessMs))
+                {
+                    skip = "skip:stale-input-origin";
+                }
+                else if (input.Generation != _interpreter.Generation)
+                {
+                    skip = "skip:stale-device-generation";
+                }
+                else if (!ReferenceEquals(ResolveController(input).Controller, controller))
+                {
+                    skip = "skip:stale-device-mapping";
+                }
+            }
+
+            if (skip is not null)
+            {
+                Publish(new NoteEvent(now, skip, null));
+                return;
+            }
+        }
+
+        controller ??= ControllerForLatestInput();
         var intensity = controller?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad
             ? Math.Min(1.0, intent.Intensity * TouchpadBoost)
             : intent.Intensity;
@@ -331,7 +512,8 @@ public sealed class ObservationPipeline : IDisposable
             ? sink.Send(new PipelineOutputRequest(Route, controller, intent, intensity))
             : Route switch
         {
-            OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(Route, intent.Waveform, intensity, intent.PointerTimestampMs),
+            OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(
+                Route, intent.Waveform, intensity, intent.PointerTimestampMs, expectedController: controller),
             OutputRoutes.CachedController => HapticsApi.SendViaController(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),
             OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),
             _ => null,
@@ -355,6 +537,40 @@ public sealed class ObservationPipeline : IDisposable
         }
 
         Publish(new OutputEvent(Now, intent, a, a is null ? "dry-run-route" : a.Accepted ? "api-accepted" : $"api-rejected:{a.Error ?? "false"}"));
+    }
+
+    private InputRouteContext? FreshCooperativeInput(double now) =>
+        _latestInputRoute is { } input &&
+        input.Generation == _interpreter.Generation &&
+        now >= input.TimestampMs &&
+        now - input.TimestampMs <= CooperativeInputFreshnessMs
+            ? input
+            : null;
+
+    private ControllerRoute ResolveController(InputRouteContext input)
+    {
+        if (input.DeviceHandle != 0 && _removedDevices.Contains(input.DeviceHandle))
+        {
+            return new(null, "skip:removed-device");
+        }
+
+        var route = ControllerRouting.Resolve(Controllers, input.DeviceHandle, input.InputClass);
+        if (route.Controller is { } mapped &&
+            _removedControllers.Any(pair =>
+                ControllerRouting.SameController(pair.Value, mapped) &&
+                (pair.Key == input.DeviceHandle || ReferenceEquals(pair.Value, mapped))))
+        {
+            return new(null, "skip:removed-device");
+        }
+
+        if (route.Controller is not null || Controller is null || Controllers is { Count: > 0 })
+        {
+            return route;
+        }
+
+        return route.Reason is "skip:unmapped-device" or "skip:no-touchpad-mapping"
+            ? new ControllerRoute(Controller, "explicit-controller")
+            : route;
     }
 
     private string? ResolveName(int pid)
@@ -401,4 +617,11 @@ public sealed class ObservationPipeline : IDisposable
 
         return a[Math.Clamp((int)Math.Ceiling(p * a.Length) - 1, 0, a.Length - 1)];
     }
+
+    private sealed record InputRouteContext(
+        long DeviceHandle,
+        PointerInputClass InputClass,
+        int ForegroundPid,
+        double TimestampMs,
+        long Generation);
 }

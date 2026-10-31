@@ -7,6 +7,19 @@ namespace Haptics.Windows.Tests;
 /// <summary>Baseline probes use only pre-seam APIs so the same tests run on the parent revision.</summary>
 public class PipelineCharacterizationTests
 {
+    [Fact]
+    public void LatestInputSnapshotKeepsHandleClassAndTimestampTogether()
+    {
+        using var pipeline = Pipeline();
+
+        Pointer(pipeline, 100, 20, 15, 34, PointerInputClass.Handle);
+
+        Assert.Equal(new LatestPointerInput(34, PointerInputClass.Handle, 100), pipeline.LatestInput);
+        Assert.Equal(34, pipeline.LastDeviceHandle);
+        Assert.Equal(PointerInputClass.Handle, pipeline.LastInputClass);
+        Assert.Equal(100, pipeline.LastInputTimestampMs);
+    }
+
     [Theory]
     [InlineData("Button", 40, 30, "Hover")]
     [InlineData("Button", 44, 80, "Click")]
@@ -60,25 +73,20 @@ public class PipelineCharacterizationTests
     }
 
     [Fact]
-    public void ControllerSelectionFollowsLatestInputRatherThanIntentCause()
+    public void LatestInputSnapshotTracksLatestPointerForManualCapture()
     {
-        // current behavior; lane C/E changes this.
         using var pipeline = Pipeline();
-        var mouse = Controller();
-        var pad = Controller();
-        pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = mouse, [34] = pad };
         Pointer(pipeline, 100, 20, 15, 12);
-        Assert.Same(mouse, LatestController(pipeline));
         Pointer(pipeline, 110, 21, 15, 34);
-        Assert.Same(pad, LatestController(pipeline));
+
+        Assert.Equal(new LatestPointerInput(34, PointerInputClass.Handle, 110), pipeline.LatestInput);
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(99)]
-    public void LatestPrimedControllerIsFallbackForUnmappedInput(long handle)
+    public void LatestPrimedControllerIsNotFallbackForUnmappedInput(long handle)
     {
-        // current behavior; lane C/E changes this.
         using var pipeline = Pipeline();
         var latest = Controller();
         var bank = new ControllerBank();
@@ -86,7 +94,8 @@ public class PipelineCharacterizationTests
         bank.ApplyTo(pipeline);
         Pointer(pipeline, 100, 20, 15, handle);
         Assert.Same(latest, bank.Latest);
-        Assert.Same(latest, LatestController(pipeline));
+        Assert.Null(pipeline.Controller);
+        Assert.Null(LatestController(pipeline));
     }
 
     [Fact]
@@ -101,7 +110,7 @@ public class PipelineCharacterizationTests
         var outputs = new List<OutputEvent>();
         pipeline.Event += e => { if (e is OutputEvent output) outputs.Add(output); };
         var queue = new Queue<Action>();
-        queue.Enqueue(() => Invoke(pipeline, "Output", decision.Intent!));
+        queue.Enqueue(() => Invoke(pipeline, "Output", decision.Intent!, null!, null!));
         pipeline.Policy.Config.Mode = HapticsMode.Off;
         queue.Dequeue()();
 
@@ -120,11 +129,19 @@ public class PipelineCharacterizationTests
     internal static CapturedController Controller() =>
         (CapturedController)RuntimeHelpers.GetUninitializedObject(typeof(CapturedController));
 
-    internal static void Pointer(ObservationPipeline pipeline, double t, int x, int y, long handle)
+    internal static void Pointer(
+        ObservationPipeline pipeline,
+        double t,
+        int x,
+        int y,
+        long handle,
+        PointerInputClass? inputClass = null)
     {
-        typeof(ObservationPipeline).GetField("_lastDevice", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(pipeline, handle);
-        pipeline.Interpreter.OnPointer(new PointerObservation(t, x, y,
-            handle == 0 ? InputOrigin.SyntheticOrUnknown : InputOrigin.HardwareRaw, false, 0, handle));
+        pipeline.ObservePointer(new PointerObservation(t, x, y,
+            handle == 0 ? InputOrigin.SyntheticOrUnknown : InputOrigin.HardwareRaw, false, 0, handle)
+        {
+            InputClass = inputClass ?? (handle == 0 ? PointerInputClass.Handleless : PointerInputClass.Handle),
+        });
     }
 
     private static CapturedController? LatestController(ObservationPipeline pipeline) =>

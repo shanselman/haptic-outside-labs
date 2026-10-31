@@ -171,9 +171,11 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         if (now - _lastPrime > 200)
         {
             _lastPrime = now;
-            if (_bank.TryCapture(_pipeline?.LastDeviceHandle ?? 0))
+            if (_pipeline is { } pipeline &&
+                pipeline.LatestInput is { } input &&
+                _bank.TryCapture(input.DeviceHandle, input.InputClass, input.TimestampMs, now))
             {
-                _bank.ApplyTo(_pipeline);
+                _bank.ApplyTo(pipeline);
                 UpdateStatus();
             }
         }
@@ -501,6 +503,10 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
                     break;
                 case DiagnosticEvent g:
                     Row(e.AtMs, "Diagnostic", "", "", g.Message, null, "");
+                    break;
+                case DeviceChangeEvent { Arrived: false } device when _bank.RemoveDevice(device.Handle):
+                    _bank.ApplyTo(_pipeline);
+                    UpdateStatus();
                     break;
             }
         }
