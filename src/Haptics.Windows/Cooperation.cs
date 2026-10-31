@@ -438,7 +438,14 @@ public sealed class CooperativeServer : IDisposable
     {
         if (Parse(line) is { } waveform)
         {
-            _onIntent(waveform, pid);
+            try
+            {
+                _onIntent(waveform, pid);
+            }
+            catch (Exception ex)
+            {
+                Report($"Cooperative callback error: {ex.Message}");
+            }
         }
     }
 

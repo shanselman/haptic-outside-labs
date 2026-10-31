@@ -85,31 +85,111 @@ public class CooperativeServerTests
     {
         using var rig = new PipeRig(5000, completeAfter: 64);
         var valid = "{\"waveform\":\"Align\"}".PadRight(256) + ending;
-        await rig.Send(string.Concat(Enumerable.Repeat(valid, 64)));
+        try
+        {
+            await rig.Send(string.Concat(Enumerable.Repeat(valid, 64)));
+        }
+        catch (IOException)
+        {
+            // Closing at the line cap can race the writer's completion; delivery is asserted below.
+        }
         await rig.Received.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(64, rig.Waveforms.Count);
         Assert.All(rig.Waveforms, w => Assert.Equal("Align", w));
     }
 
     [Fact]
-    public async Task ClientDeadlineIsAbsoluteNotRenewedByPartialInput()
+    public async Task CallbackFaultIsReportedAndTheNextClientStillDelivers()
     {
-        using var rig = new PipeRig(250);
-        using var slow = await rig.Connect();
-        await slow.WriteAsync(Encoding.UTF8.GetBytes("A"));
-        await slow.FlushAsync();
-        await Task.Delay(150);
+        var name = $"haptics-tests-callback-{Guid.NewGuid():N}";
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        using var server = new CooperativeServer((waveform, _) =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                throw new InvalidOperationException("fixture callback fault");
+            }
+
+            received.TrySetResult(waveform);
+        }, name, 5000);
+        server.Diagnostic += message => reported.TrySetResult(message);
+        server.Start();
+        using (var first = new NamedPipeClientStream(".", name, PipeDirection.Out, PipeOptions.Asynchronous))
+        {
+            await first.ConnectAsync(5000);
+            await first.WriteAsync(Encoding.UTF8.GetBytes("Align\n"));
+            await first.FlushAsync();
+        }
+
+        Assert.Contains("fixture callback fault", await reported.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(server.IsRunning);
+        using var second = new NamedPipeClientStream(".", name, PipeDirection.Out, PipeOptions.Asynchronous);
+        await second.ConnectAsync(5000);
+        await second.WriteAsync(Encoding.UTF8.GetBytes("Hover\n"));
+        await second.FlushAsync();
+        Assert.Equal("Hover", await received.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public async Task ConnectionDeliversNoMoreThan64Lines()
+    {
+        using var rig = new PipeRig(5000, completeAfter: 65);
         try
         {
-            await slow.WriteAsync(Encoding.UTF8.GetBytes("l"));
-            await slow.FlushAsync();
+            await rig.Send(string.Concat(Enumerable.Repeat("Align\n", 65)));
         }
         catch (IOException)
         {
-            // A delayed test runner may resume after the absolute deadline already closed this client.
+            // The server intentionally closes this connection before accepting the 65th line.
         }
         await rig.Send("Hover\n");
         Assert.Equal("Hover", await rig.Received.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        rig.Server.Dispose(); // Join so the assertion sees every callback from this connection.
+        Assert.Equal(64, rig.Waveforms.Count(w => w == "Align"));
+    }
+
+    [Fact]
+    public async Task ClientDeadlineIsAbsoluteNotRenewedByPartialInput()
+    {
+        const int deadlineMs = 600;
+        using var rig = new PipeRig(deadlineMs);
+        using var slow = await rig.Connect();
+        using var trickleCancellation = new CancellationTokenSource();
+        async Task Trickle()
+        {
+            try
+            {
+                for (var i = 0; i < 11; i++)
+                {
+                    await slow.WriteAsync(Encoding.UTF8.GetBytes("x"), trickleCancellation.Token);
+                    await slow.FlushAsync(trickleCancellation.Token);
+                    await Task.Delay(deadlineMs / 3, trickleCancellation.Token);
+                }
+            }
+            catch (IOException)
+            {
+                // The absolute deadline closes this client while it is still trickling.
+            }
+            catch (OperationCanceledException) when (trickleCancellation.IsCancellationRequested)
+            {
+            }
+        }
+
+        var trickle = Trickle();
+        using var limit = new CancellationTokenSource(deadlineMs * 2);
+        try
+        {
+            await rig.Send("Hover\n", limit.Token);
+            Assert.Equal("Hover", await rig.Received.Task.WaitAsync(limit.Token));
+        }
+        finally
+        {
+            trickleCancellation.Cancel();
+            await trickle;
+        }
+
         Assert.Contains(rig.Diagnostics, m => m.Contains("deadline"));
         Assert.Single(rig.Waveforms);
     }
