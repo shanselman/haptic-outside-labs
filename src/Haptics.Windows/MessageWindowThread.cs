@@ -39,6 +39,11 @@ public readonly record struct RawMouseInput(
     uint ExtraInformation)
 {
     public InputOrigin Origin => DeviceHandle != 0 ? InputOrigin.HardwareRaw : InputOrigin.SyntheticOrUnknown;
+
+    public PointerInputClass InputClass =>
+        (ExtraInformation & 0xFFFFFF00) == 0xFF515700
+            ? PointerInputClass.Promoted
+            : DeviceHandle != 0 ? PointerInputClass.Handle : PointerInputClass.Handleless;
 }
 
 public enum MessageWindowKind

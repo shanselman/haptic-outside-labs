@@ -3,6 +3,8 @@ using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
+using Haptics.Core;
+using Windows.Devices.Haptics;
 
 namespace Haptics.Windows;
 
@@ -12,8 +14,16 @@ namespace Haptics.Windows;
 /// </summary>
 public sealed class ControllerBank
 {
+    internal const double ManualCaptureFreshnessMs = 1000;
+
+    private readonly Func<CapturedController?> _captureController;
     private IReadOnlyDictionary<long, CapturedController> _map = new Dictionary<long, CapturedController>();
 
+    public ControllerBank() : this(() => HapticsApi.TryCaptureCurrentController()) { }
+
+    internal ControllerBank(Func<CapturedController?> captureController) => _captureController = captureController;
+
+    /// <summary>Most recent manual capture for display and explicitly single-controller experiments; not a routing fallback.</summary>
     public CapturedController? Latest { get; private set; }
 
     public IReadOnlyDictionary<long, CapturedController> Map => _map;
@@ -50,9 +60,36 @@ public sealed class ControllerBank
     }
 
     /// <summary>Capture the device that just moved over our UI. Returns true if something new was added.</summary>
-    public bool TryCapture(long deviceHandle)
+    public bool TryCapture(long deviceHandle) => CaptureAndMap(deviceHandle, _captureController());
+
+    public bool TryCapture(long deviceHandle, PointerInputClass inputClass, double inputTimestampMs, double nowMs)
     {
-        var c = HapticsApi.TryCaptureCurrentController();
+        if (!ControllerRouting.IsManualCaptureValid(
+                deviceHandle, inputClass, inputTimestampMs, nowMs, ManualCaptureFreshnessMs))
+        {
+            return false;
+        }
+
+        var c = _captureController();
+        if (c is null || !ControllerRouting.MatchesInputClass(inputClass, c.DeviceType))
+        {
+            return false;
+        }
+
+        var sameController = _map.Where(pair => pair.Key != deviceHandle && pair.Value.IdHash == c.IdHash).ToArray();
+        var classifiesDiscoveredTouchpad = inputClass == PointerInputClass.Handleless &&
+                                           c.DeviceType == HapticDeviceType.Touchpad &&
+                                           sameController.All(pair => pair.Value.DeviceType == HapticDeviceType.Generic);
+        if (sameController.Length > 0 && !classifiesDiscoveredTouchpad)
+        {
+            return false;
+        }
+
+        return CaptureAndMap(deviceHandle, c);
+    }
+
+    private bool CaptureAndMap(long deviceHandle, CapturedController? c)
+    {
         if (c is null)
         {
             return false;
@@ -81,6 +118,80 @@ public sealed class ControllerBank
             pipeline.Controllers = _map;
         }
     }
+}
+
+internal readonly record struct ControllerRoute(CapturedController? Controller, string Reason);
+
+internal static class ControllerRouting
+{
+    internal static ControllerRoute Resolve(
+        IReadOnlyDictionary<long, CapturedController>? controllers,
+        long deviceHandle,
+        PointerInputClass inputClass)
+    {
+        if (inputClass == PointerInputClass.Promoted)
+        {
+            return new(null, "skip:promoted-input");
+        }
+
+        if (deviceHandle != 0)
+        {
+            if (inputClass != PointerInputClass.Handle)
+            {
+                return new(null, "skip:input-class-mismatch");
+            }
+
+            return controllers is not null && controllers.TryGetValue(deviceHandle, out var mapped)
+                ? new(mapped, "mapped-device")
+                : new(null, "skip:unmapped-device");
+        }
+
+        if (inputClass != PointerInputClass.Handleless)
+        {
+            return new(null, "skip:unknown-input-origin");
+        }
+
+        var touchpads = new List<CapturedController>();
+        foreach (var controller in controllers?.Values ?? [])
+        {
+            if (controller.DeviceType != HapticDeviceType.Touchpad ||
+                touchpads.Any(existing => ReferenceEquals(existing, controller) ||
+                    controller.IdHash != "none" && existing.IdHash == controller.IdHash))
+            {
+                continue;
+            }
+
+            touchpads.Add(controller);
+        }
+
+        return touchpads.Count switch
+        {
+            1 => new(touchpads[0], "mapped-touchpad"),
+            0 => new(null, "skip:no-touchpad-mapping"),
+            _ => new(null, "skip:ambiguous-touchpad"),
+        };
+    }
+
+    internal static bool MatchesInputClass(PointerInputClass inputClass, HapticDeviceType deviceType) =>
+        inputClass switch
+        {
+            PointerInputClass.Handle => deviceType == HapticDeviceType.Mouse,
+            PointerInputClass.Handleless => deviceType == HapticDeviceType.Touchpad,
+            _ => false,
+        };
+
+    internal static bool IsManualCaptureValid(
+        long deviceHandle,
+        PointerInputClass inputClass,
+        double inputTimestampMs,
+        double nowMs,
+        double freshnessMs) =>
+        double.IsFinite(inputTimestampMs) && double.IsFinite(nowMs) &&
+        double.IsFinite(freshnessMs) && freshnessMs >= 0 &&
+        nowMs >= inputTimestampMs && nowMs - inputTimestampMs <= freshnessMs &&
+        (deviceHandle == 0
+            ? inputClass == PointerInputClass.Handleless
+            : inputClass == PointerInputClass.Handle);
 }
 
 /// <summary>
