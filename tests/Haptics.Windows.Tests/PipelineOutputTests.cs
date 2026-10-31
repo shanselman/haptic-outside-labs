@@ -1,4 +1,5 @@
 using Haptics.Core;
+using Haptics.Tray;
 using static Haptics.Windows.Tests.PipelineCharacterizationTests;
 
 namespace Haptics.Windows.Tests;
@@ -51,28 +52,28 @@ public class PipelineOutputTests
     }
 
     [Fact]
-    public void QueuedMouseIntentIsSentToDeviceOfLatestInput()
+    public void QueuedIntentDoesNotSwitchDevicesBeforeOutput()
     {
-        // current behavior; lane C/E changes this.
         using var rig = new Rig();
         var pad = Controller();
+        typeof(CapturedController).GetField("<DeviceType>k__BackingField",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(pad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad);
         rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = rig.Mouse, [34] = pad };
         rig.Observe(100, 12, Snapshot(100));
         Pointer(rig.Pipeline, 105, 21, 15, 34);
         rig.Flush(110);
 
-        var request = Assert.Single(rig.Sink.Requests);
-        Assert.Equal(100, request.Intent.PointerTimestampMs);
+        Assert.Empty(rig.Sink.Requests);
         Assert.Equal(34, rig.Pipeline.LastDeviceHandle);
-        Assert.Same(pad, request.Controller);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:stale-device-generation");
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(99)]
-    public void UnknownInputReachesLatestPrimedFallback(long handle)
+    public void UnknownInputDoesNotReachLatestPrimedFallback(long handle)
     {
-        // current behavior; lane C/E changes this.
         using var rig = new Rig();
         var latest = Controller();
         var bank = new ControllerBank();
@@ -81,7 +82,225 @@ public class PipelineOutputTests
         rig.Observe(100, handle, Snapshot(100));
         rig.Flush(110);
 
-        Assert.Same(latest, Assert.Single(rig.Sink.Requests).Controller);
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:no-touchpad-mapping" || e.Note == "skip:unmapped-device");
+    }
+
+    [Fact]
+    public void ExplicitSingleControllerStillWorksForExperimentCallers()
+    {
+        using var rig = new Rig();
+        var single = Controller();
+        rig.Pipeline.Controllers = null;
+        rig.Pipeline.Controller = single;
+        rig.Observe(100, 99, Snapshot(100));
+        rig.Flush(110);
+
+        Assert.Same(single, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
+    public void ExplicitExperimentControllerDoesNotFallbackWhenDeviceMapIsActive()
+    {
+        using var rig = new Rig();
+        rig.Pipeline.Controller = Controller();
+        rig.Observe(100, 99, Snapshot(100));
+        rig.Flush(110);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:unmapped-device");
+    }
+
+    [Fact]
+    public void ExplicitExperimentControllerDoesNotRoutePromotedInput()
+    {
+        using var rig = new Rig();
+        rig.Pipeline.Controller = Controller();
+        rig.Observe(100, 12, Snapshot(100), PointerInputClass.Promoted);
+        rig.Flush(110);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:promoted-input");
+    }
+
+    [Fact]
+    public void TouchpadOnlyManualMappingReachesTheRecordingSink()
+    {
+        using var rig = new Rig();
+        var touchpad = Controller();
+        typeof(CapturedController).GetField("<DeviceType>k__BackingField",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(touchpad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad);
+        var bank = new ControllerBank(() => touchpad);
+        Assert.True(bank.TryCapture(0, PointerInputClass.Handleless, 100, 100));
+        bank.ApplyTo(rig.Pipeline);
+        rig.Observe(100, 0, Snapshot(100));
+        rig.Flush(110);
+
+        Assert.Same(touchpad, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
+    public void DiscoveryOnlyGenericTouchpadStaysSilentUntilManualPrime()
+    {
+        using var rig = new Rig();
+        var discovered = Controller();
+        var touchpad = Controller();
+        SetController(discovered, global::Windows.Devices.Haptics.HapticDeviceType.Generic, "touchpad");
+        SetController(touchpad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "touchpad");
+        var bank = new ControllerBank(() => touchpad);
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [34] = discovered }, "discovered"));
+        bank.ApplyTo(rig.Pipeline);
+
+        rig.Observe(100, 0, Snapshot(100));
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:no-touchpad-mapping");
+
+        Assert.True(bank.TryCapture(0, PointerInputClass.Handleless, 800, 800));
+        bank.ApplyTo(rig.Pipeline);
+        rig.Observe(800, 0, Snapshot(800) with { RuntimeIdHash = "primed-touchpad", QueryX = 21 });
+        rig.Flush(810);
+
+        Assert.Same(touchpad, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
+    public void MouseRemovalDoesNotSilenceTheMappedTouchpad()
+    {
+        using var rig = new Rig();
+        var touchpad = Controller();
+        typeof(CapturedController).GetField("<DeviceType>k__BackingField",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(touchpad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad);
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = rig.Mouse, [0] = touchpad };
+        Invoke(rig.Pipeline, "OnDeviceChanged", 12L, false);
+
+        rig.Observe(100, 0, Snapshot(100));
+        rig.Flush(110);
+
+        Assert.Same(touchpad, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
+    public void RemovingTouchpadHandleAlsoRevokesItsHandlelessAlias()
+    {
+        using var rig = new Rig();
+        var discovered = Controller();
+        var touchpad = Controller();
+        SetController(discovered, global::Windows.Devices.Haptics.HapticDeviceType.Generic, "touchpad");
+        SetController(touchpad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "touchpad");
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [0] = touchpad, [34] = discovered };
+        Invoke(rig.Pipeline, "OnDeviceChanged", 34L, false);
+
+        rig.Observe(100, 0, Snapshot(100));
+        rig.Flush(110);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:removed-device");
+    }
+
+    [Fact]
+    public void HandlelessInputWithTwoMappedTouchpadsStaysSilent()
+    {
+        using var rig = new Rig();
+        var first = Controller();
+        var second = Controller();
+        foreach (var touchpad in new[] { first, second })
+        {
+            typeof(CapturedController).GetField("<DeviceType>k__BackingField",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .SetValue(touchpad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad);
+        }
+
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [0] = first, [34] = second };
+        rig.Observe(100, 0, Snapshot(100));
+        rig.Flush(110);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:ambiguous-touchpad");
+    }
+
+    [Fact]
+    public void ReusedRawHandleStaysSilentUntilReprimedWithNewController()
+    {
+        using var rig = new Rig();
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = rig.Mouse };
+        Invoke(rig.Pipeline, "OnDeviceChanged", 12L, false);
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = rig.Mouse };
+
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:removed-device");
+
+        var reconnected = Controller();
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = reconnected };
+        rig.Observe(800, 12, Snapshot(800) with { RuntimeIdHash = "reconnected", QueryX = 21 });
+        rig.Flush(810);
+
+        Assert.True(rig.Sink.Requests.Count == 1,
+            string.Join(" | ", rig.Events.Select(e => e switch
+            {
+                DecisionEvent d => $"decision:{d.Decision.Outcome}:{d.Decision.Reason}",
+                NoteEvent n => $"note:{n.Note}",
+                SnapshotEvent s => $"snapshot:{string.Join(",", s.Notes)}",
+                _ => e.GetType().Name,
+            })));
+        Assert.Same(reconnected, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
+    public void ReconnectedDeviceWithNewHandleStaysSilentUntilMapped()
+    {
+        using var rig = new Rig();
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = rig.Mouse };
+        Invoke(rig.Pipeline, "OnDeviceChanged", 12L, false);
+
+        rig.Observe(100, 34, Snapshot(100));
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:unmapped-device");
+
+        var reconnected = Controller();
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [34] = reconnected };
+        rig.Observe(800, 34, Snapshot(800) with { RuntimeIdHash = "new-handle", QueryX = 21 });
+        rig.Flush(810);
+
+        Assert.Same(reconnected, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
+    public void PromotedInputIsSilentEvenWhenMouseHandleIsMapped()
+    {
+        using var rig = new Rig();
+        rig.Observe(100, 12, Snapshot(100), PointerInputClass.Promoted);
+        rig.Flush(110);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:promoted-input");
+    }
+
+    [Fact]
+    public void AutoPrimedTrayMouseStillReachesTheRecordingSink()
+    {
+        using var rig = new Rig();
+        var refresh = new ControllerRefresh(() => Task.FromResult(
+            new ControllerDiscoveryResult(
+                new Dictionary<long, CapturedController> { [12] = rig.Mouse }, "discovered")));
+        var bank = new ControllerBank(() => null);
+        refresh.Request();
+        Assert.True(refresh.Poll(0, enabled: true, alreadyPrimed: false).Started);
+        var result = refresh.Poll(1, enabled: true, alreadyPrimed: false).Result;
+        Assert.NotNull(result);
+        bank.AddDiscovered(result!);
+        bank.ApplyTo(rig.Pipeline);
+
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+
+        Assert.Same(rig.Mouse, Assert.Single(rig.Sink.Requests).Controller);
     }
 
     [Fact]
@@ -169,6 +388,7 @@ public class PipelineOutputTests
     {
         using var rig = new Rig();
         rig.Clock.NowMs = 100;
+        Pointer(rig.Pipeline, 100, 20, 15, 12);
         rig.Pipeline.SubmitCooperative("Align", 0);
         Assert.Equal(1, rig.Sink.Pending);
         rig.Flush(110);
@@ -176,6 +396,31 @@ public class PipelineOutputTests
         Assert.Equal("Align", request.Intent.Waveform);
         Assert.Equal(100, request.Intent.PointerTimestampMs);
         Assert.Equal(100, Assert.Single(rig.Events.OfType<DecisionEvent>()).AtMs);
+    }
+
+    [Fact]
+    public void CooperativeIntentWithoutFreshPointerOriginStaysSilent()
+    {
+        using var rig = new Rig();
+        rig.Clock.NowMs = 100;
+        rig.Pipeline.SubmitCooperative("Align", 0);
+        rig.Flush(110);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:no-fresh-input-origin");
+    }
+
+    [Fact]
+    public void CooperativeIntentWithStalePointerOriginStaysSilent()
+    {
+        using var rig = new Rig();
+        Pointer(rig.Pipeline, 100, 20, 15, 12);
+        rig.Clock.NowMs = 351;
+        rig.Pipeline.SubmitCooperative("Align", 0);
+        rig.Flush(360);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:no-fresh-input-origin");
     }
 
     [Theory]
@@ -248,11 +493,16 @@ public class PipelineOutputTests
             Pipeline.Event += Events.Add;
         }
 
-        public void Observe(double t, long handle, ElementSnapshot snapshot)
+        public void Observe(
+            double t,
+            long handle,
+            ElementSnapshot snapshot,
+            PointerInputClass? inputClass = null)
         {
             Clock.NowMs = t;
-            Pointer(Pipeline, t, snapshot.QueryX, snapshot.QueryY, handle);
-            Invoke(Pipeline, "OnUia", new UiaResponse { Ok = true, Snapshot = snapshot }, t, 0.0);
+            Pointer(Pipeline, t, snapshot.QueryX, snapshot.QueryY, handle, inputClass);
+            var generation = Pipeline.Interpreter.Generation;
+            Invoke(Pipeline, "OnUia", new UiaResponse { Ok = true, Generation = generation, Snapshot = snapshot with { Generation = generation } }, t, 0.0);
         }
 
         public void Tick(double t)
@@ -268,6 +518,13 @@ public class PipelineOutputTests
         }
 
         public void Dispose() => Pipeline.Dispose();
+    }
+
+    private static void SetController(CapturedController controller, global::Windows.Devices.Haptics.HapticDeviceType type, string idHash)
+    {
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        typeof(CapturedController).GetField("<DeviceType>k__BackingField", flags)!.SetValue(controller, type);
+        typeof(CapturedController).GetField("<IdHash>k__BackingField", flags)!.SetValue(controller, idHash);
     }
 }
 

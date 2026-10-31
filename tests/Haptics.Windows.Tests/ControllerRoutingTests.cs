@@ -104,6 +104,26 @@ public class ControllerRoutingTests
     }
 
     [Fact]
+    public void RemovingEnumeratedTouchpadAlsoRemovesItsHandlelessAliasAndAllowsReprime()
+    {
+        var discovered = Controller(HapticDeviceType.Generic, "same-touchpad");
+        var firstPrime = Controller(HapticDeviceType.Touchpad, "same-touchpad");
+        var reconnected = Controller(HapticDeviceType.Touchpad, "same-touchpad");
+        var current = firstPrime;
+        var bank = new ControllerBank(() => current);
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [34] = discovered }, "ready"));
+        Assert.True(bank.TryCapture(0, PointerInputClass.Handleless, 100, 100));
+
+        Assert.True(bank.RemoveDevice(34));
+        Assert.DoesNotContain(0, bank.Map.Keys);
+
+        current = reconnected;
+        Assert.True(bank.TryCapture(0, PointerInputClass.Handleless, 200, 200));
+        Assert.Same(reconnected, bank.Map[0]);
+    }
+
+    [Fact]
     public void ManualCaptureCannotMapOneControllerToAnotherRawHandle()
     {
         var known = Controller(HapticDeviceType.Mouse, "same-controller");
@@ -116,17 +136,28 @@ public class ControllerRoutingTests
     }
 
     [Fact]
-    public void ApplyingManualPrimingPreservesCurrentLatestFallbackBehavior()
+    public void ManagerRouteRequiresAConfidentControllerIdentityMatch()
+    {
+        var mouse = Controller(HapticDeviceType.Mouse, "mouse");
+
+        Assert.True(HapticsApi.MatchesExpectedController("mouse", mouse));
+        Assert.False(HapticsApi.MatchesExpectedController("other", mouse));
+        Assert.False(HapticsApi.MatchesExpectedController(null, mouse));
+        Assert.False(HapticsApi.MatchesExpectedController("none", Controller(HapticDeviceType.Mouse, "none")));
+    }
+
+    [Fact]
+    public void ApplyingManualPrimingDoesNotPublishLatestAsAutomaticFallback()
     {
         var mouse = Controller(HapticDeviceType.Mouse, "mouse");
         var bank = new ControllerBank(() => mouse);
-        Assert.True(bank.TryCapture(12));
+        Assert.True(bank.TryCapture(12, PointerInputClass.Handle, 100, 100));
         using var pipeline = new ObservationPipeline(PolicyConfig.Sample(EffectProfile.Focused, 0.8));
 
         bank.ApplyTo(pipeline);
 
         Assert.Same(mouse, pipeline.Controllers![12]);
-        Assert.Same(mouse, pipeline.Controller);
+        Assert.Null(pipeline.Controller);
     }
 
     private static CapturedController Controller(HapticDeviceType type, string id)

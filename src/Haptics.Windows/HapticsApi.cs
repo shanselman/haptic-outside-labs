@@ -199,7 +199,13 @@ public static class HapticsApi
     }
 
     /// <summary>R1/R2: GetForCurrentThread() on the calling thread, then TrySendHapticWaveform.</summary>
-    public static HapticAttempt SendViaThreadManager(string route, string waveform, double intensity, double? inputTimestampMs = null, string fallback = "")
+    public static HapticAttempt SendViaThreadManager(
+        string route,
+        string waveform,
+        double intensity,
+        double? inputTimestampMs = null,
+        string fallback = "",
+        CapturedController? expectedController = null)
     {
         var a = NewAttempt(route, waveform, intensity, fallback);
         if (!a.ApiPresent)
@@ -210,7 +216,7 @@ public static class HapticsApi
 
         try
         {
-            SendManagerCore(a, inputTimestampMs);
+            SendManagerCore(a, inputTimestampMs, expectedController);
         }
         catch (Exception ex)
         {
@@ -350,7 +356,7 @@ public static class HapticsApi
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void SendManagerCore(HapticAttempt a, double? inputTs)
+    private static void SendManagerCore(HapticAttempt a, double? inputTs, CapturedController? expectedController)
     {
         var mgr = InputHapticsManager.GetForCurrentThread();
         a.ManagerOk = mgr is not null;
@@ -364,12 +370,23 @@ public static class HapticsApi
         a.ControllerPresent = ctrl is not null;
         a.DeviceType = mgr.CurrentHapticsControllerDeviceType.ToString();
         a.ControllerIdHash = ctrl is null ? null : RawInputDevices.Hash(SafeControllerId(ctrl));
+        if (expectedController is not null &&
+            (ctrl is null || !MatchesExpectedController(a.ControllerIdHash, expectedController)))
+        {
+            a.Error = "controller-mismatch";
+            a.CallEndMs = MonotonicClock.Instance.NowMs;
+            return;
+        }
+
         a.Called = true;
         a.CallStartMs = MonotonicClock.Instance.NowMs;
         a.InputToCallMs = inputTs is { } t ? a.CallStartMs - t : null;
         a.Accepted = mgr.TrySendHapticWaveform(a.WaveformId, a.FallbackId, a.Intensity);
         a.CallEndMs = MonotonicClock.Instance.NowMs;
     }
+
+    internal static bool MatchesExpectedController(string? currentIdHash, CapturedController expected) =>
+        expected.IdHash != "none" && currentIdHash == expected.IdHash;
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void SendControllerCore(HapticAttempt a, CapturedController captured, double? inputTs)

@@ -69,9 +69,11 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
 
     public void TryPrime()
     {
-        if (_bank.TryCapture(_pipeline?.LastDeviceHandle ?? 0))
+        if (_pipeline is { } pipeline &&
+            pipeline.LatestInput is { } input &&
+            _bank.TryCapture(input.DeviceHandle, input.InputClass, input.TimestampMs, MonotonicClock.Instance.NowMs))
         {
-            _bank.ApplyTo(_pipeline);
+            _bank.ApplyTo(pipeline);
             UpdateIcon();
             Changed?.Invoke(this, EventArgs.Empty);
         }
