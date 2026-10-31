@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Haptics.Core;
 using Haptics.Lab.Experiments;
@@ -148,7 +149,23 @@ public class OutputOwnershipTests
         Assert.True(ownerThread.Join(TimeSpan.FromSeconds(5)));
         Assert.True(acquired);
         Assert.False(abandoned.IsOwner);
-        Assert.True(next.TryAcquire());
+        Assert.True(TryAcquireWithin(next, TimeSpan.FromSeconds(5)));
         Assert.True(next.IsOwner);
+    }
+
+    private static bool TryAcquireWithin(OutputOwnership ownership, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        do
+        {
+            if (ownership.TryAcquire())
+            {
+                return true;
+            }
+
+            Thread.Sleep(TimeSpan.FromMilliseconds(10));
+        } while (stopwatch.Elapsed < timeout);
+
+        return ownership.TryAcquire();
     }
 }

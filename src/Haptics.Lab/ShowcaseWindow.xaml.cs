@@ -469,7 +469,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         var (brush, title, hint) = _pipeline is null
             ? ("SystemFillColorNeutralBrush", _pausedForOtherOwner ? "Output paused — another engine owns haptics" : "Showcase engine off",
                 _pausedForOtherOwner
-                    ? "Another Haptics Everywhere engine owns output. The Showcase stays paused until it releases ownership."
+                    ? "Another Haptics Everywhere engine owns output. The Showcase engine stays paused, but Feel it can preview individual sensations."
                     : "Turn on the Showcase engine to explore background feedback. Feel it still previews individual sensations.")
             : _bank.Any
                 ? ("SystemFillColorSuccessBrush", $"Ready: {_bank.Describe()}", "Try Feel it, then explore here or in another app. Only you can confirm what you feel.")
@@ -481,22 +481,14 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
     private void FeelIt(string waveform, bool appsOnly)
     {
-        if (TryCooperativePreview(appsOnly, waveform, w => CooperativeServer.Send(w)))
+        SendPreview(waveform, appsOnly, w => CooperativeServer.Send(w), preview =>
         {
-            return;
-        }
-
-        if (!TryRunOwnedOutput(() =>
-        {
-            var attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, waveform, Intensity);
+            var attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, preview, Intensity);
             if (!attempt.Accepted)
             {
-                Felt($"Couldn't play {waveform}: {attempt.Error ?? "device didn't accept it"}");
+                Felt($"Couldn't play {preview}: {attempt.Error ?? "device didn't accept it"}");
             }
-        }))
-        {
-            Felt("Output paused — another Haptics Everywhere engine owns haptics.");
-        }
+        });
     }
 
     internal static bool TryCooperativePreview(bool appsOnly, string waveform, Func<string, bool> send)
@@ -505,36 +497,19 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         return appsOnly && send(waveform);
     }
 
-    internal bool TryRunOwnedOutput(Action output, OutputOwnership? ownership = null)
+    internal static void SendPreview(string waveform, bool appsOnly, Func<string, bool> sendCooperative, Action<string> sendOneShot)
+    {
+        ArgumentNullException.ThrowIfNull(sendOneShot);
+        if (!TryCooperativePreview(appsOnly, waveform, sendCooperative))
+        {
+            RunOneShotPreview(() => sendOneShot(waveform));
+        }
+    }
+
+    internal static void RunOneShotPreview(Action output)
     {
         ArgumentNullException.ThrowIfNull(output);
-        if (ownership is not null)
-        {
-            _outputOwnership?.Dispose();
-            _outputOwnership = ownership;
-        }
-
-        if (!TryAcquireOutputOwnership())
-        {
-            UpdateStatus();
-            return false;
-        }
-
-        var releaseWhenDone = _pipeline is null;
-        try
-        {
-            return _outputOwnership?.TryRun(output) == true;
-        }
-        finally
-        {
-            if (releaseWhenDone)
-            {
-                _outputOwnership?.Dispose();
-                _outputOwnership = null;
-                _pausedForOtherOwner = false;
-                UpdateStatus();
-            }
-        }
+        output();
     }
 
     private void Drain()

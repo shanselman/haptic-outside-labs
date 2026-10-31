@@ -83,16 +83,17 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
 
 ## Lane G: exclusive output ownership
 
-`OutputOwnership` uses a nonblocking, session-scoped named mutex shared by the Tray, Showcase, and physical
-experiments. Sends are serialized with ownership release; EXP-020 stops new sends and waits for an active
-send before finishing. Showcase direct previews acquire the same lease and release it after a one-shot
-preview when its engine is off. EXP-010 and EXP-020 add the owner and grant state to method metadata and
-every trial's context. The Tray and Showcase visibly report when output is paused; the Tray reacquires the
-lease and resumes while its On setting remains enabled.
+`OutputOwnership` uses a nonblocking, session-scoped named mutex shared by the Tray engine, Showcase engine,
+and physical experiments. Ongoing sends are serialized with ownership release; EXP-020 stops new sends and
+waits for an active send before finishing. User-triggered one-shot Showcase previews bypass the lease so
+Feel it remains available while another owner holds it; previews can therefore overlap physical experiments.
+EXP-010 and EXP-020 add the owner and grant state to method metadata and every trial's context. The Tray and
+Showcase visibly report when their engines are paused; the Tray reacquires the lease and resumes while its
+On setting remains enabled.
 
 - [x] Wire TrayContext after Lane E's lost-controller change, preserving its passive defaults and output policy.
-- [x] Validate ownership, paused state, abandoned owner-thread recovery, pipeline denial and trial provenance
-  with hardware-free tests. Physical output experiments were not run.
+- [x] Validate ownership, paused state, bounded abandoned-owner recovery, pipeline denial, one-shot preview
+  under contention and trial provenance with hardware-free tests. Physical output experiments were not run.
 - [ ] Rebase after any main changes, then check exact-head CI before READY.
 
 ## Automatic priming: retain the existing checklist
