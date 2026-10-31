@@ -1249,6 +1249,14 @@ rejection retain their mapping. Recovery only acquires controllers and never sen
 handleless controller also revokes its same-identity Generic discovery aliases. Raw removal instead
 preserves every other nonzero handle, including same-identity mappings. Map replacement prunes strong
 tombstones; weak per-controller revocations keep stale map objects silent without retaining old controllers.
+Cooperative pipe clients are current-user-only and limited to 64 lines, at most 256 characters per line
+enforced during reading, and an absolute one-second deadline per connection (not renewed by slow input).
+Oversized or timed-out clients are closed so later clients can connect. Dispose cancels reads, closes the
+active listener/client and stops the server loop. LF, CR and CRLF retain their ordinary line semantics.
+Pipe creation I/O/access failures are diagnosed and retried after a cancellable one-second backoff,
+including a pipe name currently owned by another user; they must not terminate the host.
+Launching the Showcase treats only native error 1223 as cancellation; other native launch failures appear
+through the tray error UI without bypassing security prompts.
 
 **Reporter:** no mock classified as physical, proper experiment dependencies, immutable artifact hashes, no sensitive text in serialized output.
 

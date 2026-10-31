@@ -255,14 +255,40 @@ public sealed class CooperativeServer : IDisposable
     public const string PipeName = "HapticsEverywhere";
     private readonly Action<string, int> _onIntent;
     private readonly CancellationTokenSource _cts = new();
+    private readonly object _sync = new();
+    private readonly string _pipeName;
+    private readonly int _clientDeadlineMs;
+    private NamedPipeServerStream? _active;
     private Thread? _thread;
+    private bool _disposed;
 
-    public CooperativeServer(Action<string, int> onIntent) => _onIntent = onIntent;
+    public CooperativeServer(Action<string, int> onIntent) : this(onIntent, PipeName, 1000) { }
+
+    internal CooperativeServer(Action<string, int> onIntent, string pipeName, int clientDeadlineMs)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(clientDeadlineMs);
+        _onIntent = onIntent;
+        _pipeName = pipeName;
+        _clientDeadlineMs = clientDeadlineMs;
+    }
+
+    internal bool IsRunning => _thread?.IsAlive == true;
+
+    public event Action<string>? Diagnostic;
 
     public void Start()
     {
-        _thread = new Thread(Loop) { IsBackground = true, Name = "haptics-cooperative-pipe" };
-        _thread.Start();
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_thread is not null)
+            {
+                return;
+            }
+
+            _thread = new Thread(Loop) { IsBackground = true, Name = "haptics-cooperative-pipe" };
+            _thread.Start();
+        }
     }
 
     /// <summary>Client helper (also used by `haptics-lab coop-send`).</summary>
@@ -285,7 +311,25 @@ public sealed class CooperativeServer : IDisposable
 
     public void Dispose()
     {
-        _cts.Cancel();
+        Thread? thread;
+        lock (_sync)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _cts.Cancel();
+            _active?.Dispose();
+            thread = _thread;
+        }
+
+        if (thread is not null && thread != Thread.CurrentThread && !thread.Join(2000))
+        {
+            throw new TimeoutException("The cooperative pipe did not stop after cancellation.");
+        }
+
         _cts.Dispose();
     }
 
@@ -295,34 +339,120 @@ public sealed class CooperativeServer : IDisposable
         {
             try
             {
-                using var server = new NamedPipeServerStream(PipeName, PipeDirection.In, NamedPipeServerStream.MaxAllowedServerInstances,
+                using var server = new NamedPipeServerStream(_pipeName, PipeDirection.In, NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-                server.WaitForConnectionAsync(_cts.Token).GetAwaiter().GetResult();
-                GetNamedPipeClientProcessId(server.SafePipeHandle.DangerousGetHandle(), out var pid);
-                using var reader = new StreamReader(server, Encoding.UTF8);
-                for (var lines = 0; lines < 64 && reader.ReadLine() is { } line; lines++)
+                lock (_sync)
                 {
-                    if (line.Length > 256)
+                    if (_disposed)
                     {
-                        break;
+                        return;
                     }
 
-                    var waveform = Parse(line);
-                    if (waveform is not null)
-                    {
-                        _onIntent(waveform, (int)pid);
-                    }
+                    _active = server;
                 }
+
+                server.WaitForConnectionAsync(_cts.Token).GetAwaiter().GetResult();
+                GetNamedPipeClientProcessId(server.SafePipeHandle.DangerousGetHandle(), out var pid);
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+                deadline.CancelAfter(_clientDeadlineMs);
+                ReadClient(server, (int)pid, deadline.Token);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
             {
                 return;
             }
-            catch
+            catch (ObjectDisposedException) when (_cts.IsCancellationRequested)
             {
-                Thread.Sleep(100); // Malformed client or pipe error: keep serving.
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                Report("Cooperative client deadline exceeded; connection closed.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Report($"Cooperative pipe error: {ex.Message}");
+                if (_cts.Token.WaitHandle.WaitOne(1000))
+                {
+                    return;
+                }
+            }
+            finally
+            {
+                lock (_sync)
+                {
+                    _active = null;
+                }
             }
         }
+    }
+
+    private void ReadClient(Stream server, int pid, CancellationToken token)
+    {
+        using var reader = new StreamReader(server, Encoding.UTF8, bufferSize: 128, leaveOpen: true);
+        var buffer = new char[1];
+        var line = new StringBuilder(256);
+        var skipLf = false;
+        var lines = 0;
+        while (lines < 64)
+        {
+            var count = reader.ReadAsync(buffer.AsMemory(), token).GetAwaiter().GetResult();
+            token.ThrowIfCancellationRequested();
+            if (count == 0)
+            {
+                if (line.Length > 0)
+                {
+                    Deliver(line.ToString(), pid);
+                }
+
+                return;
+            }
+
+            var c = buffer[0];
+            if (skipLf && c == '\n')
+            {
+                skipLf = false;
+                continue;
+            }
+
+            skipLf = c == '\r';
+            if (c is '\r' or '\n')
+            {
+                Deliver(line.ToString(), pid);
+                line.Clear();
+                lines++;
+            }
+            else if (line.Length == 256)
+            {
+                Report("Cooperative line exceeds 256 characters; connection closed.");
+                return;
+            }
+            else
+            {
+                line.Append(c);
+            }
+        }
+    }
+
+    private void Deliver(string line, int pid)
+    {
+        if (Parse(line) is { } waveform)
+        {
+            try
+            {
+                _onIntent(waveform, pid);
+            }
+            catch (Exception ex)
+            {
+                Report($"Cooperative callback error: {ex.Message}");
+            }
+        }
+    }
+
+    private void Report(string message)
+    {
+        System.Diagnostics.Trace.TraceWarning(message);
+        Diagnostic?.Invoke(message);
     }
 
     private static string? Parse(string line)
