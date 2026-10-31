@@ -36,7 +36,7 @@ public class SchemaTests
     [Fact]
     public void EveryGoldenTraceLineHasAKnownType()
     {
-        var known = new HashSet<string> { "comment", "process", "pointer", "element", "device", "foreground", "wheel", "tick" };
+        var known = new HashSet<string> { "comment", "process", "pointer", "element", "device", "foreground", "wheel", "tick", "coop" };
         foreach (var file in Directory.GetFiles(Path.Combine(Repo(), "tests", "traces"), "*.jsonl"))
         {
             foreach (var line in File.ReadLines(file).Where(l => l.Trim().Length > 0))

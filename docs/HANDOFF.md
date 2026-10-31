@@ -12,6 +12,18 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
 
 ## Review findings already addressed
 
+- [x] **Core context safety through transitions and pending work.** Interaction generations now revoke
+  old UIA answers after foreground/device changes and explicit `Invalidate(reason)` calls. Request tokens
+  stay client-side through UIA coalescing, failures and disposal; device switches cancel dwell without
+  re-arrival on the same target. Pending arrivals refresh newer same-ID safety metadata, cancel on unsafe
+  or failed lookups, and expire past their fixed dwell deadline plus 30 ms tolerance instead of rewriting
+  cause time. Dwell starts after the target is known so slow valid providers do not create expired work.
+  Strip-edge Collide checks a separate destination, and cooperative events carry even non-interactive
+  or failed lookup context. Everything's density-off setting overrides per-app thinning.
+  `ContextGenerationTests`, `UiaGenerationTests`, `PendingArrivalTests`, `DestinationContextTests` and seven
+  new golden traces cover these rules; the original 13 traces are unchanged. Output-device routing and
+  lifecycle wiring remain owned by their coordinated lanes, not proved by these Core tests.
+
 - [x] **Narrator switch changes were not applied or saved.** UI Automation's toggle action changes
   `IsChecked` and raises `Checked`/`Unchecked`, but not `Click`. All four tray switches now use
   `OnToggled`, guarded by `_syncing`, in `src/Haptics.Tray/SettingsWindow.xaml.cs`.

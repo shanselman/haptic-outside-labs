@@ -31,6 +31,8 @@ public static class Exp070Replay
         ["transient-error-slider.jsonl"] = (1, 1),
         ["dwell-lookup-40ms.jsonl"] = (1, 1),
         ["dwell-lookup-150ms.jsonl"] = (1, 1),
+        ["strip-edge-destination-safety.jsonl"] = (7, 7),
+        ["cooperative-context-safety.jsonl"] = (1, 1),
     };
 
     public static string Run(string? outDir, string? traceDir)

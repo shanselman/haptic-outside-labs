@@ -1,0 +1,27 @@
+{"type":"comment","text":"Strip edges into password/excluded/unknown/disabled/offscreen destinations stay silent. Safe returns land; the final safe exit still Collides."}
+{"type":"process","pid":100,"name":"notepad"}
+{"type":"process","pid":200,"name":"KeePass"}
+{"t":0,"type":"pointer","x":100,"y":15,"fg":100}
+{"t":1,"type":"element","req":0,"pid":100,"controlType":"Button","rid":"last","bounds":[80,0,40,30],"parentType":"ToolBar","parentRid":"strip","parentBounds":[0,0,120,30]}
+{"t":300,"type":"pointer","x":140,"y":15,"fg":100}
+{"t":301,"type":"element","req":300,"pid":100,"controlType":"Edit","rid":"password","bounds":[120,0,40,30],"password":true}
+{"t":600,"type":"pointer","x":100,"y":15,"fg":100}
+{"t":601,"type":"element","req":600,"pid":100,"controlType":"Button","rid":"last","bounds":[80,0,40,30],"parentType":"ToolBar","parentRid":"strip","parentBounds":[0,0,120,30]}
+{"t":900,"type":"pointer","x":140,"y":15,"fg":100}
+{"t":901,"type":"element","req":900,"pid":200,"controlType":"Pane","rid":"excluded","bounds":[120,0,40,30]}
+{"t":1200,"type":"pointer","x":100,"y":15,"fg":100}
+{"t":1201,"type":"element","req":1200,"pid":100,"controlType":"Button","rid":"last","bounds":[80,0,40,30],"parentType":"ToolBar","parentRid":"strip","parentBounds":[0,0,120,30]}
+{"t":1500,"type":"pointer","x":140,"y":15,"fg":100}
+{"t":1501,"type":"element","req":1500,"pid":100,"controlType":"Unknown","rid":"unknown","bounds":[120,0,40,30]}
+{"t":1800,"type":"pointer","x":100,"y":15,"fg":100}
+{"t":1801,"type":"element","req":1800,"pid":100,"controlType":"Button","rid":"last","bounds":[80,0,40,30],"parentType":"ToolBar","parentRid":"strip","parentBounds":[0,0,120,30]}
+{"t":2100,"type":"pointer","x":140,"y":15,"fg":100}
+{"t":2101,"type":"element","req":2100,"pid":100,"controlType":"Pane","rid":"disabled","bounds":[120,0,40,30],"enabled":false}
+{"t":2400,"type":"pointer","x":100,"y":15,"fg":100}
+{"t":2401,"type":"element","req":2400,"pid":100,"controlType":"Button","rid":"last","bounds":[80,0,40,30],"parentType":"ToolBar","parentRid":"strip","parentBounds":[0,0,120,30]}
+{"t":2700,"type":"pointer","x":140,"y":15,"fg":100}
+{"t":2701,"type":"element","req":2700,"pid":100,"controlType":"Pane","rid":"offscreen","bounds":[120,0,40,30],"offscreen":true}
+{"t":3000,"type":"pointer","x":100,"y":15,"fg":100}
+{"t":3001,"type":"element","req":3000,"pid":100,"controlType":"Button","rid":"last","bounds":[80,0,40,30],"parentType":"ToolBar","parentRid":"strip","parentBounds":[0,0,120,30]}
+{"t":3300,"type":"pointer","x":140,"y":15,"fg":100}
+{"t":3301,"type":"element","req":3300,"pid":100,"controlType":"Pane","rid":"safe","bounds":[120,0,40,30]}

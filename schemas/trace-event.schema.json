@@ -40,6 +40,7 @@
     },
     { "properties": { "type": { "const": "foreground" }, "t": { "type": "number" }, "pid": { "type": "integer" } }, "required": ["t", "pid"] },
     { "properties": { "type": { "const": "wheel" }, "t": { "type": "number" }, "delta": { "type": "integer" } }, "required": ["t"] },
-    { "properties": { "type": { "const": "tick" }, "t": { "type": "number" }, "skipIntermediate": { "type": "boolean" } }, "required": ["t"] }
+    { "properties": { "type": { "const": "tick" }, "t": { "type": "number" }, "skipIntermediate": { "type": "boolean" } }, "required": ["t"] },
+    { "properties": { "type": { "const": "coop" }, "t": { "type": "number" }, "pid": { "type": "integer" }, "waveform": { "type": "string" } }, "required": ["t", "waveform"] }
   ]
 }

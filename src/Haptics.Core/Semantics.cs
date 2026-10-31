@@ -163,7 +163,8 @@ public sealed record SemanticEvent(
     double PointerSpeedPxPerSec,
     ElementSnapshot? Element,
     string? RequestedWaveform = null,
-    long Generation = 0);
+    long Generation = 0,
+    ElementSnapshot? Destination = null);
 
 public sealed class InterpreterConfig
 {
@@ -208,6 +209,7 @@ public sealed class SemanticInterpreter
 {
     private readonly Queue<double> _clickSpeeds = new();
     private ElementSnapshot? _current;
+    private ElementSnapshot? _context;
     private Arrival? _pending;
     private (string Key, double At)? _lastGroup;
     private bool _movedSinceSnapshot;
@@ -238,6 +240,7 @@ public sealed class SemanticInterpreter
     {
         Generation++;
         ResetElement();
+        _context = null;
         _lastGroup = null;
         _last = null;
         _speed = 0;
@@ -390,8 +393,8 @@ public sealed class SemanticInterpreter
 
     /// <summary>An app-reported event (cooperative integration). The app knows the outcome; we only arbitrate.</summary>
     public SemanticEvent Cooperative(string waveform, int processId, double nowMs) =>
-        new(SemanticEventKind.Cooperative, ++_transition, nowMs, nowMs, processId, "App", null, null, 1.0,
-            ["cooperative-app"], _last?.PrimaryDown ?? false, 0, null, waveform, Generation);
+        new(SemanticEventKind.Cooperative, ++_transition, nowMs, nowMs, processId, "App", _context?.ElementKey, _context?.GroupKey, 1.0,
+            ["cooperative-app"], _last?.PrimaryDown ?? false, 0, _context, waveform, Generation);
 
     public InterpretResult OnSnapshot(ElementSnapshot s, double nowMs)
     {
@@ -417,6 +420,13 @@ public sealed class SemanticInterpreter
             return new InterpretResult(events, ["superseded-snapshot-discarded"]);
         }
 
+        if ((_context is not null && s.ElementKey == _context.ElementKey && s.RequestedAtMs < _context.RequestedAtMs) ||
+            (_current is not null && s.ElementKey == _current.ElementKey && s.RequestedAtMs < _current.RequestedAtMs))
+        {
+            return new InterpretResult(events, ["older-snapshot-discarded"]);
+        }
+
+        _context = s;
         if (s.Error is not null)
         {
             if (_current?.Bounds is { } cb && !cb.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
@@ -430,11 +440,6 @@ public sealed class SemanticInterpreter
             }
             notes.Add($"lookup-error:{s.Error}");
             return new InterpretResult(events, notes);
-        }
-
-        if (_current is not null && s.ElementKey == _current.ElementKey && s.RequestedAtMs < _current.RequestedAtMs)
-        {
-            return new InterpretResult(events, ["older-snapshot-discarded"]);
         }
 
         var interactive = IsTarget(s, notes);
@@ -485,7 +490,7 @@ public sealed class SemanticInterpreter
                 ExitsAlongLongAxis(pb, s.QueryX, s.QueryY) && _speed <= EffectiveLandingSpeed * 1.5)
             {
                 _transition++;
-                events.Add(Make(SemanticEventKind.GroupEdge, p, previous, 0.8, ["left-strip-end", $"group:{previous.ParentControlType}"]));
+                events.Add(Make(SemanticEventKind.GroupEdge, p, previous, 0.8, ["left-strip-end", $"group:{previous.ParentControlType}"]) with { Destination = s });
             }
         }
 

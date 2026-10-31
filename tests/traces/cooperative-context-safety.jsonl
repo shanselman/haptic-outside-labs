@@ -1,0 +1,21 @@
+{"type":"comment","text":"Cooperative Align carries current non-interactive context: password, disabled, offscreen, excluded and failed lookup stay silent. Safe canvas Align emits."}
+{"type":"process","pid":100,"name":"notepad"}
+{"type":"process","pid":200,"name":"KeePass"}
+{"t":0,"type":"pointer","x":20,"y":15,"fg":100}
+{"t":1,"type":"element","req":0,"pid":100,"controlType":"Edit","rid":"password","bounds":[0,0,40,30],"password":true}
+{"t":100,"type":"coop","pid":100,"waveform":"Align"}
+{"t":300,"type":"pointer","x":60,"y":15,"fg":100}
+{"t":301,"type":"element","req":300,"pid":100,"controlType":"Edit","rid":"disabled","bounds":[40,0,40,30],"enabled":false}
+{"t":400,"type":"coop","pid":100,"waveform":"Align"}
+{"t":600,"type":"pointer","x":100,"y":15,"fg":100}
+{"t":601,"type":"element","req":600,"pid":100,"controlType":"Edit","rid":"offscreen","bounds":[80,0,40,30],"offscreen":true}
+{"t":700,"type":"coop","pid":100,"waveform":"Align"}
+{"t":900,"type":"pointer","x":140,"y":15,"fg":100}
+{"t":901,"type":"element","req":900,"pid":200,"controlType":"Pane","rid":"excluded","bounds":[120,0,40,30]}
+{"t":1000,"type":"coop","pid":100,"waveform":"Align"}
+{"t":1200,"type":"pointer","x":180,"y":15,"fg":100}
+{"t":1201,"type":"element","req":1200,"controlType":"Unknown","error":"timeout"}
+{"t":1300,"type":"coop","pid":100,"waveform":"Align"}
+{"t":1500,"type":"pointer","x":220,"y":15,"fg":100}
+{"t":1501,"type":"element","req":1500,"pid":100,"controlType":"Pane","rid":"canvas","bounds":[200,0,40,30]}
+{"t":1600,"type":"coop","pid":100,"waveform":"Align"}
