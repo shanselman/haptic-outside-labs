@@ -99,9 +99,9 @@ public class PipelineCharacterizationTests
     }
 
     [Fact]
-    public void OffDoesNotRevokeAnAlreadyAdmittedOutput()
+    public void OffRevokesAnAlreadyAdmittedOutput()
     {
-        // current behavior; lane C/E changes this. Infinite expiry isolates authorization from the base's real clock.
+        // Infinite expiry isolates authorization from the real clock.
         var clock = new FakeClock { NowMs = 100 };
         using var pipeline = Pipeline();
         pipeline.Policy.Config.SemanticIntentExpiryMs = double.PositiveInfinity;
@@ -114,7 +114,7 @@ public class PipelineCharacterizationTests
         pipeline.Policy.Config.Mode = HapticsMode.Off;
         queue.Dequeue()();
 
-        Assert.Equal("dry-run-route", Assert.Single(outputs).Status);
+        Assert.Empty(outputs);
         Assert.Equal("mode-off", pipeline.Policy.Evaluate(pipeline.Interpreter.Cooperative("Align", 0, 110), 110).Reason);
     }
 

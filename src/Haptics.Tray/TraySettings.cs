@@ -45,10 +45,21 @@ public sealed class TraySettings
         }
     }
 
-    public void Save()
+    public void Save() => Save(PathOnDisk);
+
+    internal void Save(string path)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(PathOnDisk)!);
-        File.WriteAllText(PathOnDisk, JsonSerializer.Serialize(this, HapticsJson.Indented));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temporary = Path.Combine(Path.GetDirectoryName(path)!, $".tray-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(this, HapticsJson.Indented));
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
     }
 
     /// <summary>

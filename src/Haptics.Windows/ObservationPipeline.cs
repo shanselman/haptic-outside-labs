@@ -37,6 +37,8 @@ public sealed class PipelineOptions
     public string Route { get; set; } = OutputRoutes.DryRun;
     public UiaClientOptions Uia { get; init; } = new();
     public Func<UiaClientOptions, UiaClient>? UiaFactory { get; init; }
+    internal Func<(int X, int Y)> PointerPosition { get; init; } = DesktopContext.CursorPosition;
+    internal Func<int> ForegroundPid { get; init; } = () => DesktopContext.Foreground().Pid;
 }
 
 public sealed record PipelineStats(
@@ -221,6 +223,7 @@ public sealed class ObservationPipeline : IDisposable
 
     public void Stop()
     {
+        RevokeOutput();
         _tick?.Dispose();
         _tick = null;
         _thread?.Dispose();
@@ -234,6 +237,19 @@ public sealed class ObservationPipeline : IDisposable
     }
 
     public void Dispose() => Stop();
+
+    /// <summary>Revoke output and pending work before any teardown or settings I/O.</summary>
+    public void RevokeOutput()
+    {
+        lock (_lock)
+        {
+            Policy.Config.Mode = HapticsMode.Off;
+            Policy.ConsentGiven = false;
+            _interpreter.Invalidate("output-revoked");
+            _requestRoutes.Clear();
+            _latestInputRoute = null;
+        }
+    }
 
     public PipelineStats Stats()
     {
@@ -272,8 +288,8 @@ public sealed class ObservationPipeline : IDisposable
             _primaryDown = false;
         }
 
-        var (x, y) = DesktopContext.CursorPosition();
-        var fg = DesktopContext.Foreground().Pid;
+        var (x, y) = _opt.PointerPosition();
+        var fg = _opt.ForegroundPid();
         var obs = new PointerObservation(raw.TimestampMs, x, y, raw.Origin, _primaryDown, fg, raw.DeviceHandle)
         {
             InputClass = raw.InputClass,
@@ -464,8 +480,23 @@ public sealed class ObservationPipeline : IDisposable
 
     private void Output(HapticIntent intent, InputRouteContext? input = null, CapturedController? controller = null)
     {
+        // Serialize revocation with the final authorization check and native call.
+        lock (_lock)
+        {
+            OutputLocked(intent, input, controller);
+        }
+    }
+
+    private void OutputLocked(HapticIntent intent, InputRouteContext? input, CapturedController? controller)
+    {
         // Raw-input thread. Drop, never replay, late sensations.
         var now = Now;
+        if (Policy.Config.Mode != HapticsMode.On || !Policy.ConsentGiven || !Policy.OutputRouteVerified)
+        {
+            Publish(new NoteEvent(now, "skip:output-not-authorized", null));
+            return;
+        }
+
         if (now > intent.DeadlineMs)
         {
             lock (_lock)

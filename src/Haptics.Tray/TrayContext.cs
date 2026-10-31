@@ -126,7 +126,8 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
 
     public void Apply()
     {
-        Settings.Save();
+        var saved = RevokeAndSave(Settings, _pipeline, Settings.Save);
+        _pipeline = saved.Pipeline;
         if (Settings.Enabled && _pipeline is null)
         {
             _pipeline = new ObservationPipeline(Settings.ToPolicy(), new PipelineOptions { Route = OutputRoutes.CachedController });
@@ -140,12 +141,6 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             _pipeline.Start();
             _controllerRefresh.Request();
         }
-        else if (!Settings.Enabled && _pipeline is not null)
-        {
-            _pipeline.Dispose(); // Off really means off: raw input unregistered, UIA worker killed.
-            _pipeline = null;
-        }
-
         if (_pipeline is not null)
         {
             _pipeline.Policy.Config = Settings.ToPolicy();
@@ -169,6 +164,31 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
 
         UpdateIcon();
         Changed?.Invoke(this, EventArgs.Empty);
+        if (saved.Error is { } error)
+        {
+            MessageBox.Show(error, "Haptics Everywhere");
+        }
+    }
+
+    internal static (ObservationPipeline? Pipeline, string? Error) RevokeAndSave(
+        TraySettings settings, ObservationPipeline? pipeline, Action save)
+    {
+        if (!settings.Enabled)
+        {
+            pipeline?.Dispose(); // Revokes authorization and invalidates pending work before teardown.
+            pipeline = null;
+        }
+
+        try
+        {
+            save();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (pipeline, $"Couldn't save settings. Your changes apply for this session only.\n\n{ex.Message}");
+        }
+
+        return (pipeline, null);
     }
 
     public void OpenShowcase()
