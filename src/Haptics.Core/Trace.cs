@@ -120,7 +120,10 @@ public static class TraceReplay
 
                     break;
                 case "element":
-                    var snap = ParseElement(o, t, interpreter.LastPointer);
+                    var snap = ParseElement(o, t, interpreter.LastPointer) with
+                    {
+                        Generation = (long?)o["generation"] ?? interpreter.Generation,
+                    };
                     Handle(interpreter.OnSnapshot(snap, t), t);
                     break;
                 case "coop":

@@ -1,0 +1,7 @@
+{"type":"comment","text":"Switching devices before dwell cancels the arrival. Staying on the same target with the new device does not re-arrive."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":0,"y":15,"fg":100,"handle":1}
+{"t":10,"type":"pointer","x":20,"y":15,"fg":100,"handle":1}
+{"t":11,"type":"element","req":10,"pid":100,"controlType":"Button","rid":"button","bounds":[0,0,100,30]}
+{"t":20,"type":"pointer","x":20,"y":15,"fg":100,"handle":2}
+{"t":21,"type":"element","req":20,"pid":100,"controlType":"Button","rid":"button","bounds":[0,0,100,30]}

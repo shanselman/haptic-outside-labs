@@ -206,6 +206,7 @@ public sealed class ObservationPipeline : IDisposable
         Interlocked.Exchange(ref _lastDevice, raw.DeviceHandle);
         var obs = new PointerObservation(raw.TimestampMs, x, y, raw.Origin, _primaryDown, fg, raw.DeviceHandle);
         bool moved;
+        long generation;
         lock (_lock)
         {
             _raw++;
@@ -221,21 +222,23 @@ public sealed class ObservationPipeline : IDisposable
                 _removedDevices.Clear();
             }
 
+            var previousGeneration = _interpreter.Generation;
             HandleLocked(_interpreter.OnPointer(obs), raw.TimestampMs);
-            moved = (x, y) != _lastPos;
+            generation = _interpreter.Generation;
+            moved = (x, y) != _lastPos || previousGeneration != generation;
             _lastPos = (x, y);
         }
 
         if (moved || (raw.Buttons & (RawMouseButtons.LeftDown | RawMouseButtons.LeftUp)) != 0)
         {
-            _uia?.RequestLatest(x, y, raw.TimestampMs, fg);
+            _uia?.RequestLatest(x, y, raw.TimestampMs, fg, generation);
         }
     }
 
     private void OnUia(UiaResponse resp, double pointerTs, double roundTripMs)
     {
         var now = Now;
-        var snap = resp.Snapshot ?? new ElementSnapshot { Error = resp.Error ?? resp.ClientStatus ?? "no-snapshot", RequestedAtMs = pointerTs, ReceivedAtMs = now };
+        var snap = resp.Snapshot ?? new ElementSnapshot { Error = resp.Error ?? resp.ClientStatus ?? "no-snapshot", RequestedAtMs = pointerTs, ReceivedAtMs = now, Generation = resp.Generation };
         lock (_lock)
         {
             _snaps++;

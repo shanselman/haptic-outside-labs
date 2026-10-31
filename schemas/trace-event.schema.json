@@ -21,6 +21,7 @@
       "properties": {
         "type": { "const": "element" }, "t": { "type": "number" }, "req": { "type": "number" }, "x": { "type": "integer" }, "y": { "type": "integer" },
         "pid": { "type": "integer" }, "controlType": { "type": "string" }, "rid": { "type": "string" },
+        "generation": { "type": "integer", "minimum": 0 },
         "bounds": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
         "parentType": { "type": "string" }, "parentRid": { "type": "string" },
         "enabled": { "type": "boolean" }, "password": { "type": "boolean" }, "offscreen": { "type": "boolean" },
