@@ -1,0 +1,11 @@
+{"type":"comment","text":"Hover with device 1, remove it, then tap with present device 2 without moving after cooldown: no re-arrival."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":0,"y":15,"fg":100,"handle":1}
+{"t":10,"type":"pointer","x":20,"y":15,"fg":100,"handle":1}
+{"t":11,"type":"element","req":10,"x":20,"y":15,"pid":100,"controlType":"Button","rid":"button","bounds":[0,0,100,30]}
+{"t":60,"type":"pointer","x":20,"y":15,"fg":100,"handle":1}
+{"t":300,"type":"device","handle":1,"available":false}
+{"t":9000,"type":"device","handle":2,"available":true}
+{"t":10000,"type":"pointer","x":20,"y":15,"fg":100,"handle":2,"primary":true}
+{"t":10002,"type":"element","req":10000,"x":20,"y":15,"pid":100,"controlType":"Button","rid":"button","bounds":[0,0,100,30]}
+{"t":10100,"type":"pointer","x":20,"y":15,"fg":100,"handle":2,"primary":false}

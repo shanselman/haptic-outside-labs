@@ -368,7 +368,8 @@ public sealed class SemanticInterpreter
     {
         var p = _last ?? new PointerObservation(nowMs, 0, 0, InputOrigin.SyntheticOrUnknown, false, 0);
         var events = new List<SemanticEvent> { Make(SemanticEventKind.DeviceUnavailable, p with { TimestampMs = nowMs }, null, 1.0, ["device-removed"]) };
-        Invalidate("device-unavailable");
+        Generation++;
+        ResetElement();
         return new InterpretResult(events, ["state-cleared:device-unavailable"]);
     }
 

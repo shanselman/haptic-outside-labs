@@ -34,6 +34,7 @@ Each line is one event:
 | `generation-stale-context` | 1 fresh Hover; old foreground/device answers are discarded |
 | `device-change-pending` | 0; switching cancels the pending arrival without re-arrival |
 | `foreground-change-stationary` | 1 Hover; click-to-activate without movement does not re-arrive |
+| `device-removed-stationary-tap` | 1 Hover; removal and a later stationary tap from a present device do not re-arrive |
 
 Run one: `haptics-lab replay tests/traces/menu-nested.jsonl --profile Quiet`. Run all as an experiment: `haptics-lab run EXP-070`.
 Replay ticks the interpreter every 10 ms while an arrival is pending, the same way the live pipeline ticks every 15 ms:
