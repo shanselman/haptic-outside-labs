@@ -35,6 +35,7 @@ internal partial class SettingsWindow
 
         // Checked/Unchecked rather than Click: Narrator's toggle action flips IsChecked without raising Click.
         OnToggled(EnabledSwitch, on => Change(s => s.Enabled = on));
+        OnToggled(CloseHoverSwitch, on => Change(s => s.CloseButtonHover = on));
         OnToggled(BoostSwitch, on => Change(s => s.TouchpadBoost = on ? 1.3 : 1.0));
         OnToggled(CooperationSwitch, on => Change(s => s.CooperationEnabled = on));
         OnToggled(StartupSwitch, SetStartup);
@@ -156,6 +157,7 @@ internal partial class SettingsWindow
         var s = _host.Settings;
         _syncing = true;
         EnabledSwitch.IsChecked = s.Enabled;
+        CloseHoverSwitch.IsChecked = s.CloseButtonHover;
         StyleBox.SelectedIndex = Array.IndexOf(TraySettings.Styles, s.Style);
         var hint = TraySettings.Describe(s.Style);
         StyleHint.Text = char.ToUpperInvariant(hint[0]) + hint[1..];

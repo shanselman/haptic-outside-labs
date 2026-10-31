@@ -144,6 +144,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
         if (_pipeline is not null)
         {
             _pipeline.Policy.Config = Settings.ToPolicy();
+            _pipeline.Policy.Config.CloseButtonHoverEnabled = Settings.CloseButtonHover;
             _pipeline.Policy.ConsentGiven = true; // Launching the sample is the opt-in.
             _pipeline.Policy.OutputRouteVerified = true;
             _pipeline.TouchpadBoost = Settings.TouchpadBoost;

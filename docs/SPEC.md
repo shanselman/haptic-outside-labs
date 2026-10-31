@@ -1273,7 +1273,10 @@ evidence or a new routing rule. Caption characterizations pin the first-arrival 
 Maximize, and the Hover when moving within the same TitleBar group. Close is the one deliberate change:
 a Button whose one-hop TitleBar parent's outer right edge it touches (within 2 logical px) lands with a
 single `close-hover` Hover, never a group Step or large-target Click, gated by
-`PolicyConfig.CloseButtonHoverEnabled` (default On; Off is silent). Dwell, cooldown, exclusion, password,
+`PolicyConfig.CloseButtonHoverEnabled` (default On; Off is silent). The tray's Settings window exposes
+`TraySettings.CloseButtonHover`, default On even when an existing `tray.json` omits the key. Quiet disables
+hovers, so recognized Close is silent rather than falling back to Step, even with this setting On.
+Dwell, cooldown, exclusion, password,
 disabled and `windows-snap-titlebar-drag` still apply. The tolerance comes from an interactive WinForms UIA
 fixture (`CaptionCloseUiaTests`, 150%: Close overhangs by 1 px, Maximize sits ~47 logical px away). No
 direction field is read, so mirrored (RTL) captions, where Close is at the left, and title bars without

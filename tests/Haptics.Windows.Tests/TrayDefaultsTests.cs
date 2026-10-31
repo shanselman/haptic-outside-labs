@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Haptics.Core;
 using Haptics.Tray;
 
@@ -5,6 +6,39 @@ namespace Haptics.Windows.Tests;
 
 public class TrayDefaultsTests
 {
+    [Fact]
+    public void CloseButtonHoverDefaultsOn()
+    {
+        var json = JsonSerializer.SerializeToElement(new TraySettings(), HapticsJson.Indented);
+        Assert.True(json.GetProperty("closeButtonHover").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("{}", true)]
+    [InlineData("""{"enabled":false,"style":"Quiet","intensityScale":0.55,"cooperationEnabled":false}""", true)]
+    [InlineData("""{"closeButtonHover":false}""", false)]
+    [InlineData("""{"closeButtonHover":true}""", true)]
+    public void ExistingSettingsDefaultCloseHoverOnAndPreserveExplicitChoice(string json, bool expected)
+    {
+        var settings = JsonSerializer.Deserialize<TraySettings>(json, HapticsJson.Indented)!;
+        var saved = JsonSerializer.SerializeToElement(settings, HapticsJson.Indented);
+        Assert.Equal(expected, saved.GetProperty("closeButtonHover").GetBoolean());
+    }
+
+    [Fact]
+    public void QuietStyleKeepsRecognizedCloseSilentEvenWithCloseHoverOn()
+    {
+        var settings = new TraySettings { Style = EffectProfile.Quiet };
+        Assert.True(settings.CloseButtonHover);
+        var cfg = settings.ToPolicy();
+        Assert.True(cfg.CloseButtonHoverEnabled);
+        Assert.False(cfg.HoverEnabled);
+        var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
+        var replay = TraceReplay.Run(Path.Combine(traces, "caption-close-hover.jsonl"), cfg);
+        Assert.Empty(replay.Haptic);
+        Assert.Contains(replay.Decisions, d => d.Reason == "rule-disabled:close-hover");
+    }
+
     [Fact]
     public void SampleDefaultsAreOnForAllAppsButStillSilentOnPasswordsAndExclusions()
     {
