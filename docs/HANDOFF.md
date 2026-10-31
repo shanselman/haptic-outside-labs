@@ -20,7 +20,7 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
   cause time. Dwell starts after the target is known so slow valid providers do not create expired work.
   Strip-edge Collide checks a separate destination, and cooperative events carry even non-interactive
   or failed lookup context. Everything's density-off setting overrides per-app thinning.
-  `ContextGenerationTests`, `UiaGenerationTests`, `PendingArrivalTests`, `DestinationContextTests` and seven
+  `ContextGenerationTests`, `UiaGenerationTests`, `PendingArrivalTests`, `DestinationContextTests` and eight
   new golden traces cover these rules; the original 13 traces are unchanged. Output-device routing and
   lifecycle wiring remain owned by their coordinated lanes, not proved by these Core tests.
 
