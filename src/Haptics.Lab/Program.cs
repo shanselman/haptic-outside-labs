@@ -32,6 +32,7 @@ internal static class Program
           --window message|hidden   EXP-020 raw-input window kind (default message)
           --target mouse|touchpad|any   which haptic device the operator is using (default mouse)
           --seconds <n>             EXP-030 capture duration (default 20)
+          --require-pass            exit nonzero for any result other than PASS (CI opt-in)
         """;
 
     [STAThread]
@@ -134,7 +135,7 @@ internal static class Program
             Console.WriteLine($"result: {path}");
         }
 
-        return 0;
+        return ExperimentExitCode(result.Status);
     }
 
     private static int ListExperiments()
@@ -185,8 +186,11 @@ internal static class Program
         var result = JsonSerializer.Deserialize<ExperimentResult>(File.ReadAllText(path), HapticsJson.Indented)!;
         Console.WriteLine($"{id}: {result.Status} [{result.EvidenceClass}] {result.Explanation}");
         Console.WriteLine($"result: {path}");
-        return result.Status is ExperimentStatus.FAIL ? 1 : 0;
+        return ExperimentExitCode(result.Status, opt.Flag("require-pass"));
     }
+
+    internal static int ExperimentExitCode(ExperimentStatus status, bool requirePass = false) =>
+        status == ExperimentStatus.FAIL || (requirePass && status != ExperimentStatus.PASS) ? 1 : 0;
 
     private static string? RunForm(Func<Form> create)
     {

@@ -34,8 +34,13 @@ jobs:
         run: |
           $exe = Get-ChildItem src/Haptics.Lab/bin/Release -Recurse -Filter haptics-lab.exe | Select-Object -First 1
           & $exe.FullName doctor
-          foreach ($e in 'EXP-070','EXP-081','EXP-043') { & $exe.FullName run $e; if ($LASTEXITCODE -eq 1) { exit 1 } }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($e in 'EXP-070','EXP-081','EXP-043') {
+            & $exe.FullName run $e --require-pass
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           & $exe.FullName report
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload sanitized reports
         if: always()
         uses: actions/upload-artifact@v4
