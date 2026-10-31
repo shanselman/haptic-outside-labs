@@ -135,6 +135,7 @@ public class PipelineCharacterizationTests
 
     internal static ElementSnapshot Snapshot(double t, string type = "Button", int width = 40, int height = 30) => new()
     {
+        ProcessId = Environment.ProcessId,
         RuntimeIdHash = "target",
         ControlType = type,
         Bounds = new RectD(0, 0, width, height),

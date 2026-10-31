@@ -1000,6 +1000,12 @@ Track `t6-t0` and `t8-t0` **separately**. `t7` is not physical completion or sen
   Cause time is that fixed due time, not callback time. A callback later than the due time
   plus 45 ms scheduling tolerance expires silently, as does a delayed pointer observation. Semantic
   events retain their interaction generation for downstream routing.
+- Strip-edge events keep the source group for meaning and a separate destination snapshot for safety.
+  Generic Collide requires a known destination/process; password, disabled, offscreen, excluded and
+  unallowlisted destinations are silent. Cooperative events retain the latest accepted element context,
+  including non-interactive fields and lookup failures, rather than borrowing a safe interactive target.
+  Sender and target app restrictions both apply; target PID need not equal foreground PID.
+- Global density `0` is authoritative: per-app density overrides cannot re-enable thinning in Everything.
 - Output sink has a **small queue (ideally one current intent plus critical stop)**. Expired intents are dropped; sustained overflow disables the noisy rule and logs why.
 - Coalesce transitions by semantic key, not raw pixel equivalence. No click suppression or extra global input capture.
 - Use per-process quarantine/backoff on slow UIA providers; cap outstanding workers/process restarts.

@@ -42,6 +42,8 @@ Each line is one event:
 | `transient-error-slider` | 1 Hover; a lookup error inside the same slider preserves identity/range history |
 | `dwell-lookup-40ms` | 1 Hover at 90 ms; provider latency does not restart dwell |
 | `dwell-lookup-150ms` | 1 Hover at 170 ms; a slow provider lands on the next tick without restarting dwell |
+| `strip-edge-destination-safety` | Step + 5 Hover + 1 safe Collide; protected/excluded/unknown/disabled/offscreen exits are silent |
+| `cooperative-context-safety` | 1 safe Align; protected/disabled/offscreen/excluded/error contexts stay silent |
 
 Run one: `haptics-lab replay tests/traces/menu-nested.jsonl --profile Quiet`. Run all as an experiment: `haptics-lab run EXP-070`.
 Replay ticks the interpreter every 10 ms while an arrival is pending, the same way the live pipeline ticks every 15 ms:

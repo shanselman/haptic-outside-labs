@@ -16,6 +16,21 @@ public class ReplayTests
     }
 
     [Fact]
+    public void DestinationAndCooperativeContextStayProtected()
+    {
+        var edges = Run("strip-edge-destination-safety.jsonl");
+        Assert.Equal(["Step", "Hover", "Hover", "Hover", "Hover", "Hover", "Collide"], edges.Haptic.Select(d => d.Waveform));
+        Assert.Single(edges.Haptic, d => d.Waveform == "Collide");
+        Assert.Contains(edges.Decisions, d => d.Reason == "protected-context");
+        Assert.Contains(edges.Decisions, d => d.Reason == "process-excluded");
+        Assert.Contains(edges.Decisions, d => d.Reason == "unknown-destination");
+        var cooperative = Run("cooperative-context-safety.jsonl");
+        Assert.Equal(["Align"], cooperative.Haptic.Select(d => d.Waveform));
+        Assert.Equal(1600, Assert.Single(cooperative.Haptic).T);
+        Assert.Contains(cooperative.Decisions, d => d.Reason == "unknown-context");
+    }
+
+    [Fact]
     public void PendingArrivalsUseFreshSafetyMetadataAndExpireAfterSchedulerStalls()
     {
         var refreshed = Run("pending-metadata-safety.jsonl");

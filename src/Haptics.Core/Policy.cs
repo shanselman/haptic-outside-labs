@@ -283,31 +283,34 @@ public sealed class HapticPolicy
         }
 
         var name = _processName(e.ProcessId);
-        if (name is not null && Config.ExcludedProcesses.Any(x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase)))
+        if (AppRejection(name) is { } appReason)
         {
-            return Suppress("process-excluded");
+            return Suppress(appReason);
         }
 
-        if (Config.AppPolicy == AppPolicy.OptInAllowlist &&
-            (name is null || !Config.AllowedProcesses.Any(x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase))))
+        var context = e.Kind == SemanticEventKind.GroupEdge ? e.Destination : e.Element;
+        if (e.Kind is SemanticEventKind.GroupEdge or SemanticEventKind.RangeLimit &&
+            (context is null || context.Error is not null || context.ControlType == "Unknown" ||
+             context.ProcessId <= 0 || _processName(context.ProcessId) is null))
         {
-            return Suppress("app-not-allowlisted");
+            return Suppress("unknown-destination");
+        }
+
+        if (context is not null && context.ProcessId != e.ProcessId && AppRejection(_processName(context.ProcessId)) is { } contextReason)
+        {
+            return Suppress(contextReason);
         }
 
         var app = name is not null && Config.AppProfiles.TryGetValue(name, out var ap) ? ap : null;
-        if (e.Element is { IsPassword: true })
+        if (ElementRejection(e.Element, Config.IncludeDisabledControls) is { } elementReason)
         {
-            return Suppress("protected-context");
+            return Suppress(elementReason);
         }
 
-        if (e.Element is { IsEnabled: false } && !Config.IncludeDisabledControls)
+        if (e.Kind is SemanticEventKind.GroupEdge or SemanticEventKind.RangeLimit &&
+            ElementRejection(context, includeDisabled: false) is { } destinationReason)
         {
-            return Suppress("disabled-control");
-        }
-
-        if (e.Element is { IsOffscreen: true })
-        {
-            return Suppress("offscreen");
+            return Suppress(destinationReason);
         }
 
         if (!DeviceAvailable)
@@ -358,7 +361,7 @@ public sealed class HapticPolicy
 
         // A busy app's lands thin out to its limit, evenly spaced, rather than stopping: on the taskbar (all lands, no
         // structure) a pause felt like the app had broken.
-        var densityLimit = app?.DensityLandsPer2s ?? Config.DensityLandsPer2s;
+        var densityLimit = Config.DensityLandsPer2s <= 0 ? 0 : app?.DensityLandsPer2s ?? Config.DensityLandsPer2s;
         if (rule.IsLand && densityLimit > 0 && _backoffUntil.TryGetValue(e.ProcessId, out var until) && nowMs < until &&
             _lastLandByPid.TryGetValue(e.ProcessId, out var lastLand) && nowMs - lastLand < 2000.0 / densityLimit)
         {
@@ -439,6 +442,28 @@ public sealed class HapticPolicy
 
         return new PolicyDecision(PolicyOutcome.Emit, "accepted", intent, e, nowMs);
     }
+
+    private string? AppRejection(string? name)
+    {
+        if (name is not null && Config.ExcludedProcesses.Any(x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return "process-excluded";
+        }
+
+        return Config.AppPolicy == AppPolicy.OptInAllowlist &&
+               (name is null || !Config.AllowedProcesses.Any(x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase)))
+            ? "app-not-allowlisted"
+            : null;
+    }
+
+    private static string? ElementRejection(ElementSnapshot? element, bool includeDisabled) => element switch
+    {
+        { Error: not null } => "unknown-context",
+        { IsPassword: true } => "protected-context",
+        { IsEnabled: false } when !includeDisabled => "disabled-control",
+        { IsOffscreen: true } => "offscreen",
+        _ => null,
+    };
 
     private bool RuleEnabled(string rule) => rule switch
     {
