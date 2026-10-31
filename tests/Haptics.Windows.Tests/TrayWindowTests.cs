@@ -43,6 +43,9 @@ public class TrayWindowTests
         Assert.Equal("Waiting for your haptic device", w.StatusText.Text);
         Assert.Contains("fallback", w.StatusHint.Text);
         Assert.Contains(host.DiscoveryStatus, w.StatsText.Text);
+        host.DiscoveryStatus = "Paused — another Haptics Everywhere engine owns output.";
+        host.Raise();
+        Assert.Contains("Paused — another Haptics Everywhere engine owns output", w.StatsText.Text);
         Assert.Equal(256, ((System.Windows.Media.Imaging.BitmapSource)w.HeroImage.Source).PixelWidth);
         Assert.Equal(0, host.Applied); // Opening the window changes nothing.
 
@@ -122,6 +125,14 @@ public class TrayWindowTests
     });
 
     [Fact]
+    public void TrayStatusDistinguishesPausedOutputFromOffAndReady()
+    {
+        Assert.Equal("Paused — another engine owns output", TrayContext.StatusDescription(true, true, true, "Mouse"));
+        Assert.Equal("Off", TrayContext.StatusDescription(false, false, false, "None"));
+        Assert.Equal("On (Mouse)", TrayContext.StatusDescription(true, false, true, "Mouse"));
+    }
+
+    [Fact]
     public void SymbolsFitInOneUtf16Char()
     {
         // WPF-UI draws a symbol as (char)value, so newer icons above U+FFFF (e.g. HapticStrong24) render as junk.
@@ -149,7 +160,7 @@ public class TrayWindowTests
 
         public string Devices => "Mouse";
 
-        public string DiscoveryStatus => "Automatic lookup unavailable; manual priming remains available.";
+        public string DiscoveryStatus { get; set; } = "Automatic lookup unavailable; manual priming remains available.";
 
         public string? LastApp => "notepad";
 

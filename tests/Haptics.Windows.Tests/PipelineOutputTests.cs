@@ -124,6 +124,34 @@ public class PipelineOutputTests
     }
 
     [Fact]
+    public void PipelineCannotSendWithoutOwningOutput()
+    {
+        var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
+        using var owner = OutputOwnership.Create("tray", name);
+        using var pipelineLease = OutputOwnership.Create("Showcase", name);
+        Assert.True(owner.TryAcquire());
+        Assert.False(pipelineLease.TryAcquire());
+
+        using var rig = new Rig(pipelineLease);
+        rig.Observe(100, 12, Snapshot(100));
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:output-owned-elsewhere");
+
+        owner.Dispose();
+        Assert.True(pipelineLease.TryAcquire());
+        rig.Observe(500, 12, Snapshot(500) with { RuntimeIdHash = "next", QueryX = 25 });
+        rig.Flush(510);
+        Assert.Single(rig.Sink.Requests);
+    }
+
+    [Fact]
+    public void PipelineOptionsExposeOutputOwnershipGate()
+    {
+        Assert.NotNull(typeof(PipelineOptions).GetProperty("OutputOwnership"));
+    }
+
+    [Fact]
     public void TouchpadOnlyManualMappingReachesTheRecordingSink()
     {
         using var rig = new Rig();
@@ -807,12 +835,13 @@ public class PipelineOutputTests
         public ObservationPipeline Pipeline { get; }
         public List<PipelineEvent> Events { get; } = [];
 
-        public Rig()
+        public Rig(OutputOwnership? outputOwnership = null)
         {
             Pipeline = new ObservationPipeline(PolicyConfig.Sample(EffectProfile.Focused, 0.8), new PipelineOptions
             {
                 Clock = Clock,
                 OutputSink = Sink,
+                OutputOwnership = outputOwnership,
                 Route = OutputRoutes.CachedController,
             });
             Pipeline.Policy.ConsentGiven = true;

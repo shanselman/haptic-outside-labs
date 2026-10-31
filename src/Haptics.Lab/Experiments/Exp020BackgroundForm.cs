@@ -38,6 +38,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
     private MessageWindowThread? _raw;
     private AnswerPanel? _panel;
     private ExperimentSession? _session;
+    private OutputOwnership? _outputOwnership;
     private CapturedController? _captured;
     private IReadOnlyList<ScheduledTrial> _schedule = [];
     private Phase _phase = Phase.Setup;
@@ -116,6 +117,8 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             Finish(aborted: true);
             _raw?.Dispose();
             _panel?.Close();
+            _outputOwnership?.Dispose();
+            _outputOwnership = null;
         };
     }
 
@@ -130,13 +133,36 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             return;
         }
 
+        _outputOwnership = OutputOwnership.Create("EXP-020");
+        if (!_outputOwnership.TryAcquire())
+        {
+            _outputOwnership.Dispose();
+            _outputOwnership = null;
+            _status.Text = "Another Haptics Everywhere engine owns output. Stop it before running this physical experiment.";
+            return;
+        }
+
         _waveName = (string)_waveform.SelectedItem!;
         _intensityValue = (double)_intensity.Value;
         var kind = (string)_window.SelectedItem! == "hidden" ? MessageWindowKind.HiddenTopLevel : MessageWindowKind.MessageOnly;
-        _raw = new MessageWindowThread("exp020-raw-input", kind, registerRawMouse: true);
-        _raw.RawMouse += OnRaw;
-        _raw.Start();
-        _session = ExperimentSession.Start("EXP-020", "physical", _opt.Get("out"));
+        try
+        {
+            _raw = new MessageWindowThread("exp020-raw-input", kind, registerRawMouse: true);
+            _raw.RawMouse += OnRaw;
+            _raw.Start();
+            _session = ExperimentSession.Start("EXP-020", "physical", _opt.Get("out"));
+        }
+        catch
+        {
+            _raw?.Dispose();
+            _raw = null;
+            _outputOwnership.Dispose();
+            _outputOwnership = null;
+            throw;
+        }
+
+        _session.Result.Method["outputOwner"] = _outputOwnership.Owner;
+        _session.Result.Method["outputOwnershipGranted"] = _outputOwnership.IsOwner;
         _phase = Phase.Prime;
         _start.Enabled = false;
         _padText.Text = "Move the TARGET mouse around inside this pad…";
@@ -357,6 +383,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         var under = DesktopContext.TopLevelAt(cx, cy).Pid;
         var st = HapticsApi.InspectCurrentThread();
         var t = new TrialRecord { Index = plan.Index, Arm = plan.Arm, IsControl = plan.IsControl, FiredAtMs = now };
+        _outputOwnership?.Record(t);
         t.Context["rawCode"] = input.Code.ToString();
         t.Context["origin"] = input.Origin.ToString();
         t.Context["foregroundIsLab"] = fg == DesktopContext.OwnProcessId;
@@ -376,15 +403,18 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             t.Invalidate("cursor-over-lab-window");
         }
 
-        if (!plan.IsControl)
-        {
-            t.Attempt = plan.Arm switch
+        if (!plan.IsControl && _outputOwnership?.TryRun(() =>
             {
-                OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(plan.Arm, _waveName, _intensityValue, input.TimestampMs),
-                OutputRoutes.CachedController => HapticsApi.SendViaController(plan.Arm, _captured, _waveName, _intensityValue, input.TimestampMs),
-                OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(plan.Arm, _captured, _waveName, _intensityValue, input.TimestampMs),
-                _ => null,
-            };
+                t.Attempt = plan.Arm switch
+                {
+                    OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(plan.Arm, _waveName, _intensityValue, input.TimestampMs),
+                    OutputRoutes.CachedController => HapticsApi.SendViaController(plan.Arm, _captured, _waveName, _intensityValue, input.TimestampMs),
+                    OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(plan.Arm, _captured, _waveName, _intensityValue, input.TimestampMs),
+                    _ => null,
+                };
+            }) != true)
+        {
+            t.Invalidate("output-owner-not-held");
         }
 
         BeginInvoke(() =>
@@ -433,6 +463,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             return;
         }
 
+        _outputOwnership?.StopSending();
         _phase = Phase.Done;
         _raw?.Post(() => _pending = null);
         var r = _session.Result;
@@ -500,8 +531,16 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             ExperimentStatus.FAIL => "No background route works with a passing foreground baseline: output architecture pivot (SPEC §15).",
             _ => "Inconclusive: check device/answers; run EXP-010 first if it has not passed; rerun with more trials.",
         };
-        ResultPath = _session.Complete();
-        _session.Dispose();
+        try
+        {
+            ResultPath = _session.Complete();
+        }
+        finally
+        {
+            _session.Dispose();
+            _outputOwnership?.Dispose();
+            _outputOwnership = null;
+        }
         void ShowDone()
         {
             _panel?.SetAnswersEnabled(false);

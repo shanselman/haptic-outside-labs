@@ -27,6 +27,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
     private readonly FlowLayoutPanel _answers = new() { Dock = DockStyle.Bottom, Height = 56, Padding = new Padding(4) };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
     private readonly List<TrialRecord> _trials = new();
+    private OutputOwnership? _outputOwnership;
     private readonly Random _rng = new();
     private ExperimentSession? _session;
     private IReadOnlyList<ScheduledTrial> _schedule = [];
@@ -92,6 +93,21 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
 
     public string? ResultPath { get; private set; }
 
+    internal static ExperimentSession StartOwnedSession(OutputOwnership ownership, Func<ExperimentSession> start)
+    {
+        ArgumentNullException.ThrowIfNull(ownership);
+        ArgumentNullException.ThrowIfNull(start);
+        try
+        {
+            return start();
+        }
+        catch
+        {
+            ownership.Dispose();
+            throw;
+        }
+    }
+
     private void Begin()
     {
         var arms = _arms.CheckedItems.Cast<string>().ToList();
@@ -101,9 +117,27 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
             return;
         }
 
+        _outputOwnership = OutputOwnership.Create("EXP-010");
+        if (!_outputOwnership.TryAcquire())
+        {
+            _outputOwnership.Dispose();
+            _outputOwnership = null;
+            _status.Text = "Another Haptics Everywhere engine owns output. Stop it before running this physical experiment.";
+            return;
+        }
+
         _seed = _opt.Int("seed", Random.Shared.Next());
         _schedule = TrialSchedule.Build(arms, (int)_perArm.Value, (int)_controls.Value, _seed);
-        _session = ExperimentSession.Start("EXP-010", "physical", _opt.Get("out"));
+        try
+        {
+            _session = StartOwnedSession(_outputOwnership, () => ExperimentSession.Start("EXP-010", "physical", _opt.Get("out")));
+        }
+        catch
+        {
+            _outputOwnership = null;
+            throw;
+        }
+
         var m = _session.Result.Method;
         m["route"] = OutputRoutes.ForegroundManager;
         m["routeDescription"] = OutputRoutes.Describe(OutputRoutes.ForegroundManager);
@@ -115,6 +149,8 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         m["targetDevice"] = _target.SelectedItem;
         m["seed"] = _seed;
         m["operatorConfirmedNativeHaptics"] = _nativeConfirmed.Checked;
+        m["outputOwner"] = _outputOwnership.Owner;
+        m["outputOwnershipGranted"] = _outputOwnership.IsOwner;
         m["blinding"] = "Operator answers before the trial type is revealed; identical visual cue for pulse and control.";
         _session.Result.NegativeControls.Add($"{(int)_controls.Value} randomized no-call control trials with the identical NOW cue.");
         foreach (Control c in _start.Parent!.Controls)
@@ -177,6 +213,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         t.Context["controllerIdHash"] = st.ControllerIdHash;
         t.Context["inputAgeMs"] = Math.Round(now - _lastMove, 1);
         t.Context["labForeground"] = ActiveForm == this;
+        _outputOwnership?.Record(t);
         var target = (string)_target.SelectedItem!;
         if (target != "any" && !string.Equals(st.DeviceType, target, StringComparison.OrdinalIgnoreCase))
         {
@@ -188,9 +225,10 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
             t.Invalidate("lab-window-not-foreground");
         }
 
-        if (!plan.IsControl)
+        if (!plan.IsControl && _outputOwnership?.TryRun(() =>
+                t.Attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, plan.Arm, (double)_intensity.Value, _lastMove)) != true)
         {
-            t.Attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, plan.Arm, (double)_intensity.Value, _lastMove);
+            t.Invalidate("output-owner-not-held");
         }
 
         _current = t;
@@ -244,6 +282,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
             return;
         }
 
+        _outputOwnership?.StopSending();
         _state = State.Done;
         _timer.Stop();
         var r = _session.Result;
@@ -277,8 +316,16 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         r.NextDecision = r.Status == ExperimentStatus.PASS
             ? "Foreground actuation confirmed. Run EXP-020 with another app in the foreground."
             : "Check the mouse's haptic intensity in Windows Settings, battery, pairing, and that you used the mouse (not the touchpad); then rerun.";
-        ResultPath = _session.Complete();
-        _session.Dispose();
+        try
+        {
+            ResultPath = _session.Complete();
+        }
+        finally
+        {
+            _session.Dispose();
+            _outputOwnership?.Dispose();
+            _outputOwnership = null;
+        }
         _answers.Visible = false;
         _pad.BackColor = Ui.StatusColor(r.Status);
         _padText.Text = $"{r.Status} [{r.EvidenceClass}]\n{string.Join("\n", verdicts.Select(v => $"{v.Key}: {v.Value.Hits}/{v.Value.Hits + v.Value.Misses} felt, controls {v.Value.FalseAlarms}/{v.Value.FalseAlarms + v.Value.CorrectRejections}"))}";

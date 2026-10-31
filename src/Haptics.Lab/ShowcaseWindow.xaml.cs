@@ -49,7 +49,8 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     private bool _started;
     private bool _disposed;
     private bool _syncing;
-    private bool _pausedForTray;
+    private bool _pausedForOtherOwner;
+    private OutputOwnership? _outputOwnership;
     private bool? _compact;
     private Color _embeddedBackground;
     private EffectProfile _selectedStyle = EffectProfile.Focused;
@@ -86,7 +87,6 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         OnToggled(BoostSwitch, _ => ApplySettings());
         OnToggled(EngineSwitch, on =>
         {
-            _pausedForTray = false;
             if (_started)
             {
                 SetEngine(on);
@@ -145,6 +145,8 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         _compareRun?.Session.Dispose();
         _pipeline?.Dispose();
         _cooperation?.Dispose();
+        _outputOwnership?.Dispose();
+        _outputOwnership = null;
         InspectorHost.Dispose();
         LabHost.Dispose();
         GC.SuppressFinalize(this);
@@ -322,12 +324,11 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         _started = true;
         Application.AddMessageFilter(this);
         _uiTimer.Start();
-        _pausedForTray = Mutex.TryOpenExisting(@"Local\HapticsEverywhereTray", out var mutex);
-        mutex?.Dispose();
+        TryAcquireOutputOwnership();
         _syncing = true;
-        EngineSwitch.IsChecked = !_pausedForTray;
+        EngineSwitch.IsChecked = !_pausedForOtherOwner;
         _syncing = false;
-        if (!_pausedForTray)
+        if (!_pausedForOtherOwner)
         {
             SetEngine(true);
         }
@@ -353,20 +354,39 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             _cooperation?.Dispose();
             _cooperation = null;
             _stats.Text = "The Showcase engine is not running.";
+            _outputOwnership?.Dispose();
+            _outputOwnership = null;
+            _pausedForOtherOwner = false;
         }
 
         UpdateStatus();
     }
 
-    internal bool TryStartEngine(Action<ObservationPipeline> startPipeline)
+    internal bool TryStartEngine(Action<ObservationPipeline> startPipeline, OutputOwnership? ownership = null)
     {
+        if (ownership is not null)
+        {
+            _outputOwnership?.Dispose();
+            _outputOwnership = ownership;
+        }
+
+        if (!TryAcquireOutputOwnership())
+        {
+            _syncing = true;
+            EngineSwitch.IsChecked = false;
+            _syncing = false;
+            UpdateStatus();
+            return false;
+        }
+
         ObservationPipeline? pipeline = null;
         CooperativeServer? cooperation = null;
         var committed = false;
         Exception? failure = null;
         try
         {
-            pipeline = new ObservationPipeline(PolicyConfig.Sample(_selectedStyle, Intensity), new PipelineOptions { Route = OutputRoutes.CachedController });
+            pipeline = new ObservationPipeline(PolicyConfig.Sample(_selectedStyle, Intensity),
+                new PipelineOptions { Route = OutputRoutes.CachedController, OutputOwnership = _outputOwnership });
             pipeline.Policy.ConsentGiven = true;
             pipeline.Policy.OutputRouteVerified = true;
             pipeline.TouchpadBoost = BoostSwitch.IsChecked == true ? 1.3 : 1.0;
@@ -398,12 +418,15 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
                 cooperation?.Dispose();
                 pipeline?.Dispose();
+                _outputOwnership?.Dispose();
+                _outputOwnership = null;
                 _syncing = true;
                 EngineSwitch.IsChecked = false;
                 _syncing = false;
                 _stats.Text = "The Showcase engine is not running.";
                 UpdateStatus();
             }
+
         }
 
         if (failure is not null)
@@ -413,6 +436,13 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         }
 
         return committed;
+    }
+
+    private bool TryAcquireOutputOwnership()
+    {
+        _outputOwnership ??= OutputOwnership.Create("Showcase");
+        _pausedForOtherOwner = !_outputOwnership.TryAcquire();
+        return !_pausedForOtherOwner;
     }
 
     private static bool IsFileFailure(Exception ex) =>
@@ -437,9 +467,9 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         }
 
         var (brush, title, hint) = _pipeline is null
-            ? ("SystemFillColorNeutralBrush", _pausedForTray ? "The tray has you covered" : "Showcase engine off",
-                _pausedForTray
-                    ? "The tray already provides haptics here. To use this engine or compare styles, quit the tray first, then turn on the Showcase engine."
+            ? ("SystemFillColorNeutralBrush", _pausedForOtherOwner ? "Output paused — another engine owns haptics" : "Showcase engine off",
+                _pausedForOtherOwner
+                    ? "Another Haptics Everywhere engine owns output. The Showcase engine stays paused, but Feel it can preview individual sensations."
                     : "Turn on the Showcase engine to explore background feedback. Feel it still previews individual sensations.")
             : _bank.Any
                 ? ("SystemFillColorSuccessBrush", $"Ready: {_bank.Describe()}", "Try Feel it, then explore here or in another app. Only you can confirm what you feel.")
@@ -451,16 +481,35 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
     private void FeelIt(string waveform, bool appsOnly)
     {
-        if (appsOnly && CooperativeServer.Send(waveform))
+        SendPreview(waveform, appsOnly, w => CooperativeServer.Send(w), preview =>
         {
-            return;
-        }
+            var attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, preview, Intensity);
+            if (!attempt.Accepted)
+            {
+                Felt($"Couldn't play {preview}: {attempt.Error ?? "device didn't accept it"}");
+            }
+        });
+    }
 
-        var attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, waveform, Intensity);
-        if (!attempt.Accepted)
+    internal static bool TryCooperativePreview(bool appsOnly, string waveform, Func<string, bool> send)
+    {
+        ArgumentNullException.ThrowIfNull(send);
+        return appsOnly && send(waveform);
+    }
+
+    internal static void SendPreview(string waveform, bool appsOnly, Func<string, bool> sendCooperative, Action<string> sendOneShot)
+    {
+        ArgumentNullException.ThrowIfNull(sendOneShot);
+        if (!TryCooperativePreview(appsOnly, waveform, sendCooperative))
         {
-            Felt($"Couldn't play {waveform}: {attempt.Error ?? "device didn't accept it"}");
+            RunOneShotPreview(() => sendOneShot(waveform));
         }
+    }
+
+    internal static void RunOneShotPreview(Action output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        output();
     }
 
     private void Drain()
@@ -601,7 +650,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     {
         if (_pipeline is null)
         {
-            System.Windows.MessageBox.Show(this, "Turn the Showcase engine on (and quit the tray) first.", "Compare styles");
+            System.Windows.MessageBox.Show(this, "Turn the Showcase engine on after the other output owner releases haptics.", "Compare styles");
             return;
         }
 
@@ -614,6 +663,11 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         }
 
         TryStartComparison(() => ExperimentSession.Start("EXP-090", "physical", null));
+        if (_compareRun is not null)
+        {
+            _compareRun.Session.Result.Method["outputOwner"] = _outputOwnership?.Owner;
+            _compareRun.Session.Result.Method["outputOwnershipGranted"] = _outputOwnership?.IsOwner == true;
+        }
     }
 
     internal bool TryStartComparison(Func<ExperimentSession> startSession)

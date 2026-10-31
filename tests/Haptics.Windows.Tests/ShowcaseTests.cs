@@ -135,6 +135,93 @@ public class ShowcaseTests
     });
 
     [Fact]
+    public void ShowcaseEngineStaysPausedWhenAnotherOutputOwnerHoldsTheLease() => OnStaThread(() =>
+    {
+        var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
+        using var owner = OutputOwnership.Create("tray", name);
+        Assert.True(owner.TryAcquire());
+        using var window = new ShowcaseWindow();
+        var contender = OutputOwnership.Create("Showcase", name);
+        var started = false;
+        Assert.False(window.TryStartEngine(_ => started = true, contender));
+        Assert.False(started);
+        Assert.False(window.EngineSwitch.IsChecked);
+        Assert.Contains("another engine owns haptics", window.StatusText.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Feel it can preview individual sensations", window.StatusHint.Text, StringComparison.OrdinalIgnoreCase);
+    });
+
+    [Theory]
+    [InlineData("Land")]
+    [InlineData("Land big")]
+    [InlineData("Detent")]
+    [InlineData("Edge")]
+    public void OneShotFeelRunsWhileAnotherOutputOwnerHoldsTheLease(string waveform) => OnStaThread(() =>
+    {
+        var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
+        using var owner = OutputOwnership.Create("tray", name);
+        using var preview = OutputOwnership.Create("Showcase", name);
+        using var acquiredSignal = new ManualResetEventSlim();
+        using var releaseSignal = new ManualResetEventSlim();
+        var acquired = false;
+        var ownerThread = new Thread(() =>
+        {
+            acquired = owner.TryAcquire();
+            acquiredSignal.Set();
+            releaseSignal.Wait();
+            owner.Dispose();
+        }) { IsBackground = true };
+        ownerThread.Start();
+
+        try
+        {
+            Assert.True(acquiredSignal.Wait(TimeSpan.FromSeconds(5)));
+            Assert.True(acquired);
+            Assert.False(preview.TryAcquire());
+            using var window = new ShowcaseWindow();
+            string? sentWaveform = null;
+            var cooperativeSent = false;
+
+            ShowcaseWindow.SendPreview(waveform, false, _ => cooperativeSent = true, sent => sentWaveform = sent);
+            Assert.Equal(waveform, sentWaveform);
+            Assert.False(cooperativeSent);
+        }
+        finally
+        {
+            releaseSignal.Set();
+            Assert.True(ownerThread.Join(TimeSpan.FromSeconds(5)));
+        }
+    });
+
+    [Fact]
+    public void SuccessfulCooperativePreviewDoesNotAlsoRunOneShot()
+    {
+        var oneShotSent = false;
+        ShowcaseWindow.SendPreview("Align", true, _ => true, _ => oneShotSent = true);
+        Assert.False(oneShotSent);
+    }
+
+    [Fact]
+    public void OneShotFeelDoesNotAcquireOutputOwnershipWhenEngineIsOff() => OnStaThread(() =>
+    {
+        using var nextOwner = OutputOwnership.Create("tray", $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}");
+        var outputSent = false;
+
+        ShowcaseWindow.RunOneShotPreview(() => outputSent = true);
+        Assert.True(outputSent);
+        Assert.True(nextOwner.TryAcquire());
+    });
+
+    [Fact]
+    public void CooperativeFeelDoesNotNeedShowcaseOutputOwnership()
+    {
+        using var owner = OutputOwnership.Create("tray", $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}");
+        Assert.True(owner.TryAcquire());
+        var sent = false;
+        Assert.True(ShowcaseWindow.TryCooperativePreview(true, "Align", waveform => sent = waveform == "Align"));
+        Assert.True(sent);
+    }
+
+    [Fact]
     public void DeviceRemovalClearsShowcaseMappingForReconnectPriming() => OnStaThread(() =>
     {
         using var window = new ShowcaseWindow();
