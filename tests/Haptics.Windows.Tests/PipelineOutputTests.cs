@@ -272,6 +272,58 @@ public class PipelineOutputTests
     }
 
     [Fact]
+    public void ReconnectedControllerWithSameIdentityOnNewHandleCanRoute()
+    {
+        using var rig = new Rig();
+        var removed = Controller();
+        SetController(removed, global::Windows.Devices.Haptics.HapticDeviceType.Mouse, "same-controller-id");
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = removed };
+        Invoke(rig.Pipeline, "OnDeviceChanged", 12L, false);
+
+        var reconnected = Controller();
+        SetController(reconnected, global::Windows.Devices.Haptics.HapticDeviceType.Mouse, "same-controller-id");
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [34] = reconnected };
+        rig.Observe(800, 34, Snapshot(800) with { RuntimeIdHash = "new-handle-same-controller", QueryX = 21 });
+        rig.Flush(810);
+
+        Assert.Same(reconnected, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
+    public void SameHandleRediscoveryAllowsFreshHandlelessTouchpadReprime()
+    {
+        using var rig = new Rig();
+        var discovered = Controller();
+        var initialTouchpad = Controller();
+        SetController(discovered, global::Windows.Devices.Haptics.HapticDeviceType.Generic, "touchpad-id");
+        SetController(initialTouchpad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "touchpad-id");
+        var capture = initialTouchpad;
+        var bank = new ControllerBank(() => capture);
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [34] = discovered }, "initial"));
+        Assert.True(bank.TryCapture(0, PointerInputClass.Handleless, 100, 100));
+        bank.ApplyTo(rig.Pipeline);
+
+        Invoke(rig.Pipeline, "OnDeviceChanged", 34L, false);
+        Assert.True(bank.RemoveDevice(34));
+        var rediscovered = Controller();
+        SetController(rediscovered, global::Windows.Devices.Haptics.HapticDeviceType.Generic, "touchpad-id");
+        bank.AddDiscovered(new ControllerDiscoveryResult(
+            new Dictionary<long, CapturedController> { [34] = rediscovered }, "reconnected"));
+        bank.ApplyTo(rig.Pipeline);
+
+        var reconnectedTouchpad = Controller();
+        SetController(reconnectedTouchpad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "touchpad-id");
+        capture = reconnectedTouchpad;
+        Assert.True(bank.TryCapture(0, PointerInputClass.Handleless, 800, 800));
+        bank.ApplyTo(rig.Pipeline);
+        rig.Observe(800, 0, Snapshot(800) with { RuntimeIdHash = "handleless-reconnected", QueryX = 21 });
+        rig.Flush(810);
+
+        Assert.Same(reconnectedTouchpad, Assert.Single(rig.Sink.Requests).Controller);
+    }
+
+    [Fact]
     public void PromotedInputIsSilentEvenWhenMouseHandleIsMapped()
     {
         using var rig = new Rig();
@@ -421,6 +473,45 @@ public class PipelineOutputTests
 
         Assert.Empty(rig.Sink.Requests);
         Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:no-fresh-input-origin");
+    }
+
+    [Fact]
+    public void QueuedCooperativeIntentRechecksPointerFreshnessBeforeOutput()
+    {
+        using var rig = new Rig();
+        Pointer(rig.Pipeline, 100, 20, 15, 12);
+        rig.Clock.NowMs = 350;
+        rig.Pipeline.SubmitCooperative("Align", 0);
+
+        Assert.Equal(1, rig.Sink.Pending);
+        rig.Flush(499);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:stale-input-origin");
+    }
+
+    [Fact]
+    public void SemanticEventWithDifferentGenerationIsRejected()
+    {
+        using var rig = new Rig();
+        Pointer(rig.Pipeline, 100, 20, 15, 12);
+        var generation = rig.Pipeline.Interpreter.Generation;
+        var inputContextType = typeof(ObservationPipeline).GetNestedType(
+            "InputRouteContext", System.Reflection.BindingFlags.NonPublic)!;
+        var inputContext = inputContextType.GetConstructors(
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+            .Single(constructor => constructor.GetParameters().Length == 5)
+            .Invoke([12L, PointerInputClass.Handle, Environment.ProcessId, 100d, generation]);
+        var staleEvent = rig.Pipeline.Interpreter.Cooperative("Align", Environment.ProcessId, 100) with
+        {
+            Generation = generation + 1,
+        };
+
+        Invoke(rig.Pipeline, "HandleLocked", new InterpretResult([staleEvent], []), 100d, inputContext);
+        rig.Flush(110);
+
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:stale-device-generation");
     }
 
     [Theory]

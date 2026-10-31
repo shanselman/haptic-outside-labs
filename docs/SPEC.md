@@ -325,7 +325,7 @@ Requirements:
 - Register/unregister cleanly; detect that the expected raw-input route was never established.
 - Input message handling may occur much faster than we can meaningfully inspect UI. Use latest-state coalescing, not one UIA call per physical report.
 
-**Device-to-controller routing:** Carry the input's device handle or handleless/promoted class and interaction generation through the UIA request, semantic event and output queue. A nonzero handle uses only its exact controller mapping. Handleless non-promoted input may use the touchpad only when exactly one typed touchpad is known; promoted or ambiguous input and unknown handles stay silent with a diagnostic note. Discovery-only `Generic` controllers do not establish touchpad identity and stay silent until safely primed. Bind queued output to the controller selected for its cause and discard it if the generation or mapping changes before dispatch. Removing a device disables only that route and any handleless alias with the same stable hashed identity; a reused handle requires a new mapping. Manual capture requires fresh input with a matching class. Cooperative intents have no pointer cause, so they may use only the latest eligible input from the same generation when it is at most 250 ms old; otherwise they stay silent. A thread-manager route must verify the current controller identity before sending. Never use `Latest` as an automatic fallback or register the precision-touchpad collection.
+**Device-to-controller routing:** Carry the input's device handle or handleless/promoted class and interaction generation through the UIA request, semantic event and output queue. A nonzero handle uses only its exact controller mapping. Handleless non-promoted input may use the touchpad only when exactly one typed touchpad is known; promoted or ambiguous input and unknown handles stay silent with a diagnostic note. Discovery-only `Generic` controllers do not establish touchpad identity and stay silent until safely primed. Bind queued output to the controller selected for its cause and discard it if the generation or mapping changes before dispatch. Removing a device disables only that route and any handleless alias with the same stable hashed identity; a reused handle requires a new mapping, and a fresh same-identity mapping under a new raw handle may reconnect without reviving the removed handle or stale aliases. Manual capture requires fresh input with a matching class. Cooperative intents have no pointer cause, so they may use only the latest eligible input from the same generation when it is at most 250 ms old; recheck that age immediately before output and stay silent if it has expired. A thread-manager route must verify the current controller identity before sending. Never use `Latest` as an automatic fallback or register the precision-touchpad collection.
 
 **Possible fallback: `WH_MOUSE_LL` low-level mouse hook, experimental and narrowly scoped.** Microsoft documents that the low-level hook executes in the hooking process rather than injecting a callback DLL into the target, and requires its own message loop. [S22]
 
@@ -1234,10 +1234,10 @@ time; it is reached only after `HapticPolicy.Evaluate` emits and the output dead
 posting and haptic API calls still run on the raw-input thread, using the monotonic clock by default.
 Tests never start that thread or call a haptic API. The regression matrix pins exact-handle routing,
 single-touchpad handleless routing, silent unknown/promoted/ambiguous inputs, device-switch invalidation,
-reconnect remapping, fresh class-matched capture, cooperative-input freshness and the real tray priming path.
-Explicit single-controller experiment callers may still set `Controller` when no device map is active;
-Tray and Showcase never publish `Latest` as a fallback. Queued output after Off remains a known lifecycle
-case for Lane E.
+reconnect remapping including same-identity and handleless re-priming, fresh class-matched capture,
+cooperative-input freshness at enqueue and dispatch, and the real tray priming path. Explicit
+single-controller experiment callers may still set `Controller` when no device map is active; Tray and
+Showcase never publish `Latest` as a fallback. Queued output after Off remains a known lifecycle case for Lane E.
 
 **Reporter:** no mock classified as physical, proper experiment dependencies, immutable artifact hashes, no sensitive text in serialized output.
 

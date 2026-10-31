@@ -62,6 +62,8 @@ public sealed record PipelineStats(
 /// </summary>
 public sealed class ObservationPipeline : IDisposable
 {
+    private const double CooperativeInputFreshnessMs = 250;
+
     private readonly object _lock = new();
     private readonly PipelineOptions _opt;
     private readonly SemanticInterpreter _interpreter = new();
@@ -112,11 +114,19 @@ public sealed class ObservationPipeline : IDisposable
             {
                 var previous = _controllers;
                 _controllers = value;
+                var touchpad = value?.GetValueOrDefault(0);
+                var previousTouchpad = previous?.GetValueOrDefault(0);
+                if (touchpad?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad &&
+                    !ReferenceEquals(touchpad, previousTouchpad) &&
+                    _removedControllers.TryGetValue(0, out var removedAlias) &&
+                    ControllerRouting.SameController(removedAlias, touchpad))
+                {
+                    _removedControllers.Remove(0);
+                }
+
                 foreach (var handle in _removedDevices.ToArray())
                 {
                     var current = value?.GetValueOrDefault(handle);
-                    var touchpad = value?.GetValueOrDefault(0);
-                    var previousTouchpad = previous?.GetValueOrDefault(0);
                     var replacedAtHandle = current is not null &&
                         (!_removedControllers.TryGetValue(handle, out var removed) || !ReferenceEquals(current, removed));
                     var handlelessReprime = current is null &&
@@ -124,10 +134,14 @@ public sealed class ObservationPipeline : IDisposable
                         !ReferenceEquals(touchpad, previousTouchpad) &&
                         _removedControllers.TryGetValue(handle, out var removedController) &&
                         ControllerRouting.SameController(removedController, touchpad);
-                    if (replacedAtHandle || handlelessReprime)
+                    if (replacedAtHandle)
                     {
                         _removedDevices.Remove(handle);
                         _removedControllers.Remove(handle);
+                    }
+                    else if (handlelessReprime)
+                    {
+                        _removedControllers.Remove(0);
                     }
                 }
             }
@@ -344,9 +358,15 @@ public sealed class ObservationPipeline : IDisposable
             }
 
             _removedDevices.Add(handle);
-            if (Controllers?.TryGetValue(handle, out var controller) == true)
+            if (Controllers is { } controllers && controllers.TryGetValue(handle, out var controller))
             {
-                _removedControllers[handle] = controller;
+                foreach (var (mappedHandle, mappedController) in controllers)
+                {
+                    if (ControllerRouting.SameController(controller, mappedController))
+                    {
+                        _removedControllers[mappedHandle] = mappedController;
+                    }
+                }
             }
 
             HandleLocked(_interpreter.OnDeviceUnavailable(Now), Now);
@@ -417,7 +437,7 @@ public sealed class ObservationPipeline : IDisposable
                     continue;
                 }
 
-                if (input.Generation != _interpreter.Generation)
+                if (input.Generation != _interpreter.Generation || e.Generation != input.Generation)
                 {
                     Publish(new NoteEvent(now, "skip:stale-device-generation", e.Element));
                     continue;
@@ -462,7 +482,12 @@ public sealed class ObservationPipeline : IDisposable
             string? skip = null;
             lock (_lock)
             {
-                if (input.Generation != _interpreter.Generation)
+                if (intent.SourceRule == "cooperative" &&
+                    (now < input.TimestampMs || now - input.TimestampMs > CooperativeInputFreshnessMs))
+                {
+                    skip = "skip:stale-input-origin";
+                }
+                else if (input.Generation != _interpreter.Generation)
                 {
                     skip = "skip:stale-device-generation";
                 }
@@ -518,7 +543,7 @@ public sealed class ObservationPipeline : IDisposable
         _latestInputRoute is { } input &&
         input.Generation == _interpreter.Generation &&
         now >= input.TimestampMs &&
-        now - input.TimestampMs <= 250
+        now - input.TimestampMs <= CooperativeInputFreshnessMs
             ? input
             : null;
 
@@ -531,7 +556,9 @@ public sealed class ObservationPipeline : IDisposable
 
         var route = ControllerRouting.Resolve(Controllers, input.DeviceHandle, input.InputClass);
         if (route.Controller is { } mapped &&
-            _removedControllers.Values.Any(removed => ControllerRouting.SameController(removed, mapped)))
+            _removedControllers.Any(pair =>
+                ControllerRouting.SameController(pair.Value, mapped) &&
+                (pair.Key == input.DeviceHandle || ReferenceEquals(pair.Value, mapped))))
         {
             return new(null, "skip:removed-device");
         }
