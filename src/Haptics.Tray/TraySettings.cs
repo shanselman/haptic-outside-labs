@@ -10,6 +10,8 @@ public sealed class TraySettings
     public EffectProfile Style { get; set; } = EffectProfile.Focused;
     public double IntensityScale { get; set; } = 0.8;
 
+    public bool CloseButtonHover { get; set; } = true;
+
     /// <summary>Touchpads feel lighter than mice at the same intensity.</summary>
     public double TouchpadBoost { get; set; } = 1.3;
 
@@ -70,6 +72,7 @@ public sealed class TraySettings
     {
         var p = PolicyConfig.Sample(Style, IntensityScale);
         p.Mode = Enabled ? HapticsMode.On : HapticsMode.Off;
+        p.CloseButtonHoverEnabled = CloseButtonHover;
         p.CooperativeEnabled = CooperationEnabled;
         p.ExcludedProcesses.AddRange(ExcludedProcesses);
         return p;

@@ -125,6 +125,15 @@
                             Ticks="0.3,0.55,0.8,1" />
                     </StackPanel>
                 </ui:CardControl>
+                <ui:CardControl Margin="0,0,0,4" Icon="{ui:SymbolIcon Dismiss24}">
+                    <ui:CardControl.Header>
+                        <StackPanel>
+                            <ui:TextBlock FontTypography="Body" Text="Close button hover" />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="A light tick when you land on a window's Close button. Silent in Quiet style." />
+                        </StackPanel>
+                    </ui:CardControl.Header>
+                    <ui:ToggleSwitch x:Name="CloseHoverSwitch" AutomationProperties.Name="Close button hover" />
+                </ui:CardControl>
                 <ui:CardControl Margin="0,0,0,4" Icon="{ui:SymbolIcon Laptop24}">
                     <ui:CardControl.Header>
                         <StackPanel>

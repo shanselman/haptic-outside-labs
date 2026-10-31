@@ -9,6 +9,28 @@ namespace Haptics.Windows.Tests;
 public class TrayWindowTests
 {
     [Fact]
+    public void CloseHoverToggleAppliesAccessibleChangesAndRefreshesWithoutApplying() => ShowcaseTests.OnStaThread(() =>
+    {
+        var host = new FakeHost();
+        var w = new SettingsWindow(host, autoClose: false);
+        var toggle = Assert.IsType<Wpf.Ui.Controls.ToggleSwitch>(w.FindName("CloseHoverSwitch"));
+        Assert.True(toggle.IsChecked);
+        Assert.Equal("Close button hover", System.Windows.Automation.AutomationProperties.GetName(toggle));
+        Assert.Equal(0, host.Applied);
+
+        Toggle(toggle);
+        Assert.False(host.Settings.CloseButtonHover);
+        Assert.Equal(1, host.Applied);
+        Toggle(toggle);
+        Assert.True(host.Settings.CloseButtonHover);
+        Assert.Equal(2, host.Applied);
+        host.Settings.CloseButtonHover = false;
+        host.Raise();
+        Assert.False(toggle.IsChecked);
+        Assert.Equal(2, host.Applied);
+    });
+
+    [Fact]
     public void WindowShowsSettingsAndStatus() => ShowcaseTests.OnStaThread(() =>
     {
         var host = new FakeHost();

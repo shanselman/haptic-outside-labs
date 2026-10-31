@@ -10,6 +10,25 @@ public class TrayPersistenceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void CloseHoverChoiceSurvivesSettingsSave(bool enabled)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"haptics-settings-{Guid.NewGuid():N}");
+        var path = Path.Combine(folder, "tray.json");
+        try
+        {
+            new TraySettings { CloseButtonHover = enabled }.Save(path);
+            var settings = JsonSerializer.Deserialize<TraySettings>(File.ReadAllText(path), HapticsJson.Indented)!;
+            Assert.Equal(enabled, settings.CloseButtonHover);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void OffRevokesAndInvalidatesBeforeSaveFailureIsReported(bool accessDenied)
     {
         var clock = new FakeClock { NowMs = 100 };
