@@ -12,7 +12,7 @@
 | **Static safety scan** | anywhere (CI) | `haptics-lab run EXP-081`, `SafetyTests` | no SendInput/SetCursorPos/hooks/focus/injection/settings/UIA-action APIs in compiled assemblies; mouse-only raw input; tray doesn't reference lab | reflection/dynamic calls |
 | **UIA worker containment** | Windows (CI ok) | `haptics-lab run EXP-043`, `RuntimeTests`, `UiaLifecycleTests` | hang/slow/crash are cut off; delivered response IDs/counts exclude failures; startup/budget failures complete explicitly; bounded watchdog recovery after refill; fault commands need opt-in | real provider behaviour |
 | **Capability inventory** | target machine | `haptics-lab doctor` | API/contract/waveforms present, guards don't throw | that anything buzzes |
-| **Thread affinity** | target machine | `haptics-lab run EXP-023` | own-process TryGetForThread semantics | cross-process anything (never attempted) |
+| **Thread affinity** | target machine; timeout seam on Windows CI | `haptics-lab run EXP-023`, `ExperimentHarnessTests` | own-process TryGetForThread semantics; timeout is INDETERMINATE unless an assertion already failed, background probe cannot hold process open, completed observations snapshotted | cross-process anything (never attempted); native-call cancellation |
 | **UIA fixture** | interactive desktop | `haptics-lab run EXP-040` | UIA type/bounds/flags vs fixture truth; lookup latency | real apps (EXP-041) |
 | **UIA property acquisition** | Windows (CI ok) | `UiaCacheTests` | production excludes AutomationId and range properties; fixture adds only AutomationId; slider cache contains only read-only range metadata; parent/selection fields retained | provider correctness (EXP-040/041) |
 | **UIA slider range round trip** | interactive desktop | `UiaCacheTests.WorkerReadsWpfSliderRangeButNotButtonRange` | real WPF Slider range through worker in production/fixture modes, Button has no range, parent metadata retained | skipped without interactive desktop; WinForms EXP-040 TrackBar may not expose RangeValue |
@@ -35,6 +35,11 @@ failure-to-priming recovery TODOs. Hardware-free CI does not close those items.
 runs `doctor`, `EXP-070`, `EXP-081`, `EXP-043`. Hosted CI never claims physical results; reports carry
 `NOT_TESTED_ON_HARDWARE`. Interactive/physical experiments are operator-run (SPEC §12.6 advises against a
 self-hosted runner on a personal desktop).
+Every native exit is checked immediately, including `doctor` and `report`. The three logic/containment
+experiments use `run --require-pass`: any status other than PASS fails CI. Local `run` keeps its existing
+status exit semantics (only FAIL is nonzero); `doctor` may legitimately report BLOCKED/BUILD on a hosted
+runner without the haptics API. `ExperimentHarnessTests` executes the workflow body with inert native stubs
+for exits 1, 2, 3, 4 and a Windows crash code; no haptic-output experiment is needed.
 
 For the Fluent Showcase, manually check light/dark switching, moving between monitors with different DPI, Tab /
 Shift+Tab through settings and demo controls, menu arrow keys, Inspector/Lab navigation, and closing during a
