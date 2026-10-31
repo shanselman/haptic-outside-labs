@@ -187,14 +187,15 @@ public class EvidenceTests
                 },
             };
             r.Method["intensity"] = 0.8;
+            r.Method["targetControllerIdHash"] = "target-controller";
             Directory.CreateDirectory(Path.Combine(dir, "b"));
             File.WriteAllText(Path.Combine(dir, "b", "result.json"), System.Text.Json.JsonSerializer.Serialize(r, HapticsJson.Indented));
             var results = EvidenceLedger.Load(dir);
 
-            Assert.True(EvidenceLedger.ForegroundBaselinePassed(results, "me"));
-            Assert.True(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Step", 1.0));
-            Assert.False(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Step", 0.5));
-            Assert.False(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Click", 1.0));
+            Assert.True(EvidenceLedger.ForegroundBaselinePassed(results, "me", "target-controller"));
+            Assert.True(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Step", 1.0, "target-controller"));
+            Assert.False(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Step", 0.5, "target-controller"));
+            Assert.False(EvidenceLedger.ForegroundBaselinePassed(results, "me", "Click", 1.0, "target-controller"));
         }
         finally
         {

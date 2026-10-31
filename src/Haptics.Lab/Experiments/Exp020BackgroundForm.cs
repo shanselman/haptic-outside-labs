@@ -85,12 +85,8 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _controls.Value = Math.Clamp(opt.Int("controls", 6), 3, 30);
         _intensity.Value = (decimal)Math.Clamp(opt.Double("intensity", 1.0), 0.05, 1.0);
 
-        var fp = EnvironmentProbe.CurrentFingerprint();
-        _baselinePassed = EvidenceLedger.ForegroundBaselinePassed(EvidenceLedger.Load(), fp);
-        _baseline.Text = _baselinePassed
-            ? "EXP-010 passed on this machine. A 'not felt' counts as FAIL only if EXP-010 passed for the SAME waveform at ≤ this intensity."
-            : "EXP-010 foreground baseline: not passed on this machine — 'not felt' will be INDETERMINATE, not FAIL. Run EXP-010 first.";
-        _baseline.ForeColor = _baselinePassed ? Color.FromArgb(16, 124, 16) : Color.FromArgb(138, 80, 0);
+        _baseline.Text = "EXP-010 baseline is unverified until the target controller is captured. 'Not felt' requires the SAME controller, waveform and no higher baseline intensity to count as FAIL.";
+        _baseline.ForeColor = Color.FromArgb(138, 80, 0);
         _baseline.MaximumSize = new Size(880, 0);
 
         var intro = Ui.Text(
@@ -198,7 +194,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         {
             _targetLocked = TargetDevice != "any" && _primeDevices.Count > 0;
             _targetDevice = _targetLocked ? _primeDevices.MaxBy(kv => kv.Value).Key : 0;
-            m0["primeRawDevices"] = _primeDevices.ToDictionary(kv => kv.Key == 0 ? "no-handle" : RawInputDevices.Describe(kv.Key).VidPid ?? "unknown", kv => kv.Value);
+            m0["primeRawDevices"] = PrimeDeviceCounts(_primeDevices, RawInputDevices.Describe);
         }
 
         var seed = _opt.Int("seed", Random.Shared.Next());
@@ -212,6 +208,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         m["rawWindowKind"] = _window.SelectedItem;
         m["rawThreadId"] = _raw!.ThreadId;
         m["targetDevice"] = TargetDevice;
+        m["targetControllerIdHash"] = _captured?.IdHash;
         m["targetRawDevice"] = !_targetLocked ? "any" : _targetDevice == 0 ? "no-handle (precision touchpad or synthetic)" : RawInputDevices.Describe(_targetDevice);
         if (_targetLocked && _targetDevice == 0)
         {
@@ -227,9 +224,9 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             _captured.IsIntensitySupported,
         };
         m["seed"] = seed;
-        m["baselinePassedOnThisMachine"] = _baselinePassed;
-        _baselinePassed = EvidenceLedger.ForegroundBaselinePassed(EvidenceLedger.Load(), _session.Result.Machine.MachineFingerprint, _waveName, _intensityValue);
-        m["baselinePassedForSameWaveformAndIntensity"] = _baselinePassed;
+        _baselinePassed = EvidenceLedger.ForegroundBaselinePassed(EvidenceLedger.Load(), _session.Result.Machine.MachineFingerprint,
+            _waveName, _intensityValue, _captured?.IdHash);
+        m["baselinePassedForSameControllerWaveformAndIntensity"] = _baselinePassed;
         m["fireConditions"] = "foreground PID != lab, cursor not over lab panel, physical (hDevice != 0) movement from the primed device for >= 400ms after a random 0.8-2.5s delay; fired inside WM_INPUT handling on the raw-input thread.";
         _session.Result.NegativeControls.Add($"{(int)_controls.Value} randomized silent controls fired under identical conditions.");
 
@@ -251,6 +248,16 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _next = 0;
         ArmNext();
     }
+
+    internal sealed record PrimeDeviceCount(string NameHash, string? VidPid, string Connection, int Events);
+
+    internal static IReadOnlyList<PrimeDeviceCount> PrimeDeviceCounts(IReadOnlyDictionary<long, int> devices,
+        Func<long, RawDeviceInfo> describe) =>
+        devices.Select(kv =>
+        {
+            var device = describe(kv.Key);
+            return new PrimeDeviceCount(device.NameHash, device.VidPid, device.Connection, kv.Value);
+        }).OrderBy(d => d.NameHash, StringComparer.Ordinal).ToArray();
 
     private void ArmNext()
     {
@@ -411,6 +418,14 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         ArmNext();
     }
 
+    internal static bool ArmBaselinePassed(IEnumerable<TrialRecord> trials, string arm, string? targetControllerIdHash,
+        bool targetBaselinePassed)
+    {
+        var pulses = trials.Where(t => t.ProvenanceValid && t.Answer != TrialAnswer.None && !t.IsControl && t.Arm == arm).ToArray();
+        return targetBaselinePassed && EvidenceLedger.KnownControllerIdentity(targetControllerIdHash) &&
+               pulses.Length > 0 && pulses.All(t => t.Attempt?.ControllerIdHash == targetControllerIdHash);
+    }
+
     private void Finish(bool aborted)
     {
         if (_session is null || _phase == Phase.Done)
@@ -422,11 +437,14 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _raw?.Post(() => _pending = null);
         var r = _session.Result;
         var verdicts = new Dictionary<string, ArmVerdict>();
+        var baselines = new Dictionary<string, bool>();
         foreach (var arm in _schedule.Where(x => !x.IsControl).Select(x => x.Arm).Distinct())
         {
-            verdicts[arm] = PhysicalEvaluator.Evaluate(arm, _trials, _baselinePassed);
+            baselines[arm] = ArmBaselinePassed(_trials, arm, _captured?.IdHash, _baselinePassed);
+            verdicts[arm] = PhysicalEvaluator.Evaluate(arm, _trials, baselines[arm]);
         }
 
+        r.Method["baselinePassedByRoute"] = baselines;
         r.Routes = verdicts;
         (r.Status, r.EvidenceClass) = PhysicalEvaluator.Combine(verdicts.Values);
         foreach (var label in verdicts.Values.SelectMany(v => v.Labels).Distinct())

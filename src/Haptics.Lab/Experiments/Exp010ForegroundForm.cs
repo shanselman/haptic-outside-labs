@@ -174,6 +174,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         var t = new TrialRecord { Index = plan.Index, Arm = plan.Arm, IsControl = plan.IsControl, FiredAtMs = now };
         t.Context["deviceType"] = st.DeviceType;
         t.Context["controllerPresent"] = st.ControllerPresent;
+        t.Context["controllerIdHash"] = st.ControllerIdHash;
         t.Context["inputAgeMs"] = Math.Round(now - _lastMove, 1);
         t.Context["labForeground"] = ActiveForm == this;
         var target = (string)_target.SelectedItem!;
@@ -260,6 +261,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         }
 
         var attempts = _trials.Where(t => t.Attempt is not null).Select(t => t.Attempt!).ToList();
+        r.Method["targetControllerIdHash"] = TargetControllerIdentity(_trials);
         r.Observations["trialsAnswered"] = _trials.Count;
         r.Observations["trialsScheduled"] = _schedule.Count;
         r.Observations["apiAccepted"] = attempts.Count(a => a.Accepted);
@@ -281,6 +283,16 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         _pad.BackColor = Ui.StatusColor(r.Status);
         _padText.Text = $"{r.Status} [{r.EvidenceClass}]\n{string.Join("\n", verdicts.Select(v => $"{v.Key}: {v.Value.Hits}/{v.Value.Hits + v.Value.Misses} felt, controls {v.Value.FalseAlarms}/{v.Value.FalseAlarms + v.Value.CorrectRejections}"))}";
         _status.Text = $"Saved {ResultPath}";
+    }
+
+    internal static string? TargetControllerIdentity(IEnumerable<TrialRecord> trials)
+    {
+        var identities = trials.Where(t => t.ProvenanceValid && t.Answer != TrialAnswer.None)
+            .Select(t => t.IsControl
+                ? t.Context.GetValueOrDefault("controllerIdHash") as string
+                : t.Attempt?.ControllerIdHash).ToArray();
+        return identities.Length > 0 && identities.All(EvidenceLedger.KnownControllerIdentity) &&
+               identities.Distinct(StringComparer.Ordinal).Count() == 1 ? identities[0] : null;
     }
 
     private static double? Pct(IEnumerable<double> values, double p)

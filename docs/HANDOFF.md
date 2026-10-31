@@ -26,6 +26,14 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
 
 ## Outstanding review TODO
 
+- [x] **Device-specific baseline eligibility.** New EXP-010 runs persist `method.targetControllerIdHash`
+  only when all valid answered pulses/controls identify the same known controller. EXP-020 compares
+  that hash as well as machine, waveform and intensity; every valid answered pulse in each route must
+  match the captured target (including the raw-thread R2 controller). Missing, mixed or unknown identities cannot
+  make "not felt" a FAIL. Historical entries are never rewritten: their recorded PASS/PHYSICAL verdict
+  still displays as recorded, but without an identity they do **not** satisfy a device-specific baseline.
+  Rerun EXP-010 with the target device to establish one. Priming device counts now use a list of hashed
+  device identities instead of a VID/PID dictionary, so two identical models remain separate.
 - [x] **Regression net: pipeline clock and recording output.** `PipelineOptions.Clock` defaults to the
   monotonic clock; optional `IPipelineOutputSink` replaces queueing/sending only. `PipelineOutputTests`
   uses a manually drained queue and fake clock, never starts the pipeline, and records inert controller

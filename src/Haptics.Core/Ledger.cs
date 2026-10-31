@@ -120,20 +120,39 @@ public static class EvidenceLedger
         results.Where(r => r.Result.ExperimentId == experimentId && (fingerprint is null || r.Result.Machine.MachineFingerprint == fingerprint))
             .LastOrDefault();
 
-    public static bool ForegroundBaselinePassed(IEnumerable<LoadedResult> results, string fingerprint) =>
+    public static bool ForegroundBaselinePassed(IEnumerable<LoadedResult> results, string fingerprint, string? controllerIdHash = null) =>
+        KnownControllerIdentity(controllerIdHash) &&
         results.Any(r => r.Result.ExperimentId == "EXP-010" && r.Result.Machine.MachineFingerprint == fingerprint &&
+                         MethodString(r.Result.Method, "targetControllerIdHash") == controllerIdHash &&
                          r.Result.Status == ExperimentStatus.PASS && r.Result.EvidenceClass == EvidenceClass.PHYSICAL);
 
     /// <summary>
     /// Stricter baseline for scoring a background "not felt" as FAIL: EXP-010 must have physically passed for the
-    /// same waveform at an intensity no higher than the one being tested.
+    /// same controller and waveform at an intensity no higher than the one being tested.
+    /// Historical results without a controller identity remain readable but cannot satisfy this baseline.
     /// </summary>
-    public static bool ForegroundBaselinePassed(IEnumerable<LoadedResult> results, string fingerprint, string waveform, double intensity) =>
+    public static bool ForegroundBaselinePassed(IEnumerable<LoadedResult> results, string fingerprint, string waveform, double intensity,
+        string? controllerIdHash = null) =>
+        KnownControllerIdentity(controllerIdHash) &&
         results.Any(r => r.Result.ExperimentId == "EXP-010" && r.Result.Machine.MachineFingerprint == fingerprint &&
+                         MethodString(r.Result.Method, "targetControllerIdHash") == controllerIdHash &&
                          r.Result.Routes is { } routes &&
                          routes.TryGetValue($"{OutputRoutes.ForegroundManager}:{waveform}", out var v) &&
                          v.Status == ExperimentStatus.PASS && v.EvidenceClass == EvidenceClass.PHYSICAL &&
                          MethodDouble(r.Result.Method, "intensity") is { } i && i <= intensity + 1e-9);
+
+    public static bool KnownControllerIdentity(string? identity) =>
+        !string.IsNullOrWhiteSpace(identity) &&
+        !string.Equals(identity, "none", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(identity, "unknown", StringComparison.OrdinalIgnoreCase);
+
+    private static string? MethodString(Dictionary<string, object?> method, string key) =>
+        method.TryGetValue(key, out var o) ? o switch
+        {
+            string s => s,
+            JsonElement { ValueKind: JsonValueKind.String } e => e.GetString(),
+            _ => null,
+        } : null;
 
     private static double? MethodDouble(Dictionary<string, object?> method, string key) =>
         method.TryGetValue(key, out var o) ? o switch
