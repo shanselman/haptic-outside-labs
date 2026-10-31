@@ -403,17 +403,16 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             t.Invalidate("cursor-over-lab-window");
         }
 
-        if (!plan.IsControl && _outputOwnership?.IsOwner == true)
-        {
-            t.Attempt = plan.Arm switch
+        if (!plan.IsControl && _outputOwnership?.TryRun(() =>
             {
-                OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(plan.Arm, _waveName, _intensityValue, input.TimestampMs),
-                OutputRoutes.CachedController => HapticsApi.SendViaController(plan.Arm, _captured, _waveName, _intensityValue, input.TimestampMs),
-                OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(plan.Arm, _captured, _waveName, _intensityValue, input.TimestampMs),
-                _ => null,
-            };
-        }
-        else if (!plan.IsControl)
+                t.Attempt = plan.Arm switch
+                {
+                    OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(plan.Arm, _waveName, _intensityValue, input.TimestampMs),
+                    OutputRoutes.CachedController => HapticsApi.SendViaController(plan.Arm, _captured, _waveName, _intensityValue, input.TimestampMs),
+                    OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(plan.Arm, _captured, _waveName, _intensityValue, input.TimestampMs),
+                    _ => null,
+                };
+            }) != true)
         {
             t.Invalidate("output-owner-not-held");
         }
@@ -464,6 +463,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             return;
         }
 
+        _outputOwnership?.StopSending();
         _phase = Phase.Done;
         _raw?.Post(() => _pending = null);
         var r = _session.Result;

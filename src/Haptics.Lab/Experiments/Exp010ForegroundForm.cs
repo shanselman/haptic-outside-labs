@@ -93,6 +93,21 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
 
     public string? ResultPath { get; private set; }
 
+    internal static ExperimentSession StartOwnedSession(OutputOwnership ownership, Func<ExperimentSession> start)
+    {
+        ArgumentNullException.ThrowIfNull(ownership);
+        ArgumentNullException.ThrowIfNull(start);
+        try
+        {
+            return start();
+        }
+        catch
+        {
+            ownership.Dispose();
+            throw;
+        }
+    }
+
     private void Begin()
     {
         var arms = _arms.CheckedItems.Cast<string>().ToList();
@@ -113,7 +128,16 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
 
         _seed = _opt.Int("seed", Random.Shared.Next());
         _schedule = TrialSchedule.Build(arms, (int)_perArm.Value, (int)_controls.Value, _seed);
-        _session = ExperimentSession.Start("EXP-010", "physical", _opt.Get("out"));
+        try
+        {
+            _session = StartOwnedSession(_outputOwnership, () => ExperimentSession.Start("EXP-010", "physical", _opt.Get("out")));
+        }
+        catch
+        {
+            _outputOwnership = null;
+            throw;
+        }
+
         var m = _session.Result.Method;
         m["route"] = OutputRoutes.ForegroundManager;
         m["routeDescription"] = OutputRoutes.Describe(OutputRoutes.ForegroundManager);
@@ -201,11 +225,8 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
             t.Invalidate("lab-window-not-foreground");
         }
 
-        if (!plan.IsControl && _outputOwnership?.IsOwner == true)
-        {
-            t.Attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, plan.Arm, (double)_intensity.Value, _lastMove);
-        }
-        else if (!plan.IsControl)
+        if (!plan.IsControl && _outputOwnership?.TryRun(() =>
+                t.Attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, plan.Arm, (double)_intensity.Value, _lastMove)) != true)
         {
             t.Invalidate("output-owner-not-held");
         }
@@ -261,6 +282,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
             return;
         }
 
+        _outputOwnership?.StopSending();
         _state = State.Done;
         _timer.Stop();
         var r = _session.Result;

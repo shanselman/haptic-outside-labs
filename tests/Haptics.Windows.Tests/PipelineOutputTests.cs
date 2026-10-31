@@ -146,6 +146,12 @@ public class PipelineOutputTests
     }
 
     [Fact]
+    public void PipelineOptionsExposeOutputOwnershipGate()
+    {
+        Assert.NotNull(typeof(PipelineOptions).GetProperty("OutputOwnership"));
+    }
+
+    [Fact]
     public void TouchpadOnlyManualMappingReachesTheRecordingSink()
     {
         using var rig = new Rig();

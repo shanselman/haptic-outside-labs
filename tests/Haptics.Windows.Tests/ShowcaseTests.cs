@@ -164,6 +164,16 @@ public class ShowcaseTests
     });
 
     [Fact]
+    public void CooperativeFeelDoesNotNeedShowcaseOutputOwnership()
+    {
+        using var owner = OutputOwnership.Create("tray", $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}");
+        Assert.True(owner.TryAcquire());
+        var sent = false;
+        Assert.True(ShowcaseWindow.TryCooperativePreview(true, "Align", waveform => sent = waveform == "Align"));
+        Assert.True(sent);
+    }
+
+    [Fact]
     public void DeviceRemovalClearsShowcaseMappingForReconnectPriming() => OnStaThread(() =>
     {
         using var window = new ShowcaseWindow();

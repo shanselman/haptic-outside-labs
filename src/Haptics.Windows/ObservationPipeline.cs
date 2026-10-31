@@ -538,16 +538,19 @@ public sealed class ObservationPipeline : IDisposable
         var intensity = controller?.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Touchpad
             ? Math.Min(1.0, intent.Intensity * TouchpadBoost)
             : intent.Intensity;
-        HapticAttempt? a = _opt.OutputSink is { } sink
-            ? sink.Send(new PipelineOutputRequest(Route, controller, intent, intensity))
-            : Route switch
+        HapticAttempt? a = null;
+        if (_opt.OutputOwnership is { } ownership)
         {
-            OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(
-                Route, intent.Waveform, intensity, intent.PointerTimestampMs, expectedController: controller),
-            OutputRoutes.CachedController => HapticsApi.SendViaController(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),
-            OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),
-            _ => null,
-        };
+            if (!ownership.TryRun(() => a = Send()))
+            {
+                Publish(new NoteEvent(Now, "skip:output-owned-elsewhere", null));
+                return;
+            }
+        }
+        else
+        {
+            a = Send();
+        }
 
         lock (_lock)
         {
@@ -594,6 +597,17 @@ public sealed class ObservationPipeline : IDisposable
         }
 
         Publish(new OutputEvent(Now, intent, a, a is null ? "dry-run-route" : a.Accepted ? "api-accepted" : $"api-rejected:{a.Error ?? "false"}"));
+
+        HapticAttempt? Send() => _opt.OutputSink is { } sink
+            ? sink.Send(new PipelineOutputRequest(Route, controller, intent, intensity))
+            : Route switch
+            {
+                OutputRoutes.RawThreadManager => HapticsApi.SendViaThreadManager(
+                    Route, intent.Waveform, intensity, intent.PointerTimestampMs, expectedController: controller),
+                OutputRoutes.CachedController => HapticsApi.SendViaController(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),
+                OutputRoutes.OverrideOnRawThread => HapticsApi.SendViaOverride(Route, controller, intent.Waveform, intensity, intent.PointerTimestampMs),
+                _ => null,
+            };
     }
 
     private InputRouteContext? FreshCooperativeInput(double now) =>

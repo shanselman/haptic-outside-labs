@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Haptics.Core;
+using Haptics.Lab.Experiments;
 using Haptics.Windows;
 
 namespace Haptics.Windows.Tests;
@@ -7,18 +8,35 @@ namespace Haptics.Windows.Tests;
 public class OutputOwnershipTests
 {
     [Fact]
-    public void NamedLeaseHasAtMostOneOwnerAndCanBeReacquiredAfterRelease()
+    public void NamedLeaseBlocksAnotherThreadAndCanBeReacquiredAfterRelease()
     {
         var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
         using var first = OutputOwnership.Create("tray", name);
         using var second = OutputOwnership.Create("Showcase", name);
+        using var acquiredSignal = new ManualResetEventSlim();
+        using var releaseSignal = new ManualResetEventSlim();
+        var acquired = false;
+        var ownerThread = new Thread(() =>
+        {
+            acquired = first.TryAcquire();
+            acquiredSignal.Set();
+            releaseSignal.Wait();
+            first.Dispose();
+        }) { IsBackground = true };
 
-        Assert.True(first.TryAcquire());
-        Assert.True(first.IsOwner);
-        Assert.False(second.TryAcquire());
-        Assert.False(second.IsOwner);
-
-        first.Dispose();
+        ownerThread.Start();
+        try
+        {
+            Assert.True(acquiredSignal.Wait(TimeSpan.FromSeconds(5)));
+            Assert.True(acquired);
+            Assert.False(second.TryAcquire());
+            Assert.False(second.IsOwner);
+        }
+        finally
+        {
+            releaseSignal.Set();
+            Assert.True(ownerThread.Join(TimeSpan.FromSeconds(5)));
+        }
 
         Assert.True(second.TryAcquire());
         Assert.True(second.IsOwner);
@@ -47,6 +65,74 @@ public class OutputOwnershipTests
         var owner = OutputOwnership.Create("test", $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}");
         owner.Dispose();
         Assert.Throws<ObjectDisposedException>(() => owner.TryAcquire());
+    }
+
+    [Fact]
+    public void StoppedOutputOwnerRejectsLaterSends()
+    {
+        using var owner = OutputOwnership.Create("test", $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}");
+        Assert.True(owner.TryAcquire());
+        owner.StopSending();
+        var sent = false;
+
+        Assert.False(owner.TryRun(() => sent = true));
+        Assert.False(sent);
+    }
+
+    [Fact]
+    public void FailedForegroundSessionCreationReleasesOutputLease()
+    {
+        var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
+        using var owner = OutputOwnership.Create("EXP-010", name);
+        using var next = OutputOwnership.Create("Showcase", name);
+        Assert.True(owner.TryAcquire());
+
+        Assert.Throws<IOException>(() => Exp010ForegroundForm.StartOwnedSession(owner,
+            () => throw new IOException("test session start failure")));
+        Assert.False(owner.IsOwner);
+        Assert.True(next.TryAcquire());
+    }
+
+    [Fact]
+    public void DisposeWaitsForAnActiveOutputSend()
+    {
+        var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
+        using var owner = OutputOwnership.Create("test", name);
+        using var next = OutputOwnership.Create("next", name);
+        using var sendStarted = new ManualResetEventSlim();
+        using var disposeStarted = new ManualResetEventSlim();
+        using var sendCompleted = new ManualResetEventSlim();
+        Assert.True(owner.TryAcquire());
+        var releasedDuringSend = false;
+        var sendThread = new Thread(() => owner.TryRun(() =>
+        {
+            sendStarted.Set();
+            if (disposeStarted.Wait(TimeSpan.FromSeconds(5)))
+            {
+                var deadline = Environment.TickCount64 + 100;
+                while (Environment.TickCount64 < deadline)
+                {
+                    releasedDuringSend |= !owner.IsOwner;
+                    Thread.Yield();
+                }
+            }
+            else
+            {
+                releasedDuringSend = true;
+            }
+
+            sendCompleted.Set();
+        })) { IsBackground = true };
+
+        sendThread.Start();
+        Assert.True(sendStarted.Wait(TimeSpan.FromSeconds(5)));
+        disposeStarted.Set();
+        owner.Dispose();
+
+        Assert.True(sendCompleted.IsSet);
+        Assert.False(releasedDuringSend);
+        Assert.True(sendThread.Join(TimeSpan.FromSeconds(5)));
+        Assert.True(next.TryAcquire());
     }
 
     [Fact]

@@ -13,16 +13,19 @@ namespace Haptics.Tray;
 /// </summary>
 internal sealed class TrayContext : ApplicationContext, ITrayHost
 {
+    private const string OutputPausedStatus = "Paused — another Haptics Everywhere engine owns output.";
     private readonly NotifyIcon _icon = new() { Visible = true };
     private readonly ContextMenuStrip _menu = new();
     private readonly ControllerBank _bank = new();
     private readonly System.Windows.Forms.Timer _foreground = new() { Interval = 1000 };
     private ObservationPipeline? _pipeline;
+    private OutputOwnership? _outputOwnership;
     private CooperativeServer? _cooperation;
     private SettingsWindow? _window;
     private readonly ConcurrentQueue<DeviceChangeEvent> _deviceChanges = new();
     private readonly ConcurrentQueue<ControllerLostEvent> _lostControllers = new();
     private readonly ControllerRefresh _controllerRefresh = new(() => Task.Run(ControllerDiscovery.Discover));
+    private bool _pausedForOtherOwner;
 
     public TrayContext()
     {
@@ -83,6 +86,13 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     private void PollStartupPriming()
     {
         var changed = false;
+        if (_pausedForOtherOwner && Settings.Enabled && _outputOwnership?.TryAcquire() == true)
+        {
+            _pausedForOtherOwner = false;
+            DiscoveryStatus = "Output resumed after the other engine released ownership.";
+            Apply();
+        }
+
         while (_lostControllers.TryDequeue(out var lost))
         {
             if (HandleControllerLoss(_bank, _controllerRefresh, lost))
@@ -116,13 +126,6 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             changed = true;
         }
 
-        if (changed)
-        {
-            _bank.ApplyTo(_pipeline);
-            UpdateIcon();
-            Changed?.Invoke(this, EventArgs.Empty);
-        }
-
         if (showFallback)
         {
             if (result is null)
@@ -131,6 +134,23 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             }
 
             ShowSettings(startup: true);
+        }
+
+        if (_pausedForOtherOwner && DiscoveryStatus != OutputPausedStatus)
+        {
+            DiscoveryStatus = OutputPausedStatus;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            _bank.ApplyTo(_pipeline);
+            UpdateIcon();
+        }
+
+        if (changed)
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -149,25 +169,62 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     {
         var saved = RevokeAndSave(Settings, _pipeline, Settings.Save);
         _pipeline = saved.Pipeline;
+        if (!Settings.Enabled)
+        {
+            _outputOwnership?.Dispose();
+            _outputOwnership = null;
+            _pausedForOtherOwner = false;
+        }
+        else if (_pipeline is not null && _outputOwnership?.IsOwner != true)
+        {
+            _pipeline.Dispose();
+            _pipeline = null;
+            _outputOwnership?.Dispose();
+            _outputOwnership = null;
+        }
+
         if (Settings.Enabled && _pipeline is null)
         {
-            _pipeline = new ObservationPipeline(Settings.ToPolicy(), new PipelineOptions { Route = OutputRoutes.CachedController });
-            _pipeline.Event += e =>
+            _outputOwnership ??= OutputOwnership.Create("Tray");
+            _pausedForOtherOwner = !_outputOwnership.TryAcquire();
+            if (!_pausedForOtherOwner)
             {
-                if (e is DeviceChangeEvent device)
+                try
                 {
-                    _deviceChanges.Enqueue(device);
+                    _pipeline = new ObservationPipeline(Settings.ToPolicy(),
+                        new PipelineOptions { Route = OutputRoutes.CachedController, OutputOwnership = _outputOwnership });
+                    _pipeline.Event += e =>
+                    {
+                        if (e is DeviceChangeEvent device)
+                        {
+                            _deviceChanges.Enqueue(device);
+                        }
+                        else if (e is ControllerLostEvent lost)
+                        {
+                            _lostControllers.Enqueue(lost);
+                        }
+                    };
+                    _pipeline.Start();
+                    _controllerRefresh.Request();
                 }
-                else if (e is ControllerLostEvent lost)
+                catch
                 {
-                    _lostControllers.Enqueue(lost);
+                    _pipeline?.Dispose();
+                    _pipeline = null;
+                    _outputOwnership.Dispose();
+                    _outputOwnership = null;
+                    throw;
                 }
-            };
-            _pipeline.Start();
-            _controllerRefresh.Request();
+            }
+            else
+            {
+                DiscoveryStatus = OutputPausedStatus;
+            }
         }
+
         if (_pipeline is not null)
         {
+            _pausedForOtherOwner = false;
             _pipeline.Policy.Config = Settings.ToPolicy();
             _pipeline.Policy.ConsentGiven = true; // Launching the sample is the opt-in.
             _pipeline.Policy.OutputRouteVerified = true;
@@ -175,7 +232,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             _bank.ApplyTo(_pipeline);
         }
 
-        var wantCooperation = Settings.Enabled && Settings.CooperationEnabled;
+        var wantCooperation = Settings.Enabled && !_pausedForOtherOwner && Settings.CooperationEnabled;
         if (wantCooperation && _cooperation is null)
         {
             _cooperation = new CooperativeServer((waveform, pid) => _pipeline?.SubmitCooperative(waveform, pid));
@@ -290,23 +347,31 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
 
     private void UpdateIcon()
     {
-        var text = !Settings.Enabled ? "Haptics Everywhere: Off"
-            : !_bank.Any ? "Haptics Everywhere: On (needs prime)"
-            : $"Haptics Everywhere: On ({_bank.Describe()})";
+        var text = $"Haptics Everywhere: {StatusDescription(Settings.Enabled, _pausedForOtherOwner, _bank.Any, _bank.Describe())}";
         _icon.Text = text.Length > 63 ? text[..63] : text;
         var old = _icon.Icon;
-        _icon.Icon = AppIcon.ForTray(!Settings.Enabled ? TrayState.Off : !_bank.Any ? TrayState.NeedsPrime : TrayState.Ready);
+        _icon.Icon = AppIcon.ForTray(!Settings.Enabled || _pausedForOtherOwner
+            ? TrayState.Off
+            : !_bank.Any ? TrayState.NeedsPrime : TrayState.Ready);
         old?.Dispose();
     }
+
+    internal static string StatusDescription(bool enabled, bool paused, bool primed, string devices) =>
+        !enabled ? "Off"
+            : paused ? "Paused — another engine owns output"
+            : !primed ? "On (needs prime)"
+            : $"On ({devices})";
 
     private void BuildMenu()
     {
         _menu.Items.Clear();
-        _menu.Items.Add(new ToolStripLabel(!_bank.Any && Settings.Enabled
+        _menu.Items.Add(new ToolStripLabel(_pausedForOtherOwner
+            ? $"Haptics Everywhere — {StatusDescription(Settings.Enabled, true, _bank.Any, _bank.Describe())}"
+            : !_bank.Any && Settings.Enabled
             ? "Haptics Everywhere — move your mouse or touchpad over this menu"
             : $"Haptics Everywhere — {_bank.Describe()}") { Font = new Font(_menu.Font, FontStyle.Bold) });
         _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add(Item("On", () =>
+        _menu.Items.Add(Item(_pausedForOtherOwner ? "On (paused)" : "On", () =>
         {
             Settings.Enabled = !Settings.Enabled;
             Apply();
@@ -371,6 +436,8 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             _window?.Close();
             _pipeline?.Dispose();
             _pipeline = null;
+            _outputOwnership?.Dispose();
+            _outputOwnership = null;
             _cooperation?.Dispose();
             _icon.Visible = false;
             ExitThread();
@@ -399,6 +466,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
         {
             _window?.Close();
             _pipeline?.Dispose();
+            _outputOwnership?.Dispose();
             _cooperation?.Dispose();
             _icon.Dispose();
             _menu.Dispose();

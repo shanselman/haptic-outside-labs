@@ -9,10 +9,12 @@ public sealed class OutputOwnership : IDisposable
     private static readonly ThreadLocal<HashSet<string>> s_ownedNames =
         new(() => new HashSet<string>(StringComparer.Ordinal));
     private readonly object _sync = new();
+    private readonly object _sendSync = new();
     private readonly Mutex _lease;
     private readonly string _leaseName;
     private int _owns;
     private int _disposed;
+    private int _acceptingOutput = 1;
     private int _owningThreadId;
     private Thread? _owningThread;
 
@@ -80,6 +82,29 @@ public sealed class OutputOwnership : IDisposable
         trial.Context["outputOwnershipGranted"] = IsOwner;
     }
 
+    public bool TryRun(Action send)
+    {
+        ArgumentNullException.ThrowIfNull(send);
+        lock (_sendSync)
+        {
+            if (!IsOwner || Volatile.Read(ref _acceptingOutput) == 0)
+            {
+                return false;
+            }
+
+            send();
+            return true;
+        }
+    }
+
+    public void StopSending()
+    {
+        lock (_sendSync)
+        {
+            Volatile.Write(ref _acceptingOutput, 0);
+        }
+    }
+
     public void Dispose()
     {
         lock (_sync)
@@ -89,21 +114,25 @@ public sealed class OutputOwnership : IDisposable
                 return;
             }
 
-            if (IsOwner && _owningThreadId != Environment.CurrentManagedThreadId)
+            lock (_sendSync)
             {
-                throw new InvalidOperationException("Output ownership must be released by the thread that acquired it.");
-            }
+                if (IsOwner && _owningThreadId != Environment.CurrentManagedThreadId)
+                {
+                    throw new InvalidOperationException("Output ownership must be released by the thread that acquired it.");
+                }
 
-            if (IsOwner)
-            {
-                _lease.ReleaseMutex();
-                s_ownedNames.Value!.Remove(_leaseName);
-                Volatile.Write(ref _owns, 0);
-                Volatile.Write(ref _owningThread, null);
-            }
+                Volatile.Write(ref _acceptingOutput, 0);
+                if (IsOwner)
+                {
+                    _lease.ReleaseMutex();
+                    s_ownedNames.Value!.Remove(_leaseName);
+                    Volatile.Write(ref _owns, 0);
+                    Volatile.Write(ref _owningThread, null);
+                }
 
-            _disposed = 1;
-            _lease.Dispose();
+                _disposed = 1;
+                _lease.Dispose();
+            }
         }
     }
 }

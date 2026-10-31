@@ -481,13 +481,13 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
     private void FeelIt(string waveform, bool appsOnly)
     {
+        if (TryCooperativePreview(appsOnly, waveform, w => CooperativeServer.Send(w)))
+        {
+            return;
+        }
+
         if (!TryRunOwnedOutput(() =>
         {
-            if (appsOnly && CooperativeServer.Send(waveform))
-            {
-                return;
-            }
-
             var attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, waveform, Intensity);
             if (!attempt.Accepted)
             {
@@ -497,6 +497,12 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         {
             Felt("Output paused — another Haptics Everywhere engine owns haptics.");
         }
+    }
+
+    internal static bool TryCooperativePreview(bool appsOnly, string waveform, Func<string, bool> send)
+    {
+        ArgumentNullException.ThrowIfNull(send);
+        return appsOnly && send(waveform);
     }
 
     internal bool TryRunOwnedOutput(Action output, OutputOwnership? ownership = null)
@@ -517,8 +523,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         var releaseWhenDone = _pipeline is null;
         try
         {
-            output();
-            return true;
+            return _outputOwnership?.TryRun(output) == true;
         }
         finally
         {
