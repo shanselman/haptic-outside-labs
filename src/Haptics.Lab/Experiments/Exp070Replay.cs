@@ -33,6 +33,7 @@ public static class Exp070Replay
         ["dwell-lookup-150ms.jsonl"] = (1, 1),
         ["strip-edge-destination-safety.jsonl"] = (7, 7),
         ["cooperative-context-safety.jsonl"] = (1, 1),
+        ["caption-close-hover.jsonl"] = (3, 3),
     };
 
     public static string Run(string? outDir, string? traceDir)

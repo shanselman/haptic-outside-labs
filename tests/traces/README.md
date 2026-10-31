@@ -44,6 +44,7 @@ Each line is one event:
 | `dwell-lookup-150ms` | 1 Hover at 170 ms; a slow provider lands on the next tick without restarting dwell |
 | `strip-edge-destination-safety` | Step + 5 Hover + 1 safe Collide; protected/excluded/unknown/disabled/offscreen exits are silent |
 | `cooperative-context-safety` | 1 safe Align; protected/disabled/offscreen/excluded/error contexts stay silent |
+| `caption-close-hover` | 3 Hover (Close without group Step, Maximize, Close after cooldown); primary-down drag onto Close is silent; Close hover Off: 1 Hover |
 
 Run one: `haptics-lab replay tests/traces/menu-nested.jsonl --profile Quiet`. Run all as an experiment: `haptics-lab run EXP-070`.
 Replay ticks the interpreter every 10 ms while an arrival is pending, the same way the live pipeline ticks every 15 ms:

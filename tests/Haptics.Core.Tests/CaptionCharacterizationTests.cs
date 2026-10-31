@@ -5,12 +5,11 @@ namespace Haptics.Core.Tests;
 public class CaptionCharacterizationTests
 {
     [Theory]
-    [InlineData("close", 280)]
     [InlineData("maximize", 240)]
     [InlineData("minimize", 200)]
     public void FirstCaptionArrivalIsStepAndCoalescesHover(string caption, int left)
     {
-        // Current behavior; lane F changes Close only. The label is fixture identity, never UIA Name.
+        // Baseline for caption buttons other than Close (lane F changed Close only). The label is fixture identity, never UIA Name.
         var output = TraceReplay.Run([
             """{"type":"process","pid":100,"name":"notepad"}""",
             $$"""{"type":"pointer","t":0,"x":{{left + 20}},"y":15,"fg":100}""",
@@ -22,6 +21,22 @@ public class CaptionCharacterizationTests
         Assert.Equal("CrossGroupBoundary", haptic.EventKind);
         Assert.Contains(output.Decisions, d => d.EventKind == "EnterControl" &&
             d.Outcome == PolicyOutcome.Suppressed && d.Reason == "coalesced-with-group-boundary");
+    }
+
+    [Fact]
+    public void FirstCloseArrivalIsOneHoverWithoutGroupStep()
+    {
+        // Lane F: was Step (CrossGroupBoundary) with the Hover coalesced; now one EnterControl Hover.
+        var output = TraceReplay.Run([
+            """{"type":"process","pid":100,"name":"notepad"}""",
+            """{"type":"pointer","t":0,"x":300,"y":15,"fg":100}""",
+            """{"type":"element","t":2,"pid":100,"controlType":"Button","rid":"close","bounds":[280,0,40,30],"parentType":"TitleBar","parentRid":"caption","parentBounds":[0,0,320,30]}""",
+        ]);
+
+        var haptic = Assert.Single(output.Haptic);
+        Assert.Equal("Hover", haptic.Waveform);
+        Assert.Equal("EnterControl", haptic.EventKind);
+        Assert.DoesNotContain(output.Decisions, d => d.EventKind == "CrossGroupBoundary");
     }
 
     [Fact]
