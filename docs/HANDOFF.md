@@ -81,6 +81,19 @@ The fixes are part of the v0.4.0 source history. This handoff itself is a later 
   and a later launch remains usable. `ShowcaseLaunchTests` exercises cancellation, missing executable,
   access denied and unexpected bugs through an inert launch helper. No security prompt is bypassed.
 
+## Lane G: exclusive output ownership (in progress)
+
+`OutputOwnership` uses a nonblocking, session-scoped named mutex shared by the Tray, Showcase, and physical
+experiments. The production pipeline checks ownership immediately before its native send; Showcase direct
+previews acquire the same lease and release it after a one-shot preview when its engine is off. EXP-010
+and EXP-020 add the owner and grant state to method metadata and every trial's context.
+
+- [ ] Finish the Showcase/Lab integration and hardware-free ownership tests in this branch.
+- [ ] Wire TrayContext to the shared lease and show a clear paused state only after Lane E's overlapping
+  TrayContext change merges; keep the Tray's existing passive defaults and output policy unchanged.
+- [ ] Rebase onto the coordinator-provided main SHA, then validate the Tray/Showcase coexistence and
+  trial-provenance behavior. Do not run physical output experiments.
+
 ## Automatic priming: retain the existing checklist
 
 The authoritative pending tasks and operator observations are in

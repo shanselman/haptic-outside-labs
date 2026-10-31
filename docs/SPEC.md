@@ -238,6 +238,7 @@ Implement equivalent strongly typed models for:
 - All high-volume input callbacks must return promptly: no synchronous UIA calls, disk writes, sleeps, haptic I/O, or process enumeration in a raw input or hook callback.
 - UIA and WinEvent subscriptions use their required, isolated message-loop/COM threading semantics.
 - Output calls run on the thread required by the selected output API, not arbitrarily on a worker from the .NET thread pool.
+- The Tray, Showcase, and physical lab experiments share a session-scoped output lease. A pipeline or direct send without that lease stays silent; the Tray and Showcase visibly report when output is paused, and trial provenance records the owner and whether ownership was granted.
 - An inaccessible or unresponsive provider cannot stall input observation or the dashboard.
 - Each semantic intent has a deadline; stale intent is discarded instead of late-buzzed.
 - Feedback always passes through the **single global arbitration/rate-limit policy**, including app-specific adapters.

@@ -36,6 +36,7 @@ public sealed class PipelineOptions
 {
     public IClock Clock { get; init; } = MonotonicClock.Instance;
     public IPipelineOutputSink? OutputSink { get; init; }
+    public OutputOwnership? OutputOwnership { get; init; }
     public MessageWindowKind WindowKind { get; init; } = MessageWindowKind.MessageOnly;
     public string Route { get; set; } = OutputRoutes.DryRun;
     public UiaClientOptions Uia { get; init; } = new();
@@ -483,6 +484,12 @@ public sealed class ObservationPipeline : IDisposable
     {
         // Raw-input thread. Drop, never replay, late sensations.
         var now = Now;
+        if (_opt.OutputOwnership is { IsOwner: false })
+        {
+            Publish(new NoteEvent(now, "skip:output-owned-elsewhere", null));
+            return;
+        }
+
         if (Policy.Config.Mode != HapticsMode.On || !Policy.ConsentGiven || !Policy.OutputRouteVerified)
         {
             Publish(new NoteEvent(now, "skip:output-not-authorized", null));

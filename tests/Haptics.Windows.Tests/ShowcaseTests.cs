@@ -135,6 +135,35 @@ public class ShowcaseTests
     });
 
     [Fact]
+    public void ShowcaseStaysPausedWhenAnotherOutputOwnerHoldsTheLease() => OnStaThread(() =>
+    {
+        var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
+        using var owner = OutputOwnership.Create("tray", name);
+        Assert.True(owner.TryAcquire());
+        using var window = new ShowcaseWindow();
+        var contender = OutputOwnership.Create("Showcase", name);
+        var started = false;
+        Assert.False(window.TryStartEngine(_ => started = true, contender));
+        Assert.False(started);
+        Assert.False(window.EngineSwitch.IsChecked);
+        Assert.Contains("another engine owns haptics", window.StatusText.Text, StringComparison.OrdinalIgnoreCase);
+    });
+
+    [Fact]
+    public void OneShotFeelReleasesOutputOwnershipWhenEngineIsOff() => OnStaThread(() =>
+    {
+        var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
+        using var window = new ShowcaseWindow();
+        using var preview = OutputOwnership.Create("Showcase", name);
+        using var nextOwner = OutputOwnership.Create("tray", name);
+        var outputSent = false;
+
+        Assert.True(window.TryRunOwnedOutput(() => outputSent = true, preview));
+        Assert.True(outputSent);
+        Assert.True(nextOwner.TryAcquire());
+    });
+
+    [Fact]
     public void DeviceRemovalClearsShowcaseMappingForReconnectPriming() => OnStaThread(() =>
     {
         using var window = new ShowcaseWindow();
