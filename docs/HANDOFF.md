@@ -94,7 +94,7 @@ On setting remains enabled.
 - [x] Wire TrayContext after Lane E's lost-controller change, preserving its passive defaults and output policy.
 - [x] Validate ownership, paused state, bounded abandoned-owner recovery, pipeline denial, one-shot preview
   under contention and trial provenance with hardware-free tests. Physical output experiments were not run.
-- [ ] Rebase after any main changes, then check exact-head CI before READY.
+- [x] Rebase after any main changes, then check exact-head CI before READY.
 
 ## Automatic priming: retain the existing checklist
 

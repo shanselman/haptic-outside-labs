@@ -137,6 +137,38 @@ public class OutputOwnershipTests
     }
 
     [Fact]
+    public void DisposeReleasesLeaseWhileOwnerThreadStaysAlive()
+    {
+        var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";
+        using var owner = OutputOwnership.Create("tray", name);
+        using var next = OutputOwnership.Create("Showcase", name);
+        using var disposed = new ManualResetEventSlim();
+        using var exit = new ManualResetEventSlim();
+        var acquired = false;
+        var ownerThread = new Thread(() =>
+        {
+            acquired = owner.TryAcquire();
+            owner.Dispose();
+            disposed.Set();
+            exit.Wait(TimeSpan.FromSeconds(10));
+        }) { IsBackground = true };
+
+        ownerThread.Start();
+        try
+        {
+            Assert.True(disposed.Wait(TimeSpan.FromSeconds(5)));
+            Assert.True(acquired);
+            Assert.True(TryAcquireWithin(next, TimeSpan.FromSeconds(2)));
+            Assert.True(ownerThread.IsAlive);
+        }
+        finally
+        {
+            exit.Set();
+            Assert.True(ownerThread.Join(TimeSpan.FromSeconds(5)));
+        }
+    }
+
+    [Fact]
     public void AbandonedLeaseCanBeAcquiredAfterOwnerThreadExits()
     {
         var name = $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}";

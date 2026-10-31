@@ -193,6 +193,14 @@ public class ShowcaseTests
     });
 
     [Fact]
+    public void SuccessfulCooperativePreviewDoesNotAlsoRunOneShot()
+    {
+        var oneShotSent = false;
+        ShowcaseWindow.SendPreview("Align", true, _ => true, _ => oneShotSent = true);
+        Assert.False(oneShotSent);
+    }
+
+    [Fact]
     public void OneShotFeelDoesNotAcquireOutputOwnershipWhenEngineIsOff() => OnStaThread(() =>
     {
         using var nextOwner = OutputOwnership.Create("tray", $@"Local\HapticsEverywhereTest-{Guid.NewGuid():N}");
