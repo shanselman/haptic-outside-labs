@@ -1,6 +1,6 @@
 # Publishes the Haptics Everywhere sample as self-contained, single-file zips (no .NET install needed).
 #   .\scripts\publish.ps1                          -> publish\HapticsEverywhere-<version>-win-arm64.zip and -win-x64.zip
-#   .\scripts\publish.ps1 -Version 0.4.0 -NoZip    -> publish\stage-<rid> only (the release workflow signs, then zips)
+#   .\scripts\publish.ps1 -Version 0.5.0 -NoZip    -> publish\stage-<rid> only (the release workflow signs, then zips)
 param(
     [string]$Version = ([xml](Get-Content (Join-Path (Split-Path -Parent $PSScriptRoot) 'Directory.Build.props'))).Project.PropertyGroup.Version,
     [switch]$NoZip
@@ -30,7 +30,8 @@ haptics-tray.exe   (the app)
   Big ribbon buttons -> firmer click. New toolbar / ribbon group / tab or option -> detent.
   Sliding off the end of a toolbar or tab strip -> edge bump. Flying past things stays quiet.
   Click the tray icon (it may be under the ^ overflow) for settings: Style (Quiet / Focused / Everything),
-  Intensity, excluded apps, start with Windows. Right-click it for the quick menu: On/Off, Exclude app, Quit.
+  Close button hover, More is better (denser ticks on fast sweeps), Intensity, excluded apps, start with Windows.
+  Right-click it for the quick menu: On/Off, Exclude app, Quit.
 
 haptics-lab.exe    (the Showcase)
   The Fluent Showcase: feel each sensation, try real controls, see why each tick happened (or didn't),

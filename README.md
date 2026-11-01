@@ -17,8 +17,9 @@ moved to a new group or choice; an edge tells you that you reached the end of a 
 
 ## Get it
 
-**New in 0.4:** the Fluent Showcase, automatic controller lookup without a startup wiggle, and rediscovery
-after device reconnect. This remains a proof-of-concept tester build; the
+**New in 0.5:** each haptic goes only to the mouse or touchpad that caused it, a light tick when you land on a
+window's Close button (switch in Settings), an optional **More is better** setting for denser feedback, and an Off
+that cancels queued haptics at once. This remains a proof-of-concept tester build; the
 [validation checklist](docs/AUTOMATIC_PRIMING_TEST_PLAN.md) records the known results and remaining checks.
 
 Download `HapticsEverywhere-<version>-win-arm64.zip` (Snapdragon Surfaces) or `-win-x64.zip` from
