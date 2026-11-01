@@ -921,6 +921,7 @@ The lab may expose detailed per-effect waveform experimentation. The tray should
 - **On** — semantic augmentation with visible active device and ability to stop immediately.
 - **Intensity:** Low / Medium / Strong or slider, always respecting Windows device haptic settings and user preference.
 - **Effect profile:** Quiet / Balanced / Experimental; Experimental must explicitly warn of additional density/latency and potential duplication.
+- **More is better (opt-in):** an independent setting for users who prefer denser feedback. Remove landing and per-app density thinning and allow up to 25 pulses per second, while retaining the selected style, Off switch, safety suppressions and app exclusions.
 - **Per-app exclusions:** easy to add current app; protected and elevated UIs suppressed by default.
 - **One-click kill switch:** visible from the tray and available even when a provider hangs.
 

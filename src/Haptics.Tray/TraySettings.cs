@@ -9,6 +9,7 @@ public sealed class TraySettings
     public bool Enabled { get; set; } = true;
     public EffectProfile Style { get; set; } = EffectProfile.Focused;
     public double IntensityScale { get; set; } = 0.8;
+    public bool MoreIsBetter { get; set; }
 
     public bool CloseButtonHover { get; set; } = true;
 
@@ -75,6 +76,16 @@ public sealed class TraySettings
         p.CloseButtonHoverEnabled = CloseButtonHover;
         p.CooperativeEnabled = CooperationEnabled;
         p.ExcludedProcesses.AddRange(ExcludedProcesses);
+        if (MoreIsBetter)
+        {
+            p.LandingSpeedPxPerSec = 0;
+            p.DensityLandsPer2s = 0;
+            p.GlobalMaxPulsesPerSecond = 25;
+            p.MaxPulsesPerMinute = 1500;
+            p.MinimumGlobalSpacingMs = 40;
+            p.SameElementReentryCooldownMs = 40;
+        }
+
         return p;
     }
 }

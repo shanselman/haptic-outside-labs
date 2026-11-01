@@ -89,6 +89,78 @@ public class TrayDefaultsTests
     }
 
     [Fact]
+    public void MoreIsBetterEmitsOnFastSweepsWithoutChangingSafetySuppressions()
+    {
+        var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
+        var fastSweep = Path.Combine(traces, "toolbar-fast-flick.jsonl");
+        var settings = new TraySettings { MoreIsBetter = true };
+        var config = settings.ToPolicy();
+        Assert.Equal(0, config.LandingSpeedPxPerSec);
+        Assert.Equal(0, config.DensityLandsPer2s);
+        Assert.Equal(25, config.GlobalMaxPulsesPerSecond);
+        Assert.Equal(1500, config.MaxPulsesPerMinute);
+        Assert.Equal(40, config.MinimumGlobalSpacingMs);
+        Assert.Equal(40, config.SameElementReentryCooldownMs);
+
+        var focused = TraceReplay.Run(fastSweep, new TraySettings().ToPolicy());
+        Assert.Equal(1, focused.Emitted);
+        var replay = TraceReplay.Run(fastSweep, config);
+        Assert.Equal(5, replay.Emitted);
+
+        Assert.Equal(0, TraceReplay.Run(Path.Combine(traces, "security-password.jsonl"), config).Emitted);
+        Assert.Equal(0, TraceReplay.Run(Path.Combine(traces, "excluded-app.jsonl"), config).Emitted);
+        Assert.Equal(0, TraceReplay.Run(Path.Combine(traces, "security-password.jsonl"),
+            new TraySettings { Enabled = false, MoreIsBetter = true }.ToPolicy()).Emitted);
+        Assert.Empty(TraceReplay.Run(Path.Combine(traces, "caption-close-hover.jsonl"),
+            new TraySettings { Style = EffectProfile.Quiet, MoreIsBetter = true }.ToPolicy()).Haptic);
+    }
+
+    [Fact]
+    public void MoreIsBetterDefaultsOffAndExistingSettingsStayFocused()
+    {
+        var settings = new TraySettings();
+        Assert.False(settings.MoreIsBetter);
+        var config = settings.ToPolicy();
+        Assert.Equal(EffectProfile.Focused, config.Profile);
+        Assert.Equal(1200, config.LandingSpeedPxPerSec);
+        Assert.Equal(10, config.DensityLandsPer2s);
+        Assert.Equal(12, config.GlobalMaxPulsesPerSecond);
+        Assert.Equal(600, config.MaxPulsesPerMinute);
+        Assert.Equal(40, config.MinimumGlobalSpacingMs);
+        Assert.Equal(200, config.SameElementReentryCooldownMs);
+
+        var oldSettings = JsonSerializer.Deserialize<TraySettings>("""{"style":"Focused"}""", HapticsJson.Indented)!;
+        Assert.False(oldSettings.MoreIsBetter);
+        Assert.True(JsonSerializer.SerializeToElement(new TraySettings { MoreIsBetter = true }, HapticsJson.Indented)
+            .GetProperty("moreIsBetter").GetBoolean());
+    }
+
+    [Fact]
+    public void MoreIsBetterAllowsTwentyFivePulsesPerSecond()
+    {
+        var config = new TraySettings { MoreIsBetter = true }.ToPolicy();
+        var policy = new HapticPolicy(config, _ => "app")
+        {
+            ConsentGiven = true,
+            OutputRouteVerified = true,
+        };
+        var emitted = 0;
+        for (var i = 0; i < 50; i++)
+        {
+            var t = 40 + i * 20.0;
+            var key = $"fast-{i}";
+            var element = new ElementSnapshot { ProcessId = 1, ControlType = "Button", RuntimeIdHash = key };
+            var e = new SemanticEvent(SemanticEventKind.EnterControl, i + 1, t, t, 1, "Button", key, null, 0.9, [], false, 0, element);
+            if (policy.Evaluate(e, t).Outcome == PolicyOutcome.Emit)
+            {
+                emitted++;
+            }
+        }
+
+        Assert.Equal(25, emitted);
+    }
+
+    [Fact]
     public void OffMeansOff()
     {
         var cfg = new TraySettings { Enabled = false }.ToPolicy();

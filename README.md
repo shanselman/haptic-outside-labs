@@ -74,6 +74,8 @@ Four sensations, one meaning each, so they become a language rather than a buzz:
 - **Focused** (default): Quiet plus a tick when you land on a control.
 - **Everything:** every crossing, dense; good for demos.
 
+The separate **More is better** setting is off by default. When on, it removes fast-landing and per-app density thinning and raises the limit to 25 pulses per second; the selected style, Off switch, password protections and app exclusions still apply. UI Automation sampling can still skip controls during very fast movement.
+
 Intensity runs Low → Max. Touchpads get a boost, because they feel lighter than mice at the same strength.
 
 ## How it works (automatic startup, with priming as a fallback)

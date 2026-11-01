@@ -60,6 +60,19 @@ public class TrayWindowTests
         var host = new FakeHost();
         var w = new SettingsWindow(host, autoClose: false);
 
+        var more = Assert.IsType<Wpf.Ui.Controls.ToggleSwitch>(w.FindName("MoreIsBetterSwitch"));
+        Assert.Equal("More is better", System.Windows.Automation.AutomationProperties.GetName(more));
+        Assert.False(more.IsChecked);
+        Toggle(more);
+        Assert.True(host.Settings.MoreIsBetter);
+        Assert.Equal(1, host.Applied);
+        Toggle(more);
+        Assert.False(host.Settings.MoreIsBetter);
+        Assert.Equal(2, host.Applied);
+        host.Settings.MoreIsBetter = true;
+        host.Raise();
+        Assert.True(more.IsChecked);
+
         w.StyleBox.SelectedIndex = 2;
         Assert.Equal(TraySettings.Styles[2], host.Settings.Style);
         Assert.StartsWith("Every crossing", w.StyleHint.Text);
@@ -72,7 +85,7 @@ public class TrayWindowTests
         Assert.False(host.Settings.CooperationEnabled);
         Toggle(w.StartupSwitch);
         Assert.True(host.StartWithWindows);
-        Assert.Equal(4, host.Applied);
+        Assert.Equal(6, host.Applied);
 
         Assert.Equal(System.Windows.Visibility.Visible, w.ExcludeButton.Visibility);
         Click(w.ExcludeButton);

@@ -100,6 +100,15 @@
                         MinWidth="150"
                         AutomationProperties.Name="Style" />
                 </ui:CardControl>
+                <ui:CardControl Margin="0,0,0,4" Icon="{ui:SymbolIcon Options24}">
+                    <ui:CardControl.Header>
+                        <StackPanel>
+                            <ui:TextBlock FontTypography="Body" Text="More is better" />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="More ticks on fast sweeps, up to 25 per second. Style and safety rules still apply." />
+                        </StackPanel>
+                    </ui:CardControl.Header>
+                    <ui:ToggleSwitch x:Name="MoreIsBetterSwitch" AutomationProperties.Name="More is better" />
+                </ui:CardControl>
                 <ui:CardControl Margin="0,0,0,4" Icon="{ui:SymbolIcon TopSpeed24}">
                     <ui:CardControl.Header>
                         <StackPanel>
