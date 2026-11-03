@@ -1,7 +1,7 @@
 name: release
 
 # Signed release, adapted from shanselman/WindowsEdgeLight's build.yml (Azure Trusted Signing). See docs/RELEASING.md.
-# Push a tag like v0.3.0 to publish a GitHub release. Run it by hand to get signed zips as a build artifact only.
+# Push a tag like v0.3.0 to publish a GitHub release. Run it by hand to get signed downloads as a build artifact only.
 on:
   push:
     tags: ['v*']
@@ -15,6 +15,7 @@ jobs:
     runs-on: windows-latest
     env:
       DOTNET_NOLOGO: "true"
+      MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
     steps:
       - name: Check signing secrets
         shell: pwsh
@@ -63,6 +64,41 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
 
+      - name: Package optional MSIX bundle
+        if: env.MSIX_PUBLISHER != ''
+        shell: pwsh
+        run: |
+          # MSIX uses a numeric version; manual CI builds use the base version, not the -ci suffix.
+          $version = $env:VERSION.Split('-')[0]
+          ./scripts/package-msix.ps1 -Version $version -Publisher $env:MSIX_PUBLISHER
+
+      - name: Sign optional MSIX bundle with Trusted Signing
+        if: env.MSIX_PUBLISHER != ''
+        uses: azure/trusted-signing-action@v1
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://wus2.codesigning.azure.net/
+          signing-account-name: hanselman
+          certificate-profile-name: WindowsEdgeLight
+          files-folder: ${{ github.workspace }}\publish
+          files-folder-filter: msixbundle
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify optional MSIX bundle signature
+        if: env.MSIX_PUBLISHER != ''
+        shell: pwsh
+        run: |
+          $bundle = @(Get-ChildItem publish -Filter *.msixbundle)
+          if ($bundle.Count -ne 1) { throw 'Expected exactly one MSIX bundle.' }
+          $signature = Get-AuthenticodeSignature $bundle[0].FullName
+          if ($signature.Status -ne 'Valid') {
+            throw "MSIX signature verification failed: $($signature.Status): $($signature.StatusMessage)"
+          }
+
       - name: Zip
         shell: pwsh
         run: |
@@ -73,13 +109,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: HapticsEverywhere-${{ env.VERSION }}
-          path: publish/*.zip
+          path: |
+            publish/*.zip
+            publish/*.msixbundle
 
       - name: Create release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: publish/*.zip
+          files: |
+            publish/*.zip
+            publish/*.msixbundle
           generate_release_notes: true
           body: |
             ## Haptics Everywhere ${{ env.VERSION }}
@@ -88,6 +128,11 @@ jobs:
             |---|---|
             | `HapticsEverywhere-${{ env.VERSION }}-win-arm64.zip` | Snapdragon / ARM64 PCs (most current Surfaces) |
             | `HapticsEverywhere-${{ env.VERSION }}-win-x64.zip` | Intel / AMD PCs |
+
+            When present, `HapticsEverywhere-<numeric-version>.msixbundle` is an experimental installer for both
+            architectures: Windows selects the right package and adds Start menu entries for the tray and Showcase.
+            ZIPs remain available for portable use. See [MSIX notes](https://github.com/shanselman/haptic-outside-labs/blob/main/docs/RELEASING.md#optional-msix-bundle)
+            for limitations and the packaged-app validation checklist.
 
             Signed and self-contained: unzip, run `haptics-tray.exe`, and wiggle your haptic mouse or touchpad over its
             window once. Needs Windows 11 (build 26100+) and a haptic mouse or touchpad. Passive only: it never moves,

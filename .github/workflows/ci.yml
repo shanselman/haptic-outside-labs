@@ -25,6 +25,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - name: MSIX packaging smoke tests (no install or signing)
+        shell: pwsh
+        run: ./scripts/test-package-msix.ps1
       - name: Build
         run: dotnet build HapticsEverywhere.slnx -c Release
       - name: Test
