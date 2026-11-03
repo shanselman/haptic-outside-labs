@@ -31,6 +31,11 @@ needed. Unzip it, then:
 | `haptics-tray.exe` | **The app.** Starts On and tries experimental automatic device lookup. If a controller is found, use Windows without a priming window. Otherwise Settings opens: move your haptic device over it once. Click the tray icon for settings (Style, Intensity, excluded apps, start with Windows); right-click it for the quick menu. |
 | `haptics-lab.exe` | **The Showcase.** Feel each sensation, try it on real controls, see *why* each tick happened (or didn't), and blind-compare the styles. Its header has an observe-only **Visual demo** toggle that ripples at the pointer wherever a cue would play, for demos without haptic hardware. Also holds the research lab. |
 
+Stable numeric-tag releases may also include an **experimental `.msixbundle` installer** covering both ARM64 and x64.
+It adds Start menu entries and a standard Installed apps uninstall; the ZIPs remain the portable option. Read the
+[MSIX limitations and validation checklist](docs/RELEASING.md#optional-msix-bundle) first, especially for
+**Start with Windows**. Automatic updates are not configured.
+
 In the Showcase, follow **Start here**: move each haptic device over the window, click **Feel it** next to Land,
 then explore the sample controls or another app while keeping the Showcase open. The status card tells you when
 a controller is captured. **Engine activity** explains decisions, not proof that a pulse was felt; Inspector shows
