@@ -17,10 +17,10 @@ moved to a new group or choice; an edge tells you that you reached the end of a 
 
 ## Get it
 
-**New in 0.5:** each haptic goes only to the mouse or touchpad that caused it, a light tick when you land on a
-window's Close button (switch in Settings), an optional **More is better** setting for denser feedback, and an Off
-that cancels queued haptics at once. This remains a proof-of-concept tester build; the
-[validation checklist](docs/AUTOMATIC_PRIMING_TEST_PLAN.md) records the known results and remaining checks.
+**New in 0.6:** a **Visual demo** in the Showcase that shows a ripple wherever a haptic would play (no haptic
+hardware needed), an optional **Show ripples** for the tray so screen recordings show what you feel, and taskbar
+buttons that tick reliably instead of eventually silencing everything. This remains a proof-of-concept tester
+build; the [validation checklist](docs/AUTOMATIC_PRIMING_TEST_PLAN.md) records the known results and remaining checks.
 
 Download `HapticsEverywhere-<version>-win-arm64.zip` (Snapdragon Surfaces) or `-win-x64.zip` from
 [**Releases**](https://github.com/shanselman/haptic-outside-labs/releases). It's self-contained, so no .NET install is
