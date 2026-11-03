@@ -74,9 +74,17 @@
                         <TextBlock x:Name="StatusHint" Margin="0,4,0,0" Style="{StaticResource Hint}"
                                    Text="Move each haptic mouse or touchpad over this window to connect it." />
                     </StackPanel>
-                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                        <TextBlock Text="Showcase engine" Margin="0,0,0,6" Style="{StaticResource Hint}" />
-                        <ui:ToggleSwitch x:Name="EngineSwitch" IsChecked="True" AutomationProperties.Name="Showcase engine" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel Margin="0,0,24,0">
+                            <TextBlock Text="Visual demo" Margin="0,0,0,6" Style="{StaticResource Hint}" />
+                            <ui:ToggleSwitch x:Name="VisualDemoSwitch" IsChecked="False"
+                                             AutomationProperties.Name="Visual demo mode"
+                                             ToolTip="No haptic device? Show a click-through ripple at the pointer wherever a haptic cue would play. Nothing is sent, even if a haptic controller is present." />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="Showcase engine" Margin="0,0,0,6" Style="{StaticResource Hint}" />
+                            <ui:ToggleSwitch x:Name="EngineSwitch" IsChecked="True" AutomationProperties.Name="Showcase engine" />
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -151,7 +159,7 @@
                                     <Run FontWeight="SemiBold" Text="2. Feel: " /><Run Text="try Land's Feel it button.  " />
                                     <Run FontWeight="SemiBold" Text="3. Explore: " /><Run Text="move slowly over the controls, then try another app." />
                                 </TextBlock>
-                                <TextBlock Style="{StaticResource Hint}" Text="No haptic device? Explore anyway. Nothing moves or clicks on your behalf. Keep the engine running for background feedback." />
+                                <TextBlock Style="{StaticResource Hint}" Text="No haptic device? Turn on Visual demo (top right) to see a ripple wherever a haptic cue would play. Nothing moves or clicks on your behalf." />
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -214,6 +222,56 @@
                             </Expander>
                         </Border>
                     </Grid>
+                </Grid>
+            </TabItem>
+            <TabItem x:Name="StageTab" Header="Stage">
+                <Grid Margin="0,12,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border Style="{StaticResource Card}" Padding="16,12" Margin="0,0,0,12">
+                        <StackPanel>
+                            <ui:TextBlock Text="Stage mode: make the invisible visible" FontTypography="Subtitle" />
+                            <TextBlock Margin="0,4,16,0" Style="{StaticResource Hint}"
+                                       Text="A visual preview of haptic intent—not proof that a device accepted or anyone felt a pulse." />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Row="1" CornerRadius="12" BorderThickness="1" BorderBrush="#263B59"
+                            Margin="0,0,0,12" ClipToBounds="True">
+                        <Grid>
+                            <Grid.Background>
+                                <RadialGradientBrush Center="0.5,0.42" GradientOrigin="0.5,0.42" RadiusX="0.75" RadiusY="0.85">
+                                    <GradientStop Color="#1C3152" Offset="0" />
+                                    <GradientStop Color="#10182B" Offset="0.55" />
+                                    <GradientStop Color="#080D1C" Offset="1" />
+                                </RadialGradientBrush>
+                            </Grid.Background>
+                            <Canvas x:Name="StageCanvas" ClipToBounds="True" IsHitTestVisible="False" />
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                <TextBlock x:Name="StageCueTitle" Text="Ready for a cue" FontSize="36" FontWeight="SemiBold"
+                                           Foreground="#F3F8FF" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="StageCueWaveform" Text="Land · Detent · Edge"
+                                           Margin="0,8,0,0" FontSize="16" Foreground="#BBD0E8"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="StageCueStatus"
+                                           Text="Turn on Visual demo (top right) to see live policy-approved cues without sending haptics."
+                                           Margin="0,8,0,0" FontSize="13" Foreground="#91A9C6"
+                                           TextAlignment="Center" TextWrapping="Wrap" MaxWidth="520" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <WrapPanel Grid.Row="2" HorizontalAlignment="Center">
+                        <ui:Button x:Name="StageLandButton" Content="Preview Land" Margin="0,0,8,0"
+                                   AutomationProperties.Name="Preview Land visual" />
+                        <ui:Button x:Name="StageBigLandButton" Content="Preview Land · big" Margin="0,0,8,0"
+                                   AutomationProperties.Name="Preview Land big visual" />
+                        <ui:Button x:Name="StageDetentButton" Content="Preview Detent" Margin="0,0,8,0"
+                                   AutomationProperties.Name="Preview Detent visual" />
+                        <ui:Button x:Name="StageEdgeButton" Content="Preview Edge"
+                                   AutomationProperties.Name="Preview Edge visual" />
+                    </WrapPanel>
                 </Grid>
             </TabItem>
             <TabItem x:Name="InspectorTab" Header="Inspector">

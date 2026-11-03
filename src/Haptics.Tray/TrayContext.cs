@@ -25,6 +25,9 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     private readonly ConcurrentQueue<DeviceChangeEvent> _deviceChanges = new();
     private readonly ConcurrentQueue<ControllerLostEvent> _lostControllers = new();
     private readonly ControllerRefresh _controllerRefresh = new(() => Task.Run(ControllerDiscovery.Discover));
+    private readonly System.Windows.Threading.Dispatcher _ui = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+    private CursorRippleOverlay? _ripple;
+    private bool _rippleUnavailable;
     private bool _pausedForOtherOwner;
 
     public TrayContext()
@@ -203,6 +206,10 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
                         {
                             _lostControllers.Enqueue(lost);
                         }
+                        else if (Settings.ShowRipples && RippleFor(e) is { } ripple)
+                        {
+                            _ui.BeginInvoke(() => ShowRipple(ripple.Waveform, ripple.X, ripple.Y));
+                        }
                     };
                     _pipeline.Start();
                     _controllerRefresh.Request();
@@ -244,11 +251,50 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             _cooperation = null;
         }
 
+        if (!Settings.ShowRipples)
+        {
+            _ripple?.Dispose();
+            _ripple = null;
+        }
+
         UpdateIcon();
         Changed?.Invoke(this, EventArgs.Empty);
         if (saved.Error is { } error)
         {
             MessageBox.Show(error, "Haptics Everywhere");
+        }
+    }
+
+    /// <summary>Only cues policy actually emitted get a ripple; silent and dry-run decisions never draw one.</summary>
+    internal static (string Waveform, int? X, int? Y)? RippleFor(PipelineEvent e) =>
+        e is DecisionEvent { Decision: { Outcome: PolicyOutcome.Emit, Intent: { } intent } } d
+            ? (intent.Waveform, d.PointerX, d.PointerY)
+            : null;
+
+    private void ShowRipple(string waveform, int? x, int? y)
+    {
+        if (!Settings.ShowRipples || _rippleUnavailable)
+        {
+            return;
+        }
+
+        var point = x is { } px && y is { } py ? (X: px, Y: py) : DesktopContext.CursorPosition();
+        if (point.X == int.MinValue || point.Y == int.MinValue)
+        {
+            return;
+        }
+
+        try
+        {
+            _ripple ??= new CursorRippleOverlay();
+            _ripple.Play(HapticVisualCue.ForWaveform(waveform), point.X, point.Y);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            _ripple?.Dispose();
+            _ripple = null;
+            _rippleUnavailable = true;
+            MessageBox.Show($"Couldn't draw ripples, so they're off until the tray restarts.\n\n{ex.Message}", "Haptics Everywhere");
         }
     }
 
@@ -428,6 +474,11 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             Settings.CooperationEnabled = !Settings.CooperationEnabled;
             Apply();
         }, Settings.CooperationEnabled));
+        _menu.Items.Add(Item("Show ripples", () =>
+        {
+            Settings.ShowRipples = !Settings.ShowRipples;
+            Apply();
+        }, Settings.ShowRipples));
         _menu.Items.Add(Item("Settings…", () => ShowSettings(startup: false)));
         _menu.Items.Add(Item("Open Showcase", OpenShowcase));
         _menu.Items.Add(new ToolStripSeparator());
@@ -439,6 +490,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             _outputOwnership?.Dispose();
             _outputOwnership = null;
             _cooperation?.Dispose();
+            _ripple?.Dispose();
             _icon.Visible = false;
             ExitThread();
         }));
@@ -468,6 +520,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
             _pipeline?.Dispose();
             _outputOwnership?.Dispose();
             _cooperation?.Dispose();
+            _ripple?.Dispose();
             _icon.Dispose();
             _menu.Dispose();
             _foreground.Dispose();

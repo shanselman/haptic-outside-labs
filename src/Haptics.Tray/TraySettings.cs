@@ -19,6 +19,9 @@ public sealed class TraySettings
     /// <summary>Let other apps (same user) send haptics over the local pipe — see README "Cooperating apps".</summary>
     public bool CooperationEnabled { get; set; } = true;
 
+    /// <summary>Draw a click-through ripple at the pointer whenever a haptic plays.</summary>
+    public bool ShowRipples { get; set; }
+
     public List<string> ExcludedProcesses { get; set; } = new();
 
     internal static readonly EffectProfile[] Styles = [EffectProfile.Quiet, EffectProfile.Focused, EffectProfile.Everything];

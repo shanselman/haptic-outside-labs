@@ -29,12 +29,18 @@ needed. Unzip it, then:
 | Run | What it is |
 |---|---|
 | `haptics-tray.exe` | **The app.** Starts On and tries experimental automatic device lookup. If a controller is found, use Windows without a priming window. Otherwise Settings opens: move your haptic device over it once. Click the tray icon for settings (Style, Intensity, excluded apps, start with Windows); right-click it for the quick menu. |
-| `haptics-lab.exe` | **The Showcase.** Feel each sensation, try it on real controls, see *why* each tick happened (or didn't), and blind-compare the styles. Also holds the research lab. |
+| `haptics-lab.exe` | **The Showcase.** Feel each sensation, try it on real controls, see *why* each tick happened (or didn't), and blind-compare the styles. Its header has an observe-only **Visual demo** toggle that ripples at the pointer wherever a cue would play, for demos without haptic hardware. Also holds the research lab. |
 
 In the Showcase, follow **Start here**: move each haptic device over the window, click **Feel it** next to Land,
 then explore the sample controls or another app while keeping the Showcase open. The status card tells you when
 a controller is captured. **Engine activity** explains decisions, not proof that a pulse was felt; Inspector shows
 output details. Without a haptic device, you can still explore the controls and Inspector.
+For a presentation without haptic hardware, turn on **Visual demo** (top right, next to **Showcase engine**). It
+observes real controls in any app and shows a brief, click-through ripple at the pointer wherever policy would play
+a cue, without sending any haptics; it also works while another app (such as the tray) owns physical output. The
+**Stage** tab shows the same cues full-size. The tray has a matching **Show ripples** option (quick menu or
+Settings, off by default) that draws the same ripple alongside real haptics, handy for screen recordings. These
+visuals demonstrate intent, not physical output or a pulse someone felt.
 
 The Showcase shares the tray's Windows 11 / Fluent design, follows the system's light or dark theme, and scales
 with your display. **Showcase**, **Inspector**, and the optional **Lab** are keyboard-accessible tabs. On narrower

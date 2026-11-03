@@ -152,6 +152,15 @@
                     </ui:CardControl.Header>
                     <ui:ToggleSwitch x:Name="BoostSwitch" AutomationProperties.Name="Boost touchpad" />
                 </ui:CardControl>
+                <ui:CardControl Margin="0,0,0,4" Icon="{ui:SymbolIcon Sparkle24}">
+                    <ui:CardControl.Header>
+                        <StackPanel>
+                            <ui:TextBlock FontTypography="Body" Text="Show ripples" />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="A ripple at the pointer whenever a haptic plays. Great for demos and screen recordings." />
+                        </StackPanel>
+                    </ui:CardControl.Header>
+                    <ui:ToggleSwitch x:Name="RipplesSwitch" AutomationProperties.Name="Show ripples" />
+                </ui:CardControl>
 
                 <ui:TextBlock Margin="2,24,0,8" FontTypography="BodyStrong" Text="Apps and startup" />
                 <ui:CardControl Margin="0,0,0,4" Icon="{ui:SymbolIcon PlugConnected24}">

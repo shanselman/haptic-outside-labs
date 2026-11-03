@@ -152,6 +152,15 @@ Known limitations, not fixed:
 - Teams (`msedgewebview2`) exposes one huge `MenuItem` covering most of the primary monitor, which can produce
   stray hover cues over Teams.
 
+## Visual demo and tray ripples (2026-11-02)
+
+The Showcase header's **Visual demo** switch runs Observe-only/dry-run without an output route or lease and draws
+`CursorRippleOverlay` (now in `Haptics.Windows/HapticVisuals.cs`) at the pointer for each cue; the **Stage** tab
+shows the cues full-size. `DecisionEvent` carries the observed pointer position. The tray's **Show ripples**
+(menu and Settings, off by default) draws the same overlay for `Emit` decisions only, alongside real haptics; the
+overlay is disposed when the setting turns off or the tray quits. Ripple placement across mixed-DPI monitors is
+unverified.
+
 ## Next-session entry point
 
 Select an unchecked operator task from the automatic-priming test plan. Existing focused UI coverage runs with

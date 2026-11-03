@@ -39,6 +39,7 @@ internal partial class SettingsWindow
         OnToggled(MoreIsBetterSwitch, on => Change(s => s.MoreIsBetter = on));
         OnToggled(BoostSwitch, on => Change(s => s.TouchpadBoost = on ? 1.3 : 1.0));
         OnToggled(CooperationSwitch, on => Change(s => s.CooperationEnabled = on));
+        OnToggled(RipplesSwitch, on => Change(s => s.ShowRipples = on));
         OnToggled(StartupSwitch, SetStartup);
         StyleBox.SelectionChanged += (_, _) =>
         {
@@ -167,6 +168,7 @@ internal partial class SettingsWindow
         IntensityLabel.Text = TraySettings.IntensityName(s.IntensityScale);
         BoostSwitch.IsChecked = s.TouchpadBoost > 1.01;
         CooperationSwitch.IsChecked = s.CooperationEnabled;
+        RipplesSwitch.IsChecked = s.ShowRipples;
         StartupSwitch.IsChecked = _host.StartWithWindows;
         ExcludedList.Children.Clear();
         foreach (var app in s.ExcludedProcesses)

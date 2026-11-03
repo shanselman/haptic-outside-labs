@@ -8,7 +8,11 @@ public abstract record PipelineEvent(double AtMs);
 
 public sealed record SnapshotEvent(double AtMs, ElementSnapshot Snapshot, double RoundTripMs, IReadOnlyList<string> Notes) : PipelineEvent(AtMs);
 
-public sealed record DecisionEvent(double AtMs, PolicyDecision Decision) : PipelineEvent(AtMs);
+public sealed record DecisionEvent(
+    double AtMs,
+    PolicyDecision Decision,
+    int? PointerX = null,
+    int? PointerY = null) : PipelineEvent(AtMs);
 
 public sealed record OutputEvent(double AtMs, HapticIntent Intent, HapticAttempt? Attempt, string Status) : PipelineEvent(AtMs);
 
@@ -395,7 +399,8 @@ public sealed class ObservationPipeline : IDisposable
     {
         var result = _interpreter.OnPointer(observation);
         var input = new InputRouteContext(
-            observation.DeviceHandle, observation.InputClass, observation.ForegroundPid, observation.TimestampMs, _interpreter.Generation);
+            observation.DeviceHandle, observation.InputClass, observation.ForegroundPid, observation.TimestampMs,
+            _interpreter.Generation, observation.X, observation.Y);
         Volatile.Write(ref _latestInputRoute, input);
         HandleLocked(result, observation.TimestampMs, input);
         return input;
@@ -427,7 +432,7 @@ public sealed class ObservationPipeline : IDisposable
                     break;
             }
 
-            Publish(new DecisionEvent(Now, d));
+            Publish(new DecisionEvent(Now, d, input?.X, input?.Y));
             if (d.Outcome == PolicyOutcome.Emit && d.Intent is { } intent)
             {
                 if (e.Kind == SemanticEventKind.Cooperative)
@@ -695,5 +700,7 @@ public sealed class ObservationPipeline : IDisposable
         PointerInputClass InputClass,
         int ForegroundPid,
         double TimestampMs,
-        long Generation);
+        long Generation,
+        int X,
+        int Y);
 }

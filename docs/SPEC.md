@@ -292,7 +292,7 @@ Investigate these routes in the following order:
 **R6 — Alternative non-haptic output for instrumentation only.**
 
 - Provide a `DryRunSink` that logs waveform **intent** without activating hardware.
-- An optional UI/sound visualization is useful to validate classification but **never** counted as proof of haptic feasibility.
+- An optional UI/sound visualization is useful to validate classification but **never** counted as proof of haptic feasibility. The Showcase **Visual demo** (observe-only, no output route) and the tray's opt-in **Show ripples** draw a click-through, non-activating ripple at the pointer for each cue; they show intent only and never produce evidence.
 
 ### 4.2 Device capabilities and waveform fallback
 
@@ -922,6 +922,7 @@ The lab may expose detailed per-effect waveform experimentation. The tray should
 - **Intensity:** Low / Medium / Strong or slider, always respecting Windows device haptic settings and user preference.
 - **Effect profile:** Quiet / Balanced / Experimental; Experimental must explicitly warn of additional density/latency and potential duplication.
 - **More is better (opt-in):** an independent setting for users who prefer denser feedback. Remove landing and per-app density thinning and allow up to 25 pulses per second, while retaining the selected style, Off switch, safety suppressions and app exclusions.
+- **Show ripples (opt-in):** draw a brief click-through, non-activating ripple at the pointer for each cue that policy emits, alongside the haptic. Dry-run and suppressed decisions draw nothing; it never takes focus or input and is not evidence of physical output.
 - **Per-app exclusions:** easy to add current app; protected and elevated UIs suppressed by default.
 - **One-click kill switch:** visible from the tray and available even when a provider hangs.
 

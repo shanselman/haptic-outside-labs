@@ -20,6 +20,8 @@ Session handoff and remaining review work: [`docs/HANDOFF.md`](../docs/HANDOFF.m
 - The playground is the **Showcase** (`ShowcaseWindow`, `haptics-lab` with no args); experiments live on its Lab tab and
   are optional for users. Haptic meaning is fixed: Land=Hover, Land big=Click, Detent=Step, Edge=Collide;
   Align/Success/Error only from cooperating apps.
+- Visual demo / Show ripples (`CursorRippleOverlay`) are visualization only: the overlay stays transparent, topmost,
+  click-through and non-activating, tray ripples follow only `Emit` decisions, and a ripple is never evidence.
 - Never invent results. Update `docs/EVIDENCE_LEDGER.md` only with real runs (`haptics-lab evidence summarize <run>`).
 
 ## Build and test

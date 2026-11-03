@@ -6,6 +6,18 @@ namespace Haptics.Windows.Tests;
 
 public class PipelineOutputTests
 {
+    [Fact]
+    public void DecisionEventsCaptureTheObservedPointerPosition()
+    {
+        using var rig = new Rig();
+        rig.Observe(100, 12, Snapshot(100) with { QueryX = 77, QueryY = 44 });
+        rig.Flush(110);
+
+        var decision = Assert.Single(rig.Events.OfType<DecisionEvent>());
+        Assert.Equal(77, decision.PointerX);
+        Assert.Equal(44, decision.PointerY);
+    }
+
     [Theory]
     [InlineData("Button", 40, 30, "Hover")]
     [InlineData("Button", 44, 80, "Click")]
@@ -765,8 +777,8 @@ public class PipelineOutputTests
             "InputRouteContext", System.Reflection.BindingFlags.NonPublic)!;
         var inputContext = inputContextType.GetConstructors(
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
-            .Single(constructor => constructor.GetParameters().Length == 5)
-            .Invoke([12L, PointerInputClass.Handle, Environment.ProcessId, 100d, generation]);
+            .Single(constructor => constructor.GetParameters().Length == 7)
+            .Invoke([12L, PointerInputClass.Handle, Environment.ProcessId, 100d, generation, 0, 0]);
         var staleEvent = rig.Pipeline.Interpreter.Cooperative("Align", Environment.ProcessId, 100) with
         {
             Generation = generation + 1,

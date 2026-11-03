@@ -204,3 +204,14 @@ Unexpected programming errors still propagate.
 **Things we chose not to do:** per-pixel "texture" while moving (the device can't localize it, and it reads as
 vibration); Grow on drag (we can't tell a drag from a selection reliably without reading content); scroll texture
 (Windows already does wheel detents on the mouse).
+
+## 13. v0.6: seeing the haptics (2026-11)
+
+Most people who see a demo don't have a haptic mouse in their hand. The Showcase header's **Visual demo** switch
+runs the engine Observe-only (dry-run, no output route, no output lease) and draws a ripple at the pointer wherever
+policy would have played a cue, labelled with the cue's name (Land, Land big, Detent, Edge). The **Stage** tab shows
+the same cues full-size. The ripple is a transparent, topmost WPF window with `WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW
+| WS_EX_NOACTIVATE`, so it never takes a click, focus or a taskbar slot and keeps the "we never steer anything"
+rule. The tray gets the same overlay as an opt-in **Show ripples** setting (off by default) that draws alongside
+real haptics, for screen recordings. Only decisions policy actually emits draw a ripple. A ripple shows intent,
+never that a pulse was felt, so neither mode produces evidence.

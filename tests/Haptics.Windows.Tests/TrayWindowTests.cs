@@ -83,9 +83,13 @@ public class TrayWindowTests
         Assert.Equal(1.0, host.Settings.TouchpadBoost);
         Toggle(w.CooperationSwitch);
         Assert.False(host.Settings.CooperationEnabled);
+        Assert.Equal("Show ripples", System.Windows.Automation.AutomationProperties.GetName(w.RipplesSwitch));
+        Assert.False(w.RipplesSwitch.IsChecked); // Off by default.
+        Toggle(w.RipplesSwitch);
+        Assert.True(host.Settings.ShowRipples);
         Toggle(w.StartupSwitch);
         Assert.True(host.StartWithWindows);
-        Assert.Equal(6, host.Applied);
+        Assert.Equal(7, host.Applied);
 
         Assert.Equal(System.Windows.Visibility.Visible, w.ExcludeButton.Visibility);
         Click(w.ExcludeButton);
@@ -143,6 +147,20 @@ public class TrayWindowTests
         Assert.Equal("Paused — another engine owns output", TrayContext.StatusDescription(true, true, true, "Mouse"));
         Assert.Equal("Off", TrayContext.StatusDescription(false, false, false, "None"));
         Assert.Equal("On (Mouse)", TrayContext.StatusDescription(true, false, true, "Mouse"));
+    }
+
+    [Fact]
+    public void RipplesFollowOnlyEmittedDecisions()
+    {
+        var intent = new HapticIntent("i", IntentKind.Hover, "Hover", 1, 0, 1, "rule", 1, 0, null);
+        PolicyDecision Decide(PolicyOutcome outcome) => new(outcome, "test", intent, null!, 0);
+
+        Assert.Equal(("Hover", 10, 20), TrayContext.RippleFor(new DecisionEvent(0, Decide(PolicyOutcome.Emit), 10, 20)));
+        Assert.Equal(("Hover", null, null), TrayContext.RippleFor(new DecisionEvent(0, Decide(PolicyOutcome.Emit))));
+        Assert.Null(TrayContext.RippleFor(new DecisionEvent(0, Decide(PolicyOutcome.DryRun), 10, 20)));
+        Assert.Null(TrayContext.RippleFor(new DecisionEvent(0, Decide(PolicyOutcome.Suppressed), 10, 20)));
+        Assert.Null(TrayContext.RippleFor(new DecisionEvent(0, new PolicyDecision(PolicyOutcome.Emit, "test", null, null!, 0))));
+        Assert.Null(TrayContext.RippleFor(new DiagnosticEvent(0, "noise")));
     }
 
     [Fact]

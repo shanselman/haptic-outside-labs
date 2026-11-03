@@ -44,12 +44,15 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     private System.Windows.Forms.Timer? _blockTimer;
     private RatingPanel? _ratingPanel;
     private CompareRun? _compareRun;
+    private CursorRippleOverlay? _rippleOverlay;
+    private bool _rippleUnavailable;
     private double _lastPrime;
     private double _startMs;
     private bool _started;
     private bool _disposed;
     private bool _syncing;
     private bool _pausedForOtherOwner;
+    private bool _visualDemo;
     private OutputOwnership? _outputOwnership;
     private bool? _compact;
     private Color _embeddedBackground;
@@ -85,6 +88,10 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             ApplySettings();
         };
         OnToggled(BoostSwitch, _ => ApplySettings());
+        StageLandButton.Click += (_, _) => PreviewVisualCue("Hover");
+        StageBigLandButton.Click += (_, _) => PreviewVisualCue("Click");
+        StageDetentButton.Click += (_, _) => PreviewVisualCue("Step");
+        StageEdgeButton.Click += (_, _) => PreviewVisualCue("Collide");
         OnToggled(EngineSwitch, on =>
         {
             if (_started)
@@ -92,6 +99,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
                 SetEngine(on);
             }
         });
+        OnToggled(VisualDemoSwitch, SetVisualDemoMode);
         CompareButton.Click += (_, _) =>
         {
             if (_compareRun is null)
@@ -145,6 +153,8 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         _compareRun?.Session.Dispose();
         _pipeline?.Dispose();
         _cooperation?.Dispose();
+        _rippleOverlay?.Dispose();
+        _rippleOverlay = null;
         _outputOwnership?.Dispose();
         _outputOwnership = null;
         InspectorHost.Dispose();
@@ -164,7 +174,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
     private void PrimeFromPointer()
     {
-        if (!_started || _disposed)
+        if (!_started || _disposed || _visualDemo)
         {
             return;
         }
@@ -342,6 +352,11 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
     private void SetEngine(bool on)
     {
+        if (on && _visualDemo)
+        {
+            return;
+        }
+
         if (on && _pipeline is null)
         {
             TryStartEngine(pipeline => pipeline.Start());
@@ -359,6 +374,93 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             _pausedForOtherOwner = false;
         }
 
+        UpdateStatus();
+    }
+
+    private void SetVisualDemoMode(bool on) => ConfigureVisualDemoMode(on, null);
+
+    internal void ConfigureVisualDemoMode(bool on, Action<ObservationPipeline>? startPipeline)
+    {
+        if (_visualDemo == on)
+        {
+            return;
+        }
+
+        if (!on)
+        {
+            StopVisualDemo();
+            return;
+        }
+
+        _visualDemo = true;
+        _syncing = true;
+        VisualDemoSwitch.IsChecked = true;
+        EngineSwitch.IsChecked = false;
+        EngineSwitch.IsEnabled = false;
+        _syncing = false;
+        SetEngine(false);
+        if (!TryStartVisualDemo(startPipeline ?? (pipeline => pipeline.Start())))
+        {
+            _visualDemo = false;
+            EngineSwitch.IsEnabled = true;
+            _syncing = true;
+            VisualDemoSwitch.IsChecked = false;
+            _syncing = false;
+            UpdateStatus();
+        }
+    }
+
+    internal bool TryStartVisualDemo(Action<ObservationPipeline> startPipeline)
+    {
+        ArgumentNullException.ThrowIfNull(startPipeline);
+        if (!_visualDemo || _pipeline is not null)
+        {
+            return false;
+        }
+
+        ObservationPipeline? pipeline = null;
+        Exception? failure = null;
+        try
+        {
+            var config = PolicyConfig.Sample(_selectedStyle, Intensity);
+            config.Mode = HapticsMode.ObserveOnly;
+            pipeline = new ObservationPipeline(config, new PipelineOptions { Route = OutputRoutes.DryRun });
+            pipeline.Policy.ConsentGiven = true;
+            pipeline.Policy.OutputRouteVerified = false;
+            pipeline.Event += e => _events.Enqueue(e);
+            _startMs = MonotonicClock.Instance.NowMs;
+            startPipeline(pipeline);
+            _pipeline = pipeline;
+        }
+        catch (Exception ex) when (IsFileFailure(ex) || ex is System.ComponentModel.Win32Exception or TimeoutException
+            or InvalidOperationException { InnerException: System.ComponentModel.Win32Exception })
+        {
+            failure = ex;
+            pipeline?.Dispose();
+        }
+
+        if (failure is not null)
+        {
+            ReportOperationError("Couldn't start Visual Demo mode",
+                $"Visual Demo mode is off. No haptic output was sent.\n\n{failure.GetBaseException().Message}");
+            return false;
+        }
+
+        UpdateStatus();
+        return true;
+    }
+
+    private void StopVisualDemo()
+    {
+        _pipeline?.Dispose();
+        _pipeline = null;
+        _visualDemo = false;
+        _syncing = true;
+        VisualDemoSwitch.IsChecked = false;
+        _syncing = false;
+        EngineSwitch.IsEnabled = true;
+        _rippleOverlay?.Hide();
+        _stats.Text = "The Showcase engine is not running.";
         UpdateStatus();
     }
 
@@ -455,7 +557,13 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             return;
         }
 
-        _pipeline.Policy.Config = PolicyConfig.Sample(overrideStyle ?? _selectedStyle, Intensity);
+        var config = PolicyConfig.Sample(overrideStyle ?? _selectedStyle, Intensity);
+        if (_visualDemo)
+        {
+            config.Mode = HapticsMode.ObserveOnly;
+        }
+
+        _pipeline.Policy.Config = config;
         _pipeline.TouchpadBoost = BoostSwitch.IsChecked == true ? 1.3 : 1.0;
     }
 
@@ -466,14 +574,17 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             return;
         }
 
-        var (brush, title, hint) = _pipeline is null
+        var (brush, title, hint) = _visualDemo
+            ? ("SystemAccentColorPrimaryBrush", "Visual demo active — no haptics sent",
+                "Move slowly across real controls here or in any app. A ripple at the pointer shows where a haptic cue would play; nothing is sent, even if a haptic controller is present.")
+            : _pipeline is null
             ? ("SystemFillColorNeutralBrush", _pausedForOtherOwner ? "Output paused — another engine owns haptics" : "Showcase engine off",
                 _pausedForOtherOwner
-                    ? "Another Haptics Everywhere engine owns output. The Showcase engine stays paused, but Feel it can preview individual sensations."
-                    : "Turn on the Showcase engine to explore background feedback. Feel it still previews individual sensations.")
+                    ? "Another Haptics Everywhere engine owns output. Turn on Visual demo to see where cues would play without haptics."
+                    : "Turn on the Showcase engine to explore background feedback, or Visual demo to see cues without haptics.")
             : _bank.Any
                 ? ("SystemFillColorSuccessBrush", $"Ready: {_bank.Describe()}", "Try Feel it, then explore here or in another app. Only you can confirm what you feel.")
-                : ("SystemFillColorCautionBrush", "Waiting for your haptic device", "Move each haptic mouse or touchpad over this window. No background haptics until a controller is captured.");
+                : ("SystemFillColorCautionBrush", "Waiting for your haptic device", "Move each haptic mouse or touchpad over this window. No haptic device? Turn on Visual demo to see where cues would play.");
         StatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, brush);
         StatusText.Text = title;
         StatusHint.Text = hint;
@@ -481,12 +592,18 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
     private void FeelIt(string waveform, bool appsOnly)
     {
+        PresentVisualCue(waveform, null, null, "Feel it preview requested; device output status is separate.");
+        if (_visualDemo)
+        {
+            return;
+        }
+
         SendPreview(waveform, appsOnly, w => CooperativeServer.Send(w), preview =>
         {
             var attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, preview, Intensity);
             if (!attempt.Accepted)
             {
-                Felt($"Couldn't play {preview}: {attempt.Error ?? "device didn't accept it"}");
+                Felt($"Couldn't play {preview}: {attempt.Error ?? "no haptic device accepted it"}. Try Visual demo to see it instead.");
             }
         });
     }
@@ -530,6 +647,17 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
                 case DecisionEvent d when d.Decision.Reason != "no-haptic-for-event":
                     Row(e.AtMs, d.Decision.Event.Kind.ToString(), d.Decision.Event.ControlType, d.Decision.Outcome.ToString(), d.Decision.Reason, d.Decision.Intent?.Waveform,
                         $"conf {d.Decision.Event.Confidence:0.00} speed {d.Decision.Event.PointerSpeedPxPerSec:0}px/s");
+                    if (_compareRun is null &&
+                        (d.Decision.Outcome == PolicyOutcome.Emit ||
+                         (_visualDemo && d.Decision.Outcome == PolicyOutcome.DryRun)) &&
+                        d.Decision.Intent is { } intent)
+                    {
+                        PresentVisualCue(intent.Waveform, d.PointerX, d.PointerY,
+                            _visualDemo
+                                ? "Visual Demo is observe-only; no physical output is attempted."
+                                : "Policy-approved intent; the animation is not output or felt evidence.");
+                    }
+
                     if (Friendly(d.Decision) is { } text)
                     {
                         Felt(text);
@@ -583,6 +711,51 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         while (_activity.Count > 40)
         {
             _activity.RemoveAt(_activity.Count - 1);
+        }
+    }
+
+    internal void PreviewVisualCue(string waveform) =>
+        PresentVisualCue(waveform, null, null, "Visual-only preview; no device output was requested.");
+
+    private void PresentVisualCue(string waveform, int? pointerX, int? pointerY, string status)
+    {
+        var cue = HapticVisualCue.ForWaveform(waveform);
+        StageCueTitle.Text = cue.Label;
+        StageCueWaveform.Text = $"{cue.Waveform} · visual cue";
+        StageCueStatus.Text = _visualDemo
+            ? $"{status} Visual Demo is observe-only; no physical output is attempted."
+            : _bank.Any
+                ? $"{status} A controller is captured; the visual still does not prove a pulse was felt."
+                : $"{status} No haptic controller is captured; this shows where policy would allow a cue, but no physical output was sent.";
+
+        var width = Math.Max(1, StageCanvas.ActualWidth);
+        var height = Math.Max(1, StageCanvas.ActualHeight);
+        HapticVisualRenderer.Render(StageCanvas, cue,
+            new System.Windows.Point(width / 2, height / 2), Math.Min(width, height));
+
+        if (!_visualDemo || _rippleUnavailable)
+        {
+            return;
+        }
+
+        var point = pointerX is { } x && pointerY is { } y ? (X: x, Y: y) : DesktopContext.CursorPosition();
+        if (point.X == int.MinValue || point.Y == int.MinValue)
+        {
+            return;
+        }
+
+        try
+        {
+            _rippleOverlay ??= new CursorRippleOverlay();
+            _rippleOverlay.Play(cue, point.X, point.Y);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            _rippleOverlay?.Dispose();
+            _rippleOverlay = null;
+            _rippleUnavailable = true;
+            ReportOperationError("Pointer ripple unavailable",
+                $"The Stage visualizer is still available, but the pointer ripple has been turned off.\n\n{ex.Message}");
         }
     }
 
@@ -648,6 +821,12 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
     private void StartCompare()
     {
+        if (_visualDemo)
+        {
+            System.Windows.MessageBox.Show(this, "Turn Visual Demo mode off before comparing physical haptic styles.", "Compare styles");
+            return;
+        }
+
         if (_pipeline is null)
         {
             System.Windows.MessageBox.Show(this, "Turn the Showcase engine on after the other output owner releases haptics.", "Compare styles");
@@ -695,6 +874,9 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     {
         FeelSettings.Visibility = comparing ? Visibility.Hidden : Visibility.Visible;
         VocabularyPanel.IsEnabled = !comparing;
+        StageTab.IsEnabled = !comparing;
+        VisualDemoSwitch.IsEnabled = !comparing;
+        CompareButton.IsEnabled = !comparing && !_visualDemo;
         InspectorTab.IsEnabled = !comparing;
         LabTab.IsEnabled = !comparing;
         ActivityList.Visibility = comparing ? Visibility.Hidden : Visibility.Visible;
@@ -705,6 +887,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         CompareButton.Content = comparing ? "Stop comparison" : "Compare styles";
         if (comparing)
         {
+            _rippleOverlay?.Hide();
             Pages.SelectedIndex = 0;
         }
     }

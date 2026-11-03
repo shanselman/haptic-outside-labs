@@ -28,6 +28,7 @@ public class ShowcaseTests
             Assert.Contains(text, t => t.Contains("3. Explore:", StringComparison.Ordinal));
             Assert.Equal("Engine activity", window.ActivityExpander.Header);
             Assert.Contains(text, t => t.Contains("not proof of a felt pulse", StringComparison.Ordinal));
+            Assert.Contains(text, t => t.Contains("not proof that a device accepted or anyone felt a pulse", StringComparison.Ordinal));
             Assert.DoesNotContain("What you just felt", text);
             Assert.Equal("Haptic intensity", AutomationProperties.GetName(window.IntensitySlider));
             window.IntensitySlider.Value = 3;
@@ -36,11 +37,73 @@ public class ShowcaseTests
             window.StyleBox.SelectedIndex = 0;
             Assert.Equal("Structure only", window.StyleHint.Text);
             Assert.Equal(7, window.VocabularyPanel.Children.Count);
+            Assert.Equal("Stage", window.StageTab.Header);
+            Assert.False(window.VisualDemoSwitch.IsChecked);
+            Assert.Contains(text, t => t.Contains("Turn on Visual demo", StringComparison.Ordinal));
             Assert.NotNull(window.InspectorHost.Child);
             Assert.NotNull(window.LabHost.Child);
             Assert.Null(window.ResultPath);
         });
     }
+
+    [Theory]
+    [InlineData("Hover", "Land")]
+    [InlineData("Click", "Land · big")]
+    [InlineData("Step", "Detent")]
+    [InlineData("Collide", "Edge")]
+    public void StagePreviewShowsTheVisualVocabularyWithoutClaimingPhysicalOutput(string waveform, string label) =>
+        OnStaThread(() =>
+        {
+            using var window = new ShowcaseWindow();
+            window.PreviewVisualCue(waveform);
+
+            Assert.Equal(label, window.StageCueTitle.Text);
+            Assert.Contains("Visual-only preview", window.StageCueStatus.Text);
+            Assert.Contains("No haptic controller is captured", window.StageCueStatus.Text);
+            Assert.Contains("visual cue", window.StageCueWaveform.Text);
+            Assert.NotEmpty(window.StageCanvas.Children);
+            Assert.False(window.VisualDemoSwitch.IsChecked);
+        });
+
+    [Fact]
+    public void DesktopRippleOverlayStaysClickThroughAndNonActivating() => OnStaThread(() =>
+    {
+        using var overlay = new CursorRippleOverlay();
+        overlay.Play(HapticVisualCue.ForWaveform("Step"), 200, 200);
+
+        Assert.True(overlay.IsVisible);
+        Assert.True(overlay.IsConfiguredClickThrough);
+        Assert.False(overlay.ShowActivated);
+        Assert.False(overlay.IsHitTestVisible);
+        overlay.Hide();
+    });
+
+    [Fact]
+    public void VisualDemoUsesObserveOnlyDryRunWithoutStartingAnOutputRoute() => OnStaThread(() =>
+    {
+        using var window = new ShowcaseWindow();
+        ObservationPipeline? started = null;
+
+        window.ConfigureVisualDemoMode(true, pipeline => started = pipeline);
+
+        Assert.NotNull(started);
+        Assert.Equal(Haptics.Core.HapticsMode.ObserveOnly, started.Policy.Config.Mode);
+        Assert.True(started.Policy.ConsentGiven);
+        Assert.False(started.Policy.OutputRouteVerified);
+        Assert.Equal(Haptics.Core.OutputRoutes.DryRun, started.Route);
+        Assert.False(started.Running);
+        Assert.True(window.VisualDemoSwitch.IsChecked);
+        Assert.False(window.EngineSwitch.IsEnabled);
+        Assert.Contains("Visual demo active", window.StatusText.Text, StringComparison.OrdinalIgnoreCase);
+
+        window.IntensitySlider.Value = window.IntensitySlider.Value > 5 ? 3 : 8;
+        Assert.Equal(Haptics.Core.HapticsMode.ObserveOnly, started.Policy.Config.Mode);
+        Assert.False(started.Policy.OutputRouteVerified);
+
+        window.ConfigureVisualDemoMode(false, null);
+        Assert.False(window.VisualDemoSwitch.IsChecked);
+        Assert.True(window.EngineSwitch.IsEnabled);
+    });
 
     [Fact]
     public void AccessibilityTogglesAndBlindingDoNotNeedClicks() => OnStaThread(() =>
@@ -55,6 +118,7 @@ public class ShowcaseTests
         window.SetComparisonPresentation(true);
         Assert.Equal(Visibility.Hidden, window.FeelSettings.Visibility);
         Assert.False(window.VocabularyPanel.IsEnabled);
+        Assert.False(window.StageTab.IsEnabled);
         Assert.False(window.InspectorTab.IsEnabled);
         Assert.False(window.LabTab.IsEnabled);
         Assert.Equal(Visibility.Hidden, window.ActivityList.Visibility);
@@ -63,6 +127,7 @@ public class ShowcaseTests
         window.SetComparisonPresentation(false);
         Assert.Equal(Visibility.Visible, window.FeelSettings.Visibility);
         Assert.True(window.VocabularyPanel.IsEnabled);
+        Assert.True(window.StageTab.IsEnabled);
         Assert.True(window.InspectorTab.IsEnabled);
         Assert.True(window.LabTab.IsEnabled);
         Assert.Equal(Visibility.Visible, window.ActivityList.Visibility);
@@ -147,7 +212,7 @@ public class ShowcaseTests
         Assert.False(started);
         Assert.False(window.EngineSwitch.IsChecked);
         Assert.Contains("another engine owns haptics", window.StatusText.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Feel it can preview individual sensations", window.StatusHint.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Turn on Visual demo", window.StatusHint.Text, StringComparison.OrdinalIgnoreCase);
     });
 
     [Theory]
