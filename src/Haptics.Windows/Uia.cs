@@ -163,6 +163,12 @@ public static class UiaWorker
         var sw = Stopwatch.StartNew();
         try
         {
+            if (ScanningHostAt(req.X, req.Y) is { } scanning)
+            {
+                // Explorer serializes UIA calls into the taskbar, so ElementFromPoint would wait out our own scan.
+                return Answer(scanning, req, sw);
+            }
+
             AutomationElement el;
             AutomationElement? parent = null;
             using (cache.Activate())
@@ -178,11 +184,10 @@ public static class UiaWorker
                     partOf = null;
                 }
                 else if (type == "Pane" && DrillDownHosts.Contains(Get<string>(el, AutomationElement.ClassNameProperty) ?? "") &&
-                         HostedControlAt(el, req.X, req.Y, cache) is { } hosted)
+                         Get<int>(el, AutomationElement.NativeWindowHandleProperty) is not 0 and var hwnd)
                 {
                     // ElementFromPoint stops at the taskbar's HWND and never enters its XAML island.
-                    el = hosted;
-                    type = TypeName(el);
+                    return Answer(HostAt(hwnd, ToSnapshot(el, null, req)), req, sw);
                 }
 
                 if (SemanticVocabulary.InteractiveTypes.Contains(type))
@@ -215,29 +220,112 @@ public static class UiaWorker
     /// <summary>Top-level windows whose interactive content ElementFromPoint does not reach (Windows 11 taskbars).</summary>
     private static readonly HashSet<string> DrillDownHosts = new(StringComparer.Ordinal) { "Shell_TrayWnd", "Shell_SecondaryTrayWnd" };
 
-    private static readonly Dictionary<int, (long At, List<(AutomationElement El, System.Windows.Rect Rect)> Items)> HostCache = new();
-
-    /// <summary>Smallest interactive descendant of a drill-down host containing the point; host contents cached ~1.5 s.</summary>
-    private static AutomationElement? HostedControlAt(AutomationElement host, int x, int y, CacheRequest cache)
+    private sealed class HostScan
     {
-        var key = Get<int>(host, AutomationElement.NativeWindowHandleProperty);
-        var now = Environment.TickCount64;
-        if (!HostCache.TryGetValue(key, out var entry) || now - entry.At > 1500)
+        public ElementSnapshot Host = new();
+        public List<ElementSnapshot> Items = [];
+        public long? ScannedAt;
+        public bool Scanning;
+    }
+
+    private static readonly object HostGate = new();
+    private static readonly Dictionary<int, HostScan> Hosts = new();
+
+    /// <summary>A drill-down host whose background scan is running and whose bounds contain the point.</summary>
+    private static HostScan? ScanningHostAt(int x, int y)
+    {
+        lock (HostGate)
         {
-            var items = new List<(AutomationElement, System.Windows.Rect)>();
-            foreach (AutomationElement d in host.FindAll(TreeScope.Descendants, Condition.TrueCondition))
+            return Hosts.Values.FirstOrDefault(h => h.Scanning && h.Host.Bounds?.Contains(x, y) == true);
+        }
+    }
+
+    /// <summary>
+    /// Records the host under the pointer and refreshes its contents in the background when older than ~1.5 s.
+    /// Scanning a taskbar takes 200-600 ms, past the client's 250 ms hang timeout, so it never runs on the request path.
+    /// </summary>
+    private static HostScan HostAt(int hwnd, ElementSnapshot host)
+    {
+        lock (HostGate)
+        {
+            if (!Hosts.TryGetValue(hwnd, out var scan))
             {
-                if (SemanticVocabulary.InteractiveTypes.Contains(TypeName(d)) && Get<System.Windows.Rect>(d, AutomationElement.BoundingRectangleProperty) is { IsEmpty: false } r)
-                {
-                    items.Add((d, r));
-                }
+                Hosts[hwnd] = scan = new HostScan();
             }
 
-            entry = (now, items);
-            HostCache[key] = entry;
+            scan.Host = host;
+            if (!scan.Scanning && !(Environment.TickCount64 - scan.ScannedAt < 1500))
+            {
+                scan.Scanning = true;
+                var thread = new Thread(() => ScanHost(hwnd, scan)) { IsBackground = true, Name = "uia-host-scan" };
+                thread.SetApartmentState(ApartmentState.MTA);
+                thread.Start();
+            }
+
+            return scan;
+        }
+    }
+
+    /// <summary>Smallest scanned interactive control under the point, else the host itself. A layout over 10 s old is not trusted.</summary>
+    private static UiaResponse Answer(HostScan scan, UiaRequest req, Stopwatch sw)
+    {
+        ElementSnapshot snap;
+        lock (HostGate)
+        {
+            snap = (Environment.TickCount64 - scan.ScannedAt < 10_000
+                ? scan.Items.Where(i => i.Bounds!.Contains(req.X, req.Y)).MinBy(i => i.Bounds!.Width * i.Bounds.Height)
+                : null) ?? scan.Host;
         }
 
-        return entry.Items.Where(i => i.Rect.Contains(x, y)).OrderBy(i => i.Rect.Width * i.Rect.Height).Select(i => i.El).FirstOrDefault();
+        var ms = sw.Elapsed.TotalMilliseconds;
+        return new UiaResponse
+        {
+            Id = req.Id, Ok = true, LookupMs = ms,
+            Snapshot = snap with { QueryX = req.X, QueryY = req.Y, Scale = MonitorScale(req.X, req.Y), LookupMs = ms },
+        };
+    }
+
+    private static void ScanHost(int hwnd, HostScan scan)
+    {
+        List<ElementSnapshot>? items = null;
+        try
+        {
+            var request = BuildCacheRequest(includeAutomationId: false);
+            request.TreeScope = TreeScope.Subtree;
+            var root = AutomationElement.FromHandle(new IntPtr(hwnd)).GetUpdatedCache(request);
+            items = [];
+            var pending = new Stack<AutomationElement>([root]);
+            while (pending.Count > 0)
+            {
+                var node = pending.Pop();
+                foreach (AutomationElement child in node.CachedChildren)
+                {
+                    pending.Push(child);
+                    if (SemanticVocabulary.InteractiveTypes.Contains(TypeName(child)) &&
+                        ToSnapshot(child, node, new UiaRequest()) is { Bounds: { IsEmpty: false } } snap)
+                    {
+                        items.Add(snap);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Keep the previous layout; the next hover retries.
+        }
+        finally
+        {
+            lock (HostGate)
+            {
+                if (items is not null)
+                {
+                    scan.Items = items;
+                    scan.ScannedAt = Environment.TickCount64;
+                }
+
+                scan.Scanning = false;
+            }
+        }
     }
 
     private static UiaResponse Fail(UiaRequest req, Stopwatch sw, string error) => new()

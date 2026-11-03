@@ -135,6 +135,23 @@ Do not replace those records with this summary.
 
 [#15](https://github.com/shanselman/haptic-outside-labs/issues/15) (Lane E: Off, output authorization, controller health and pipe robustness): Off revokes queued output before persistence, explicit controller loss drops readiness and recovers silently, cooperative clients have a 256-character incremental line limit, 64-line cap and absolute one-second connection deadline, and Dispose closes the active client/listener and joins the pipe loop. `CooperativeServerTests` injects held/slow clients, unterminated oversized input and disposal; maximum valid LF/CR/CRLF messages remain accepted. These checks are hardware-free; neither API acceptance nor recording-sink output is PHYSICAL evidence.
 
+## Taskbar lookups stop killing the UIA worker (2026-11-02)
+
+Symptom: taskbar buttons gave no feedback, and soon after every app went silent. Cause: `FromPoint` on the
+taskbar returns the `Shell_TrayWnd` pane, and the drill-down's enumeration of its buttons took 100–600 ms, longer
+than the 250 ms hang timeout. Each refresh killed the worker, quarantined the foreground app and spent the
+restart budget (6 per minute), so the client stopped answering. The worker now refreshes the host's buttons on a
+background `uia-host-scan` thread with the same minimal cache request and answers from the last snapshot.
+Measured: about 5 ms median, 0 timeouts and 0 restarts over a taskbar sweep. `TaskbarUiaTests` guards it on an
+interactive desktop (skipped in CI).
+
+Known limitations, not fixed:
+
+- Quarantine after a timeout is keyed by the **foreground** PID, not the provider that hung, so a slow
+  background surface (such as the taskbar) can mute the app you're actually using for 10 s.
+- Teams (`msedgewebview2`) exposes one huge `MenuItem` covering most of the primary monitor, which can produce
+  stray hover cues over Teams.
+
 ## Next-session entry point
 
 Select an unchecked operator task from the automatic-priming test plan. Existing focused UI coverage runs with
