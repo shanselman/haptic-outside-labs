@@ -49,6 +49,11 @@ release executable and confirm it against the certificate profile. Keep the pack
 stable across releases; changing either creates a different package identity rather than an upgrade.
 Leaving the variable unset preserves the existing ZIP-only release.
 
+With the variable set, only pushed stable numeric tags (`vX.Y.Z` or `vX.Y.Z.W`) produce an MSIX bundle.
+Prerelease tags (for example `v0.7.0-rc.1`) and manual `workflow_dispatch` runs, even when targeting a stable
+tag, skip MSIX packaging, signing and verification. They still produce the same signed portable ZIPs.
+No prerelease or CI suffix is stripped to create a package version, avoiding collisions with stable packages.
+
 The workflow signs the executables first, packages both staging folders with
 [`scripts/package-msix.ps1`](../scripts/package-msix.ps1), then signs and timestamps the bundle with the
 same Trusted Signing profile and verifies its signature. The bundle contains both architectures; Windows
@@ -84,8 +89,7 @@ For already-downloaded ZIPs, extract them into `stage-win-arm64` and `stage-win-
 that directory with `-InputDirectory`; no rebuild is required. `-OutputDirectory` overrides the output location.
 The input folders are copied, not modified. Three-part versions gain a `.0` revision; four-part numeric versions
 are accepted, with each component at most 65535. Prerelease strings are rejected by the script.
-Manual workflow runs strip the `-ci` suffix and use the base package version, so they are not distinct upgrade
-versions. Use increasing numeric versions for upgrade testing.
+Manual workflow runs do not produce MSIX bundles. Use increasing numeric versions for local upgrade testing.
 
 The script deliberately does not create certificates, install anything, or change trust stores. Sign with a
 certificate whose subject matches `-Publisher` exactly. A self-signed local test certificate must be explicitly
@@ -94,6 +98,7 @@ trusted on the test machine; do not ship it as if it were the public release sig
 Run `.\scripts\test-package-msix.ps1` for the same unsigned container/manifest smoke tests used in CI.
 They use inert payload fixtures and check both architectures, version normalization, escaped publisher identity,
 registered apps, preserved payloads, logos, and rejection of invalid versions or a missing license.
+They also check the release workflow's stable-tag MSIX gate and unchanged ZIP version selection.
 
 ### Packaged-app validation before recommending it
 

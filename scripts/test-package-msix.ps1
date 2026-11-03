@@ -5,6 +5,50 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $work = Join-Path ([System.IO.Path]::GetTempPath()) "HapticsEverywhere-msix-test-$([guid]::NewGuid())"
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
+    $workflow = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\.github\workflows\release.yml') -Raw
+    $versionStep = [regex]::Match($workflow, '(?ms)^      - name: Version\r?\n        shell: pwsh\r?\n        run: \|\r?\n(?<script>.*?)(?=^      - name:)')
+    if (-not $versionStep.Success) { throw 'Release workflow Version step not found.' }
+    $versionScript = [scriptblock]::Create(($versionStep.Groups['script'].Value -replace '(?m)^          ', ''))
+    $gate = "        if: env.MSIX_PUBLISHER != '' && env.MSIX_VERSION != ''"
+    if ([regex]::Matches($workflow, "(?m)^$([regex]::Escape($gate))\r?$").Count -ne 3) {
+        throw 'All three MSIX steps must require both a publisher and a stable-tag version.'
+    }
+    $savedEnv = @{}
+    foreach ($name in 'GITHUB_EVENT_NAME', 'GITHUB_REF_TYPE', 'GITHUB_REF_NAME', 'GITHUB_RUN_NUMBER', 'GITHUB_ENV') {
+        $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    Push-Location (Split-Path -Parent $PSScriptRoot)
+    try {
+        $baseVersion = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+        $cases = @(
+            @('push', 'tag', 'v0.7.0', '0.7.0', '0.7.0'),
+            @('push', 'tag', 'v0.7.0.1', '0.7.0.1', '0.7.0.1'),
+            @('push', 'tag', 'v0.7.0-rc.1', '0.7.0-rc.1', ''),
+            @('push', 'tag', 'v0.7.0+build.1', '0.7.0+build.1', ''),
+            @('push', 'tag', 'v0.7', '0.7', ''),
+            @('push', 'branch', 'v0.7.0', "$baseVersion-ci.42", ''),
+            @('workflow_dispatch', 'branch', 'main', "$baseVersion-ci.42", ''),
+            @('workflow_dispatch', 'tag', 'v0.7.0', '0.7.0', ''),
+            @('workflow_dispatch', 'tag', 'v0.7.0-rc.1', '0.7.0-rc.1', '')
+        )
+        foreach ($case in $cases) {
+            $env:GITHUB_EVENT_NAME, $env:GITHUB_REF_TYPE, $env:GITHUB_REF_NAME = $case[0..2]
+            $env:GITHUB_RUN_NUMBER = '42'
+            $env:GITHUB_ENV = Join-Path $work 'github-env'
+            Set-Content -LiteralPath $env:GITHUB_ENV -Value ''
+            & $versionScript
+            $actual = Get-Content -LiteralPath $env:GITHUB_ENV
+            if ("VERSION=$($case[3])" -cnotin $actual -or "MSIX_VERSION=$($case[4])" -cnotin $actual) {
+                throw "Incorrect ZIP/MSIX version selection for $($case[0..2] -join '/')."
+            }
+        }
+        Write-Host "Release version gate passed ($($cases.Count) cases; all three MSIX steps gated)."
+    }
+    finally {
+        Pop-Location
+        foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name]) }
+    }
+
     $files = 'haptics-tray.exe', 'haptics-lab.exe', 'minimal-background-haptics.exe', 'LICENSE', 'THIRD-PARTY-NOTICES.txt', 'README.txt'
     foreach ($arch in 'arm64', 'x64') {
         $stage = New-Item -ItemType Directory -Path (Join-Path $work "stage-win-$arch")
