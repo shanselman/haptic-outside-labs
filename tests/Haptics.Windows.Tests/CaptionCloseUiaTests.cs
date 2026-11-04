@@ -8,10 +8,13 @@ namespace Haptics.Windows.Tests;
 /// Measures the real caption geometry the worker reports for inert, never-activated WinForms windows, so the Close
 /// recognizer's tolerance comes from a fixture rather than a guess. Only the worker reads UIA, as in production.
 /// </summary>
+[Collection(nameof(DesktopUiaCollection))]
 public class CaptionCloseUiaTests(ITestOutputHelper output)
 {
-    [Fact]
-    public async Task WinFormsCaptionGeometryRecognizesOnlyLeftToRightClose()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CaptionsUseNativeFocusedIdentityAndLegacyGeometry(bool focused)
     {
         if (!Environment.UserInteractive || Environment.GetEnvironmentVariable("CI") is not null)
         {
@@ -24,12 +27,18 @@ public class CaptionCloseUiaTests(ITestOutputHelper output)
             try
             {
                 SetThreadDpiAwarenessContext(PerMonitorAwareV2);
-                var ltr = new InertForm(false, 120);
-                var rtl = new InertForm(true, 360);
+                using var ltr = new InertForm(false, 120);
+                using var rtl = new InertForm(true, 360);
                 ltr.Shown += (_, _) =>
                 {
-                    rtl.Shown += (_, _) => ready.TrySetResult((ltr, rtl));
                     rtl.Show();
+                    ltr.BeginInvoke(() =>
+                    {
+                        // The first Show can still change Z-order after Shown returns.
+                        ltr.ShowForObservation();
+                        rtl.ShowForObservation();
+                        ready.TrySetResult((ltr, rtl));
+                    });
                 };
                 Application.Run(ltr);
             }
@@ -43,8 +52,52 @@ public class CaptionCloseUiaTests(ITestOutputHelper output)
         var ui = await ready.Task.WaitAsync(TimeSpan.FromSeconds(10));
         try
         {
+            foreach (var form in new[] { ui.Ltr, ui.Rtl })
+            {
+                output.WriteLine(form.Invoke(() =>
+                {
+                    Assert.True(Native.GetWindowRect(form.Handle, out var bounds));
+                    var hit = Native.WindowFromPoint(new Native.POINT
+                    {
+                        X = (bounds.Left + bounds.Right) / 2, Y = (bounds.Top + bounds.Bottom) / 2,
+                    });
+                    Native.GetWindowThreadProcessId(hit, out var pid);
+                    return $"Fixture visible={Native.IsWindowVisible(form.Handle)}, bounds={bounds.Left},{bounds.Top},{bounds.Right},{bounds.Bottom}, native center PID={pid}";
+                }));
+            }
             using var client = new UiaClient(Path.Combine(AppContext.BaseDirectory, "haptics-lab.exe"),
                 [UiaWorker.Arg], new UiaClientOptions { TimeoutMs = 2000 });
+
+            if (focused)
+            {
+                foreach (var form in new[] { ui.Ltr, ui.Rtl })
+                {
+                    var info = form.Invoke(() =>
+                    {
+                        var reported = new Native.TITLEBARINFOEX
+                        {
+                            Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.TITLEBARINFOEX>(),
+                            State = new uint[6], Bounds = new Native.RECT[6],
+                        };
+                        Assert.NotEqual(IntPtr.Zero, Native.ReadTitleBarInfo(form.Handle, Native.WM_GETTITLEBARINFOEX,
+                            UIntPtr.Zero, ref reported, 2, 100, out _));
+                        return reported;
+                    });
+                    foreach (var (slot, kind) in new[] { (5, Haptics.Core.CaptionButton.Close), (3, Haptics.Core.CaptionButton.Maximize), (2, Haptics.Core.CaptionButton.Minimize) })
+                    {
+                        var bounds = info.Bounds[slot];
+                        Assert.True(bounds.Right > bounds.Left && bounds.Bottom > bounds.Top);
+                        var response = await client.QueryAsync((bounds.Left + bounds.Right) / 2,
+                            (bounds.Top + bounds.Bottom) / 2, focused: true).WaitAsync(TimeSpan.FromSeconds(5));
+                        Assert.True(response.Ok, response.Error);
+                        output.WriteLine($"Native caption {kind}: {response.Snapshot}");
+                        Assert.Equal(Environment.ProcessId, response.Snapshot?.ProcessId);
+                        Assert.Equal(kind, response.Snapshot?.CaptionButton);
+                        Assert.False(response.Snapshot?.IsFocusedLanding);
+                    }
+                }
+                return;
+            }
 
             var ltr = await CaptionButtons(client, ui.Ltr.Bounds, "ltr");
             Assert.Equal(3, ltr.Length);
@@ -68,10 +121,13 @@ public class CaptionCloseUiaTests(ITestOutputHelper output)
     private async Task<ElementSnapshot[]> CaptionButtons(UiaClient client, System.Drawing.Rectangle window, string label)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);
-        while ((await Query(client, window.X + (window.Width / 2), window.Y + (window.Height / 2))).ProcessId != Environment.ProcessId)
+        var hit = await Query(client, window.X + (window.Width / 2), window.Y + (window.Height / 2));
+        output.WriteLine($"{label} fixture {window}, expected PID {Environment.ProcessId}, initial hit {hit.ProcessId}/{hit.ControlType}/{hit.ClassName} at {hit.Bounds}");
+        while (hit.ProcessId != Environment.ProcessId)
         {
             Assert.True(DateTime.UtcNow < deadline, $"{label} fixture window never became the UIA hit target");
             await Task.Delay(100);
+            hit = await Query(client, window.X + (window.Width / 2), window.Y + (window.Height / 2));
         }
 
         var buttons = new Dictionary<string, ElementSnapshot>();
@@ -116,5 +172,16 @@ public class CaptionCloseUiaTests(ITestOutputHelper output)
         }
 
         protected override bool ShowWithoutActivation => true;
+
+        public void ShowForObservation()
+        {
+            if (!SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040))
+            {
+                throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
     }
 }

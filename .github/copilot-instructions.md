@@ -11,10 +11,23 @@ Session handoff and remaining review work: [`docs/HANDOFF.md`](../docs/HANDOFF.m
 - Raw Input is **mouse only** (usage page 0x01, usage 0x02) with `RIDEV_INPUTSINK | RIDEV_DEVNOTIFY`. Never keyboard,
   never `RIDEV_NOLEGACY` / `RIDEV_CAPTUREMOUSE`.
 - UIA reads only control type, bounds, enabled/offscreen/password flags, PID, hashed runtime id, one parent hop, and
-  slider range, plus `ClassName`, `IsSelected`, parent bounds and monitor DPI. Never `Name`, values, text, URLs. UIA runs only in the worker process (`--uia-worker`).
+  slider range, plus `ClassName`, `IsSelected`, parent bounds and monitor DPI. Focused/Everything also use toggle availability/state
+  through `TogglePatternIdentifiers` and dropdown capability; the `TogglePattern`/`ExpandCollapsePattern` action types
+  remain forbidden. Never `Name`, values, text, URLs. UIA runs only in the worker process (`--uia-worker`).
 - An API returning `true` is `OBSERVED`, never `PHYSICAL`. Only blinded operator trials (`PhysicalEvaluator`) produce
   `PHYSICAL`. Call `ExperimentResult.Finalize()` (via `ExperimentSession.Complete()`); do not bypass it.
 - Every haptic intent goes through `HapticPolicy.Evaluate`. No new source may emit around it.
+- Quiet scenarios are a subset of Focused; Everything includes every Focused scenario. Shared scenarios use Focused's
+  waveform, including tab Hover in Quiet. Automatic landings always use Hover, not size-based Click. Shared safety
+  limits still apply. Keep these invariants in both tray and Showcase.
+- Inline-link Hover is enabled in all styles. Focused also allows Hyperlinks directly under Group at most 24 logical
+  px tall, fully inside a parent at least twice their height; Quiet does not. This is a heuristic, not styling proof.
+  Other links, dropdown options, toggle-button hover, radio options and group entry are Everything-only.
+  Checkbox hover and strip exits stay silent. Slider hover uses Thumb bounds.
+- Dwell is 30 ms for small controls, 50 ms for all tabs and targets at least 56 logical px tall or 48 x 48.
+  Use the slider thumb's size, not the track. Missing bounds use 50 ms; fresh metadata may extend, never shorten a visit.
+- Taskbar discovery, caching, pacing and settings are removed. A native shell-host exclusion runs before UIA lookup.
+  Button/link Text/Image parts use only their direct owner; preserve child safety and never read a grandparent.
 - The tray is a deliberately simple sample (user decision, 2026-10-23): starts On with route R3a, auto-primes, all apps.
   It must still not reference `Haptics.Lab` or fixtures, stay passive, and keep password/exclusion silence.
 - The playground is the **Showcase** (`ShowcaseWindow`, `haptics-lab` with no args); experiments live on its Lab tab and

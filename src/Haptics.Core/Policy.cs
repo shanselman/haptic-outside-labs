@@ -20,13 +20,13 @@ public enum AppPolicy
 [JsonConverter(typeof(JsonStringEnumConverter<EffectProfile>))]
 public enum EffectProfile
 {
-    /// <summary>Structure only: group entries, tab/radio detents, strip edges, slider detents. No per-button ticks.</summary>
+    /// <summary>A subset of Focused: tab Hover and slider steps/limits, without other control landings.</summary>
     Quiet,
 
-    /// <summary>The default: Quiet + a tick when you *land* on something you can do (not while flying past).</summary>
+    /// <summary>Selected navigation/command landings, slider steps/limits, and mouse-associated toggle changes.</summary>
     Focused,
 
-    /// <summary>Every crossing ticks (no landing filter), looser limits. Dense; useful for demos and tuning.</summary>
+    /// <summary>All Focused scenarios plus broader controls and boundaries, with the same arrival dwell.</summary>
     Everything,
 }
 
@@ -80,7 +80,7 @@ public sealed class AppProfile
         var d = new Dictionary<string, AppProfile>(StringComparer.OrdinalIgnoreCase);
         foreach (var browser in new[] { "msedge", "chrome", "firefox", "brave", "opera" })
         {
-            d[browser] = new AppProfile { DensityLandsPer2s = 6 }; // Web pages are dense with controls.
+            d[browser] = new AppProfile { DensityLandsPer2s = 0 };
         }
 
         foreach (var chat in new[] { "ms-teams", "Teams", "slack", "Discord" })
@@ -134,12 +134,13 @@ public sealed class PolicyConfig
 
     public Dictionary<string, AppProfile> AppProfiles { get; set; } = AppProfile.Defaults();
 
-    /// <summary>Copied into the interpreter: arrivals fire only when the pointer slows/stops. 0 = every crossing.</summary>
+    /// <summary>Copied into the interpreter for strip-edge speed filtering; arrivals use universal dwell.</summary>
     public double LandingSpeedPxPerSec { get; set; } = 1200;
 
     public bool HoverEnabled => Profile != EffectProfile.Quiet;
     public bool DetentsEnabled { get; set; } = true;
     public bool GroupBoundaryEnabled { get; set; } = true;
+    /// <summary>Legacy configuration field; strip-exit feedback is disabled in every style.</summary>
     public bool EdgeBumpsEnabled { get; set; } = true;
     public bool RangeStepsEnabled { get; set; } = true;
     public bool RangeLimitsEnabled { get; set; } = true;
@@ -152,11 +153,11 @@ public sealed class PolicyConfig
     /// Per app: this many "land" ticks within 2 s → for <see cref="DensityBackoffMs"/>, lands thin out to this many per
     /// 2 s, evenly spaced (never muted). Structure still ticks. 0 = off.
     /// </summary>
-    public int DensityLandsPer2s { get; set; } = 10;
+    public int DensityLandsPer2s { get; set; }
 
     public double DensityBackoffMs { get; set; } = 4000;
 
-    /// <summary>A target this tall (logical px), or at least this big on both sides, lands with a firmer Click.</summary>
+    /// <summary>DPI-aware thresholds for 50 ms versus 30 ms dwell; automatic landings always use Hover.</summary>
     public double LargeTargetLogicalHeight { get; set; } = 56;
 
     public double LargeTargetLogicalSide { get; set; } = 48;
@@ -205,7 +206,7 @@ public sealed class PolicyConfig
                 SameElementReentryCooldownMs = 500;
                 HoverMaxPointerSpeedPxPerSec = 4000;
                 LandingSpeedPxPerSec = 1200;
-                DensityLandsPer2s = 10;
+                DensityLandsPer2s = 0;
                 break;
         }
     }
@@ -346,6 +347,30 @@ public sealed class HapticPolicy
             }
         }
 
+        if (Config.Profile != EffectProfile.Everything && e.Kind == SemanticEventKind.EnterControl &&
+            e.Element is not { IsFocusedLanding: true })
+        {
+            return Suppress("focused-target-not-enabled");
+        }
+
+        if (e.Kind is SemanticEventKind.EnterControl or SemanticEventKind.CrossGroupBoundary &&
+            (e.ControlType == "CheckBox" || (e.Element is { IsCheckBoxOrToggleButton: true } && e.PrimaryDown)))
+        {
+            return Suppress("toggle-hover-disabled");
+        }
+
+        if (e.Kind is SemanticEventKind.EnterControl or SemanticEventKind.CrossGroupBoundary &&
+            e.ControlType == "Slider" && e.PrimaryDown)
+        {
+            return Suppress("slider-drag-hover");
+        }
+
+        if (e.Kind is SemanticEventKind.EnterControl or SemanticEventKind.CrossGroupBoundary &&
+            e.ControlType == "Slider" && e.Element is not { IsSliderThumb: true })
+        {
+            return Suppress("slider-track-hover");
+        }
+
         if (rule.IsLand && e.PointerSpeedPxPerSec > Config.HoverMaxPointerSpeedPxPerSec)
         {
             return Suppress("fast-flick");
@@ -362,8 +387,7 @@ public sealed class HapticPolicy
             return Suppress("reentry-cooldown");
         }
 
-        // A busy app's lands thin out to its limit, evenly spaced, rather than stopping: on the taskbar (all lands, no
-        // structure) a pause felt like the app had broken.
+        // Explicit density limits thin out landings evenly rather than stopping feedback entirely.
         var densityLimit = Config.DensityLandsPer2s <= 0 ? 0 : app?.DensityLandsPer2s ?? Config.DensityLandsPer2s;
         if (rule.IsLand && densityLimit > 0 && _backoffUntil.TryGetValue(e.ProcessId, out var until) && nowMs < until &&
             _lastLandByPid.TryGetValue(e.ProcessId, out var lastLand) && nowMs - lastLand < 2000.0 / densityLimit)
@@ -471,25 +495,44 @@ public sealed class HapticPolicy
     private bool RuleEnabled(string rule) => rule switch
     {
         "land" or "land-large" => Config.HoverEnabled,
+        "tab-land" => Config.Profile != EffectProfile.Quiet || Config.DetentsEnabled,
+        "inline-link-land" => true,
+        "group-link-land" => Config.Profile != EffectProfile.Quiet,
         "close-hover" => Config.HoverEnabled && Config.CloseButtonHoverEnabled,
         "detent" => Config.DetentsEnabled,
-        "group-entry" => Config.GroupBoundaryEnabled,
-        "strip-edge" => Config.EdgeBumpsEnabled,
+        "group-entry" => Config.Profile == EffectProfile.Everything && Config.GroupBoundaryEnabled,
+        "strip-edge" => false,
         "range-step" => Config.RangeStepsEnabled,
         "range-limit" => Config.RangeLimitsEnabled,
+        "toggle-change" => Config.Profile != EffectProfile.Quiet,
         "cooperative" => Config.CooperativeEnabled,
         _ => false,
     };
 
-    /// <summary>The haptic vocabulary: Land (Hover/Click), Detent (Step), Edge (Collide). One meaning per sensation.</summary>
+    /// <summary>Automatic landings use Hover; state ticks use Step and edges use Collide in every style.</summary>
     private Rule? RuleFor(SemanticEvent e)
     {
         switch (e.Kind)
         {
             case SemanticEventKind.EnterControl:
+                if (e.Element is { IsInlineHyperlink: true })
+                {
+                    return new Rule("inline-link-land", IntentKind.Hover, Config.LandIntensity, true);
+                }
+
+                if (e.Element is { IsTextSizedGroupHyperlink: true })
+                {
+                    return new Rule("group-link-land", IntentKind.Hover, Config.LandIntensity, true);
+                }
+
+                if (e.ControlType == "TabItem")
+                {
+                    return new Rule("tab-land", IntentKind.Hover, Config.LandIntensity, true);
+                }
+
                 if (SemanticVocabulary.DetentTypes.Contains(e.ControlType))
                 {
-                    return new Rule("detent", IntentKind.Step, Config.DetentIntensity, false);
+                    return new Rule("detent", IntentKind.Hover, Config.LandIntensity, true);
                 }
 
                 if (SemanticVocabulary.IsCaptionClose(e.Element))
@@ -497,27 +540,23 @@ public sealed class HapticPolicy
                     return new Rule("close-hover", IntentKind.Hover, Config.LandIntensity, true);
                 }
 
-                return IsLarge(e.Element)
-                    ? new Rule("land-large", IntentKind.Click, Config.LargeIntensity, true)
-                    : new Rule("land", IntentKind.Hover, Config.LandIntensity, true);
+                return new Rule("land", IntentKind.Hover, Config.LandIntensity, true);
             case SemanticEventKind.CrossGroupBoundary:
-                return new Rule("group-entry", IntentKind.Step, Config.GroupIntensity, false);
+                return new Rule("group-entry", IntentKind.Hover, Config.GroupIntensity, true);
             case SemanticEventKind.GroupEdge:
                 return new Rule("strip-edge", IntentKind.Collide, Config.EdgeIntensity, false);
             case SemanticEventKind.RangeStep:
                 return new Rule("range-step", IntentKind.Step, 1.2, false);
             case SemanticEventKind.RangeLimit:
                 return new Rule("range-limit", IntentKind.Collide, 1.6, false);
+            case SemanticEventKind.ToggleChanged:
+                return new Rule("toggle-change", IntentKind.Step, Config.DetentIntensity, false);
             case SemanticEventKind.Cooperative when Enum.TryParse<IntentKind>(e.RequestedWaveform, true, out var kind):
                 return new Rule("cooperative", kind, 1.0, false);
             default:
                 return null;
         }
     }
-
-    private bool IsLarge(ElementSnapshot? s) =>
-        s is { LogicalHeight: { } h, LogicalWidth: { } w } &&
-        (h >= Config.LargeTargetLogicalHeight || (h >= Config.LargeTargetLogicalSide && w >= Config.LargeTargetLogicalSide));
 
     private readonly record struct Rule(string Name, IntentKind Kind, double Multiplier, bool IsLand);
 }

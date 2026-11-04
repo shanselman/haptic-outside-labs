@@ -7,6 +7,21 @@ public class UiaLifecycleTests
 {
     private static string LabExe => Path.Combine(AppContext.BaseDirectory, "haptics-lab.exe");
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LiveCloseSettingNeverEnablesNativeCaptionProbing(bool closeEnabled)
+    {
+        using var client = new UiaClient(LabExe, [UiaWorker.Arg]);
+        using var pipeline = new ObservationPipeline(
+            new PolicyConfig { Mode = HapticsMode.Off, CloseButtonHoverEnabled = closeEnabled },
+            new PipelineOptions { UiaFactory = _ => client });
+        pipeline.Start();
+        Assert.False(client.ObserveCaptions());
+        pipeline.Policy.Config.CloseButtonHoverEnabled = !closeEnabled;
+        Assert.False(client.ObserveCaptions());
+    }
+
     [Fact]
     public async Task StartFailureCompletesRequestExplicitly()
     {

@@ -4,9 +4,97 @@ namespace Haptics.Core.Tests;
 
 public class PolicyTests
 {
+    [Theory]
+    [InlineData(EffectProfile.Quiet)]
+    [InlineData(EffectProfile.Focused)]
+    [InlineData(EffectProfile.Everything)]
+    public void CheckboxHoverAndStripExitAreDisabledButEverythingAllowsToggleButtons(EffectProfile style)
+    {
+        foreach (var type in new[] { "CheckBox", "Button" })
+        foreach (var kind in new[] { SemanticEventKind.EnterControl, SemanticEventKind.CrossGroupBoundary, SemanticEventKind.GroupEdge })
+        {
+            var element = new ElementSnapshot { ProcessId = 1, ControlType = type, IsToggle = true, ParentControlType = "ToolBar" };
+            var decision = Policy(PolicyConfig.Sample(style, 0.8)).Evaluate(Enter(0, el: element) with { Kind = kind }, 0);
+            Assert.Equal(style == EffectProfile.Everything && type == "Button" && kind != SemanticEventKind.GroupEdge
+                ? PolicyOutcome.Emit : PolicyOutcome.Suppressed, decision.Outcome);
+            Assert.Equal(PolicyOutcome.Suppressed, Policy(PolicyConfig.Sample(style, 0.8))
+                .Evaluate(Enter(0, el: element, primary: true) with { Kind = kind }, 0).Outcome);
+        }
+        var target = new ElementSnapshot { ProcessId = 1, ControlType = "ComboBox" };
+        var edge = Enter(0, el: target) with { Kind = SemanticEventKind.GroupEdge, Destination = target };
+        Assert.Equal("rule-disabled:strip-edge", Policy(PolicyConfig.Sample(style, 0.8)).Evaluate(edge, 0).Reason);
+    }
+
+    [Fact]
+    public void EverythingNeverDisablesAScenarioFocusedEnables()
+    {
+        foreach (var kind in Enum.GetValues<SemanticEventKind>())
+        foreach (var type in new[] { "Button", "SplitButton", "MenuItem", "TabItem", "Slider", "Hyperlink", "ComboBox", "ListItem", "CheckBox" })
+        foreach (var parent in new[] { "Tab", "MenuBar", "Menu", "ToolBar", "ComboBox", "Text", "Document", "Edit", "Group" })
+        {
+            var element = new ElementSnapshot
+            {
+                ProcessId = 1, RuntimeIdHash = "target", ControlType = type, ParentControlType = parent,
+                HasDropdown = true, Bounds = new RectD(0, 0, 100, 60),
+            };
+            var e = Enter(0, el: element) with { Kind = kind, Destination = element, RequestedWaveform = "Success" };
+            var focused = Policy(PolicyConfig.Sample(EffectProfile.Focused, 0.8)).Evaluate(e, 0);
+            var everything = Policy(PolicyConfig.Sample(EffectProfile.Everything, 0.8)).Evaluate(e, 0);
+            Assert.False(focused.Outcome == PolicyOutcome.Emit && everything.Outcome != PolicyOutcome.Emit,
+                $"{kind}/{type}/{parent}: Focused emitted where Everything was {everything.Reason}");
+            if (focused.Outcome == PolicyOutcome.Emit)
+            {
+                Assert.Equal(focused.Intent?.Waveform, everything.Intent?.Waveform);
+            }
+        }
+    }
+
+    [Fact]
+    public void QuietNeverEmitsForAScenarioFocusedSuppresses()
+    {
+        foreach (var kind in Enum.GetValues<SemanticEventKind>())
+        foreach (var type in new[] { "Button", "MenuItem", "TabItem", "RadioButton", "Slider", "Hyperlink", "ComboBox", "CheckBox" })
+        {
+            var element = new ElementSnapshot
+            {
+                ProcessId = 1, RuntimeIdHash = "target", ControlType = type,
+                ParentControlType = type == "TabItem" ? "Tab" : "MenuBar", HasDropdown = type == "MenuItem",
+                Bounds = new RectD(0, 0, 100, 60),
+            };
+            var e = Enter(0, el: element) with { Kind = kind, Destination = element, RequestedWaveform = "Success" };
+            var focused = Policy(PolicyConfig.Sample(EffectProfile.Focused, 0.8)).Evaluate(e, 0);
+            var quiet = Policy(PolicyConfig.Sample(EffectProfile.Quiet, 0.8)).Evaluate(e, 0);
+            Assert.False(quiet.Outcome == PolicyOutcome.Emit && focused.Outcome != PolicyOutcome.Emit,
+                $"{kind}/{type}: Quiet emitted where Focused was {focused.Reason}");
+            if (quiet.Outcome == PolicyOutcome.Emit)
+            {
+                Assert.Equal(focused.Intent?.Waveform, quiet.Intent?.Waveform);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(40, 30)]
+    [InlineData(200, 80)]
+    public void FocusedSliderHoverIsLightAndCannotEmitDuringADrag(int width, int height)
+    {
+        var element = new ElementSnapshot
+        {
+            ProcessId = 1, ControlType = "Slider", Bounds = new RectD(0, 0, width, height),
+            SliderThumbBounds = new RectD(10, 5, 20, 20), QueryX = 20, QueryY = 15,
+        };
+        Assert.Equal("Hover", Policy().Evaluate(Enter(0, el: element), 0).Intent?.Waveform);
+        Assert.Equal("slider-drag-hover", Policy().Evaluate(Enter(0, el: element, primary: true), 0).Reason);
+        foreach (var style in new[] { EffectProfile.Focused, EffectProfile.Everything })
+        {
+            Assert.Equal(PolicyOutcome.Suppressed, Policy(PolicyConfig.Sample(style, 0.8))
+                .Evaluate(Enter(0, el: element with { SliderThumbBounds = null }), 0).Outcome);
+        }
+    }
+
     private static SemanticEvent Enter(double t, string key = "1:a", ElementSnapshot? el = null, double speed = 0, long transition = 1, bool primary = false) =>
         new(SemanticEventKind.EnterControl, transition, t, t, 1, el?.ControlType ?? "Button", key, null, 0.9, ["test"], primary, speed,
-            el ?? new ElementSnapshot { ProcessId = 1, ControlType = "Button", RuntimeIdHash = key });
+            el ?? new ElementSnapshot { ProcessId = 1, ControlType = "ComboBox", RuntimeIdHash = key });
 
     private static HapticPolicy Policy(PolicyConfig? cfg = null) =>
         new(cfg ?? new PolicyConfig { Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions }, _ => "app")

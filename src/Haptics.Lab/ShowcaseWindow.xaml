@@ -102,7 +102,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                             <TextBlock Text="Style" FontWeight="SemiBold" />
-                            <TextBlock x:Name="StyleHint" Style="{StaticResource Hint}" Text="Land on controls" />
+                            <TextBlock x:Name="StyleHint" Style="{StaticResource Hint}" Text="Tabs, text links, pickers, menu launchers, slider thumb and toggles" />
                         </StackPanel>
                         <ComboBox x:Name="StyleBox" Grid.Column="1" Width="132" VerticalAlignment="Center"
                                   AutomationProperties.Name="Haptic style" />

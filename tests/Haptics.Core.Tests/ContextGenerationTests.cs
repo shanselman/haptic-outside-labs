@@ -9,7 +9,7 @@ public class ContextGenerationTests
 
     private static ElementSnapshot Button(double requested = 10) => new()
     {
-        ProcessId = 100, ControlType = "Button", RuntimeIdHash = "button",
+        ProcessId = 100, ControlType = "ComboBox", RuntimeIdHash = "button",
         Bounds = new RectD(0, 0, 100, 30), QueryX = 20, QueryY = 15, RequestedAtMs = requested,
     };
 
@@ -83,7 +83,8 @@ public class ContextGenerationTests
         Assert.False(interpreter.HasPendingArrival);
         interpreter.OnPointer(Pointer(20));
         Assert.Contains("generation-snapshot-discarded", interpreter.OnSnapshot(Button(), 21).Notes);
-        Assert.Contains(interpreter.OnSnapshot(Button(20) with { Generation = interpreter.Generation }, 21).Events,
+        Assert.Empty(interpreter.OnSnapshot(Button(20) with { Generation = interpreter.Generation }, 21).Events);
+        Assert.Contains(interpreter.OnTick(70).Events,
             e => e.Kind == SemanticEventKind.EnterControl);
     }
 
@@ -96,7 +97,8 @@ public class ContextGenerationTests
         interpreter.OnPointer(Pointer(10));
         Assert.Equal(2, interpreter.Generation);
         Assert.Contains("generation-snapshot-discarded", interpreter.OnSnapshot(Button(), 11).Notes);
-        Assert.Contains(interpreter.OnSnapshot(Button() with { Generation = 2 }, 11).Events,
+        Assert.Empty(interpreter.OnSnapshot(Button() with { Generation = 2 }, 11).Events);
+        Assert.Contains(interpreter.OnTick(60).Events,
             e => e.Kind == SemanticEventKind.EnterControl);
     }
 }

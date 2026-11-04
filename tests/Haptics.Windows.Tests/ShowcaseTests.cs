@@ -14,6 +14,47 @@ namespace Haptics.Windows.Tests;
 public class ShowcaseTests
 {
     [Fact]
+    public void EvaluationKeepsCloseOffAcrossSettingsChanges() => OnStaThread(() =>
+    {
+        using var window = new ShowcaseWindow();
+        window.ReportOperationError = (title, message) => Assert.Fail($"{title}: {message}");
+        ObservationPipeline? engine = null;
+        Assert.True(window.TryStartEngine(pipeline => engine = pipeline));
+        Assert.NotNull(engine);
+        Assert.Equal(Haptics.Core.EffectProfile.Focused, engine.Policy.Config.Profile);
+        Assert.Equal(0.8, engine.Policy.Config.IntensityScale);
+        Assert.False(engine.Policy.Config.CloseButtonHoverEnabled);
+
+        window.IntensitySlider.Value = 3;
+        Assert.Equal(0.3, engine.Policy.Config.IntensityScale);
+        window.StyleBox.SelectedIndex = 2;
+        Assert.False(engine.Policy.Config.CloseButtonHoverEnabled);
+        window.StyleBox.SelectedIndex = 1;
+        Assert.False(engine.Policy.Config.CloseButtonHoverEnabled);
+    });
+
+    [Theory]
+    [InlineData(true, "turned on")]
+    [InlineData(false, "turned off")]
+    public void ToggleActivityReportsTheObservedDirection(bool on, string expected)
+    {
+        var element = new Haptics.Core.ElementSnapshot
+        {
+            ProcessId = 100, ControlType = "CheckBox", IsToggle = true, IsToggledOn = on,
+        };
+        var e = new Haptics.Core.SemanticEvent(Haptics.Core.SemanticEventKind.ToggleChanged, 1, 0, 0,
+            100, "CheckBox", element.ElementKey, null, 1, [], false, 0, element);
+        var policy = new Haptics.Core.HapticPolicy(
+            Haptics.Core.PolicyConfig.Sample(Haptics.Core.EffectProfile.Focused, 0.55), _ => "app")
+        {
+            ConsentGiven = true, OutputRouteVerified = true,
+        };
+        var decision = policy.Evaluate(e, 0);
+        Assert.Equal("Step", decision.Intent?.Waveform);
+        Assert.Contains(expected, ShowcaseWindow.Friendly(decision));
+    }
+
+    [Fact]
     public void SetupExplainsPrimingAndActivityDoesNotClaimPhysicalEvidence()
     {
         OnStaThread(() =>
@@ -35,7 +76,7 @@ public class ShowcaseTests
             Assert.Equal("30%", window.IntensityLabel.Text);
             Assert.Equal(1, window.StyleBox.SelectedIndex);
             window.StyleBox.SelectedIndex = 0;
-            Assert.Equal("Structure only", window.StyleHint.Text);
+            Assert.Equal("Tab/inline-link Hover and slider detents/limits", window.StyleHint.Text);
             Assert.Equal(7, window.VocabularyPanel.Children.Count);
             Assert.Equal("Stage", window.StageTab.Header);
             Assert.False(window.VisualDemoSwitch.IsChecked);
@@ -88,6 +129,7 @@ public class ShowcaseTests
 
         Assert.NotNull(started);
         Assert.Equal(Haptics.Core.HapticsMode.ObserveOnly, started.Policy.Config.Mode);
+        Assert.False(started.Policy.Config.CloseButtonHoverEnabled);
         Assert.True(started.Policy.ConsentGiven);
         Assert.False(started.Policy.OutputRouteVerified);
         Assert.Equal(Haptics.Core.OutputRoutes.DryRun, started.Route);
@@ -97,7 +139,9 @@ public class ShowcaseTests
         Assert.Contains("Visual demo active", window.StatusText.Text, StringComparison.OrdinalIgnoreCase);
 
         window.IntensitySlider.Value = window.IntensitySlider.Value > 5 ? 3 : 8;
+        window.StyleBox.SelectedIndex = 2;
         Assert.Equal(Haptics.Core.HapticsMode.ObserveOnly, started.Policy.Config.Mode);
+        Assert.False(started.Policy.Config.CloseButtonHoverEnabled);
         Assert.False(started.Policy.OutputRouteVerified);
 
         window.ConfigureVisualDemoMode(false, null);
@@ -343,6 +387,9 @@ public class ShowcaseTests
         Assert.Equal(AutomationControlType.Tab, new TabControlAutomationPeer(demo.DemoTabs).GetAutomationControlType());
         Assert.Equal(0, demo.DemoTabs.SelectedIndex);
         Assert.True(new PasswordBoxAutomationPeer(demo.DemoPassword).IsPassword());
+        var dropdown = new ComboBoxAutomationPeer(demo.DemoDropdown);
+        Assert.Equal(AutomationControlType.ComboBox, dropdown.GetAutomationControlType());
+        Assert.NotNull(dropdown.GetPattern(PatternInterface.ExpandCollapse));
 
         var controls = Descendants(demo).ToList();
         Assert.Contains(controls, c => c is WpfControls.Menu);
@@ -350,6 +397,21 @@ public class ShowcaseTests
         Assert.Equal(4, controls.OfType<WpfControls.GroupBox>().Count());
         Assert.Equal(3, controls.OfType<WpfControls.RadioButton>().Count());
         Assert.Equal(2, controls.OfType<WpfControls.CheckBox>().Count());
+        foreach (var check in controls.OfType<WpfControls.CheckBox>())
+        {
+            var provider = Assert.IsAssignableFrom<IToggleProvider>(new CheckBoxAutomationPeer(check).GetPattern(PatternInterface.Toggle));
+            check.IsChecked = false;
+            Assert.Equal(ToggleState.Off, provider.ToggleState);
+            check.IsChecked = true;
+            Assert.Equal(ToggleState.On, provider.ToggleState);
+        }
+
+        foreach (var toggle in controls.OfType<ToggleButton>().Where(t => t.GetType() == typeof(ToggleButton)))
+        {
+            var provider = Assert.IsAssignableFrom<IToggleProvider>(new ToggleButtonAutomationPeer(toggle).GetPattern(PatternInterface.Toggle));
+            toggle.IsChecked = true;
+            Assert.Equal(ToggleState.On, provider.ToggleState);
+        }
         Assert.Equal(3, controls.OfType<WpfControls.Button>().Count(b => b.Width == 64 && b.Height == 88));
         Assert.Equal(4, controls.OfType<WpfControls.Button>().Count(b => b.Width == 9 && b.Height == 9));
     });

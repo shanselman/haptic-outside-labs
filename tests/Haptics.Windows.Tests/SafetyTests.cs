@@ -32,9 +32,12 @@ public class SafetyTests
         var v = ForbiddenApiScanner.Scan(typeof(SafetyTests).Assembly.Location);
         Assert.Contains(v, x => x.Name == "SendInput");
         Assert.Contains(v, x => x.Name == "System.Windows.Forms.Cursor.set_Position");
+        Assert.Contains(v, x => x.Name == "System.Windows.Automation.TogglePattern");
     }
 
     private static void NeverCalledForbiddenMemberControl() => System.Windows.Forms.Cursor.Position = default;
+
+    private static void NeverCalledToggleControl(System.Windows.Automation.TogglePattern pattern) => pattern.Toggle();
 
     [Fact]
     public void SourceNeverUsesCaptureOrNoLegacyOrUiAccess()

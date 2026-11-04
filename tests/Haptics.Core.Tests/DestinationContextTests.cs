@@ -15,6 +15,7 @@ public class DestinationContextTests
     private static HapticPolicy Policy() => new(new PolicyConfig
     {
         Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions, MinimumGlobalSpacingMs = 0,
+        Profile = EffectProfile.Everything,
     }, pid => pid switch { 100 => "notepad", 200 => "KeePass", 400 => "paint", _ => null })
     {
         ConsentGiven = true, OutputRouteVerified = true,
@@ -27,7 +28,7 @@ public class DestinationContextTests
     [InlineData("excluded")]
     [InlineData("unknown")]
     [InlineData("unknown-process")]
-    public void StripEdgeChecksTheDestinationInsteadOfOnlyTheOldButton(string context)
+    public void StripExitNeverEmitsIntoUnsafeDestinations(string context)
     {
         var interpreter = new SemanticInterpreter();
         interpreter.OnPointer(Pointer(0, 100));
@@ -41,10 +42,9 @@ public class DestinationContextTests
         {
             IsPassword = context == "password", IsEnabled = context != "disabled", IsOffscreen = context == "offscreen",
         };
-        var edge = Assert.Single(interpreter.OnSnapshot(destination, 301).Events,
-            e => e.Kind == SemanticEventKind.GroupEdge);
-
-        Assert.Equal(PolicyOutcome.Suppressed, Policy().Evaluate(edge, 301).Outcome);
+        var events = interpreter.OnSnapshot(destination, 301).Events;
+        Assert.DoesNotContain(events, e => e.Kind == SemanticEventKind.GroupEdge);
+        Assert.All(events, e => Assert.Equal(PolicyOutcome.Suppressed, Policy().Evaluate(e, 301).Outcome));
     }
 
     [Theory]
@@ -115,7 +115,7 @@ public class DestinationContextTests
     }
 
     [Fact]
-    public void SafeStripExitRetainsSourceMeaningAndAllowsAnotherVisibleProcess()
+    public void SafeStripExitToAnotherVisibleProcessAlsoStaysSilent()
     {
         var interpreter = new SemanticInterpreter();
         interpreter.OnPointer(Pointer(0, 100));
@@ -126,11 +126,9 @@ public class DestinationContextTests
         interpreter.OnSnapshot(source, 1);
         interpreter.OnPointer(Pointer(300, 140));
         var destination = Element(300, "Pane", "safe", 140, 400);
-        var edge = Assert.Single(interpreter.OnSnapshot(destination, 301).Events, e => e.Kind == SemanticEventKind.GroupEdge);
-        Assert.Same(source, edge.Element);
-        Assert.Same(destination, edge.Destination);
-        Assert.Equal("100:strip", edge.GroupKey);
-        Assert.Equal(PolicyOutcome.Emit, Policy().Evaluate(edge, 301).Outcome);
+        var events = interpreter.OnSnapshot(destination, 301).Events;
+        Assert.DoesNotContain(events, e => e.Kind == SemanticEventKind.GroupEdge);
+        Assert.All(events, e => Assert.Equal(PolicyOutcome.Suppressed, Policy().Evaluate(e, 301).Outcome));
     }
 
     [Theory]
@@ -145,7 +143,7 @@ public class DestinationContextTests
             strip ? source : disabled, Destination: strip ? disabled : null);
         var policy = Policy();
         policy.Config.IncludeDisabledControls = true;
-        Assert.Equal("disabled-control", policy.Evaluate(e, 0).Reason);
+        Assert.Equal(strip ? "rule-disabled:strip-edge" : "disabled-control", policy.Evaluate(e, 0).Reason);
     }
 
     [Fact]
@@ -157,7 +155,7 @@ public class DestinationContextTests
     }
 
     [Fact]
-    public void DestinationMustAlsoBeAllowlistedWhenTheSourceIsAllowed()
+    public void LegacyStripEventsStayDisabledWithAnAllowlistedSource()
     {
         var source = Element(0, "Button", "source", 100);
         var destination = Element(0, "Pane", "destination", 140, 400);
@@ -166,7 +164,7 @@ public class DestinationContextTests
         var policy = Policy();
         policy.Config.AppPolicy = AppPolicy.OptInAllowlist;
         policy.Config.AllowedProcesses = ["notepad"];
-        Assert.Equal("app-not-allowlisted", policy.Evaluate(e, 0).Reason);
+        Assert.Equal("rule-disabled:strip-edge", policy.Evaluate(e, 0).Reason);
     }
 
     [Fact]

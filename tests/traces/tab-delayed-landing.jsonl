@@ -1,0 +1,24 @@
+{"type":"comment","text":"Authored race/edge regression: fly past tabs, receive the previous tab's late reply, then stop on the final tab. Near-edge landings and brief back-and-forth crossings must also resolve to the final identity. Every style: Hover at 70, 370, 690."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":20,"y":15,"fg":100}
+{"t":1,"type":"element","req":0,"x":20,"y":15,"pid":100,"controlType":"TabItem","rid":"a","bounds":[0,0,40,30],"parentType":"Tab","selected":false}
+{"t":10,"type":"pointer","x":90,"y":15,"fg":100}
+{"t":20,"type":"pointer","x":110,"y":15,"fg":100}
+{"t":30,"type":"element","req":10,"x":90,"y":15,"pid":100,"controlType":"TabItem","rid":"b","bounds":[40,0,60,30],"parentType":"Tab","selected":false}
+{"t":40,"type":"element","req":20,"x":110,"y":15,"pid":100,"controlType":"TabItem","rid":"c","bounds":[100,0,100,30],"parentType":"Tab","selected":false}
+{"t":69,"type":"tick"}
+{"t":70,"type":"tick"}
+{"t":300,"type":"pointer","x":250,"y":15,"fg":100}
+{"t":301,"type":"element","req":300,"x":250,"y":15,"pid":100,"controlType":"TabItem","rid":"d","bounds":[240,0,40,30],"parentType":"Tab","selected":false}
+{"t":320,"type":"pointer","x":282,"y":15,"fg":100}
+{"t":321,"type":"element","req":320,"x":282,"y":15,"pid":100,"controlType":"TabItem","rid":"e","bounds":[280,0,40,30],"parentType":"Tab","selected":false}
+{"t":369,"type":"tick"}
+{"t":370,"type":"tick"}
+{"t":600,"type":"pointer","x":322,"y":15,"fg":100}
+{"t":601,"type":"element","req":600,"x":322,"y":15,"pid":100,"controlType":"TabItem","rid":"f","bounds":[320,0,40,30],"parentType":"Tab","selected":false}
+{"t":620,"type":"pointer","x":318,"y":15,"fg":100}
+{"t":621,"type":"element","req":620,"x":318,"y":15,"pid":100,"controlType":"TabItem","rid":"e","bounds":[280,0,40,30],"parentType":"Tab","selected":false}
+{"t":640,"type":"pointer","x":322,"y":15,"fg":100}
+{"t":641,"type":"element","req":640,"x":322,"y":15,"pid":100,"controlType":"TabItem","rid":"f","bounds":[320,0,40,30],"parentType":"Tab","selected":false}
+{"t":689,"type":"tick"}
+{"t":690,"type":"tick"}

@@ -19,10 +19,10 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 {
     private static readonly (string Name, string Waveform, string Meaning, bool AppsOnly)[] Vocabulary =
     [
-        ("Land", "Hover", "Land on a button, command, checkbox or link.", false),
-        ("Land · big", "Click", "A firmer landing on a large target, like a ribbon button.", false),
-        ("Detent", "Step", "Enter a group, change a tab or option, or cross a slider tick.", false),
-        ("Edge", "Collide", "Slide off the end of a strip, or reach a slider's limit.", false),
+        ("Land", "Hover", "Land on an eligible navigation or menu control.", false),
+        ("Click preview", "Click", "Explicit waveform preview only. Automatic landings use Hover, regardless of size.", false),
+        ("Detent", "Step", "Turn a toggle on or off, or cross a slider tick.", false),
+        ("Edge", "Collide", "Reach a slider's limit while dragging. Strip exits stay silent.", false),
         ("Align", "Align", "Apps only: a snap guide appeared.", true),
         ("Success", "Success", "Apps only: saved, dropped or sent — the app knows.", true),
         ("Error", "Error", "Apps only: rejected or failed — the app knows.", true),
@@ -78,7 +78,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             if (StyleBox.SelectedIndex >= 0)
             {
                 _selectedStyle = (EffectProfile)StyleBox.SelectedIndex;
-                StyleHint.Text = StyleBox.SelectedIndex switch { 0 => "Structure only", 1 => "Land on controls", _ => "Every crossing" };
+                StyleHint.Text = StyleBox.SelectedIndex switch { 0 => "Tab/inline-link Hover and slider detents/limits", 1 => "Tabs, text links, pickers, menu launchers, slider thumb and toggles", _ => "Adds other links, options, toggle-button Hover and groups" };
                 ApplySettings();
             }
         };
@@ -422,7 +422,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         Exception? failure = null;
         try
         {
-            var config = PolicyConfig.Sample(_selectedStyle, Intensity);
+            var config = CreatePolicy();
             config.Mode = HapticsMode.ObserveOnly;
             pipeline = new ObservationPipeline(config, new PipelineOptions { Route = OutputRoutes.DryRun });
             pipeline.Policy.ConsentGiven = true;
@@ -487,7 +487,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         Exception? failure = null;
         try
         {
-            pipeline = new ObservationPipeline(PolicyConfig.Sample(_selectedStyle, Intensity),
+            pipeline = new ObservationPipeline(CreatePolicy(),
                 new PipelineOptions { Route = OutputRoutes.CachedController, OutputOwnership = _outputOwnership });
             pipeline.Policy.ConsentGiven = true;
             pipeline.Policy.OutputRouteVerified = true;
@@ -550,6 +550,18 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     private static bool IsFileFailure(Exception ex) =>
         ex is IOException or UnauthorizedAccessException or System.Security.SecurityException;
 
+    private PolicyConfig CreatePolicy(EffectProfile? overrideStyle = null)
+    {
+        var style = overrideStyle ?? _selectedStyle;
+        var config = PolicyConfig.Sample(style, Intensity);
+        config.CloseButtonHoverEnabled = false;
+        if (_visualDemo)
+        {
+            config.Mode = HapticsMode.ObserveOnly;
+        }
+        return config;
+    }
+
     private void ApplySettings(EffectProfile? overrideStyle = null)
     {
         if (_pipeline is null)
@@ -557,13 +569,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             return;
         }
 
-        var config = PolicyConfig.Sample(overrideStyle ?? _selectedStyle, Intensity);
-        if (_visualDemo)
-        {
-            config.Mode = HapticsMode.ObserveOnly;
-        }
-
-        _pipeline.Policy.Config = config;
+        _pipeline.Policy.Config = CreatePolicy(overrideStyle);
         _pipeline.TouchpadBoost = BoostSwitch.IsChecked == true ? 1.3 : 1.0;
     }
 
@@ -635,7 +641,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         if (_pipeline is not null)
         {
             var s = _pipeline.Stats();
-            _stats.Text = $"raw {s.RawEvents} (bg {s.BackgroundRawEvents})  uia p50 {s.LookupP50:0.0}/p95 {s.LookupP95:0.0}ms  emit {s.Emits} supp {s.Suppressed}  sent {s.ApiAccepted} rejected {s.ApiRejected} late {s.Expired}  landing ≤{_pipeline.Interpreter.EffectiveLandingSpeed:0}px/s";
+            _stats.Text = $"raw {s.RawEvents} (bg {s.BackgroundRawEvents})  uia p50 {s.LookupP50:0.0}/p95 {s.LookupP95:0.0}ms  emit {s.Emits} supp {s.Suppressed}  sent {s.ApiAccepted} rejected {s.ApiRejected} late {s.Expired}  dwell small {_pipeline.Interpreter.Config.SmallTargetDwellMs:0}ms / tabs+large {_pipeline.Interpreter.Config.LandingDwellMs:0}ms";
         }
 
         _inspector.BeginUpdate();
@@ -671,7 +677,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
                         "skip:already-selected" => "silent — you're already on this one",
                         "skip:too-small" => "silent — too small to be a real target",
                         "skip:inline-link" => "silent — a link inside text",
-                        "passed-through" => "silent — flying past, not landing",
+                        "passed-through" => "silent — left before dwell completed",
                         _ => $"silent — {note.Note}",
                     }, quiet: true);
                     break;
@@ -766,9 +772,11 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         {
             SemanticEventKind.CrossGroupBoundary => $"entered a {e.Element?.ParentControlType?.ToLowerInvariant() ?? "group"}",
             SemanticEventKind.GroupEdge => $"end of the {e.Element?.ParentControlType?.ToLowerInvariant() ?? "strip"}",
+            SemanticEventKind.EnterControl when e.Element is { IsSliderThumb: true } => "landed on a slider thumb",
             SemanticEventKind.EnterControl => $"landed on a {Human(e.ControlType)}",
             SemanticEventKind.RangeStep => "slider tick",
             SemanticEventKind.RangeLimit => "slider end",
+            SemanticEventKind.ToggleChanged => $"{Human(e.ControlType)} turned {(e.Element?.IsToggledOn == true ? "on" : "off")}",
             SemanticEventKind.Cooperative => $"an app sent {e.RequestedWaveform}",
             _ => null,
         };
@@ -782,7 +790,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             var feel = i.Kind switch
             {
                 IntentKind.Hover => "Land",
-                IntentKind.Click => "Land · big",
+                IntentKind.Click => "Click",
                 IntentKind.Step => "Detent",
                 IntentKind.Collide => "Edge",
                 _ => i.Waveform,
@@ -799,6 +807,12 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             "protected-context" => "password field",
             "process-excluded" => "excluded app",
             "stale-intent" => "answer came too late",
+            "focused-target-not-enabled" => "not a Focused landing target",
+            "rule-disabled:group-entry" => "Quiet/Focused skip group cues",
+            "rule-disabled:strip-edge" => "strip exits are disabled",
+            "toggle-hover-disabled" => "checkbox hover or pressed-toggle hover is disabled",
+            "slider-track-hover" => "only the slider thumb hovers",
+            "slider-drag-hover" => "slider drag uses detents, not hover",
             "rule-disabled:land" or "rule-disabled:land-large" => "Quiet style",
             _ when d.Reason.StartsWith("native-suppression", StringComparison.Ordinal) => "Windows/Office already buzz here",
             _ when d.Reason.StartsWith("rate-limit", StringComparison.Ordinal) => "rate limit",

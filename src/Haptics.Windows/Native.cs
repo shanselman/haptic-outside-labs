@@ -10,6 +10,8 @@ internal static class Native
 {
     public const uint WM_DESTROY = 0x0002;
     public const uint WM_CLOSE = 0x0010;
+    public const uint WM_NCHITTEST = 0x0084;
+    public const uint WM_GETTITLEBARINFOEX = 0x033F;
     public const uint WM_INPUT_DEVICE_CHANGE = 0x00FE;
     public const uint WM_INPUT = 0x00FF;
     public const uint WM_APP = 0x8000;
@@ -27,6 +29,7 @@ internal static class Native
     public const uint WS_EX_NOACTIVATE = 0x08000000;
     public static readonly IntPtr HWND_MESSAGE = new(-3);
     public const uint GA_ROOT = 2;
+    public const uint GA_ROOTOWNER = 3;
 
     public delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -65,6 +68,26 @@ internal static class Native
     {
         public int X;
         public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TITLEBARINFOEX
+    {
+        public uint Size;
+        public RECT TitleBar;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)]
+        public uint[] State;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)]
+        public RECT[] Bounds;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -140,6 +163,29 @@ internal static class Native
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowEnabled(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmGetWindowAttribute(IntPtr hWnd, uint attribute, out RECT rect, uint size);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int GetClassNameW(IntPtr hWnd, System.Text.StringBuilder className, int maxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeoutW(IntPtr hWnd, uint msg, UIntPtr wParam, IntPtr lParam,
+        uint flags, uint timeout, out UIntPtr result);
+
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr ReadTitleBarInfo(IntPtr hWnd, uint msg, UIntPtr wParam, ref TITLEBARINFOEX info,
+        uint flags, uint timeout, out UIntPtr result);
 
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();

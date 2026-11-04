@@ -363,7 +363,7 @@ Capture, where available:
 
 **Threading:** Microsoft's UIA guidance recommends a dedicated, non-window-owning COM MTA thread for clients inspecting all desktop elements; register and remove UIA events consistently within that threading model. [S12]
 
-**Provider-risk containment:** A cross-process UIA lookup may block unpredictably. Build an **isolated UIA worker process** or another robust crash/hang containment mechanism before enabling arbitrary targets. Merely putting synchronous UIA on a `Task.Run` and hoping it can be cancelled is not an acceptable bound. Requests carry a deadline; if the result is stale, drop it. Restart the worker after a watchdog violation and temporarily quarantine the problematic process/window from queries. This is a design recommendation to validate, not a guarantee of prompt UIA completion. A known-slow enumeration (the taskbar's `Shell_TrayWnd` host takes 100–600 ms) must never run on the request path: refresh it on a background thread inside the worker with the same minimal cache request, and answer lookups from the last snapshot (or the host itself) while a refresh is running.
+**Provider-risk containment:** A cross-process UIA lookup may block unpredictably. Build an **isolated UIA worker process** or another robust crash/hang containment mechanism before enabling arbitrary targets. Merely putting synchronous UIA on a `Task.Run` and hoping it can be cancelled is not an acceptable bound. Requests carry a deadline; if the result is stale, drop it. Restart the worker after a watchdog violation and temporarily quarantine the problematic process/window from queries. This is a design recommendation to validate, not a guarantee of prompt UIA completion. Primary and secondary taskbar hosts are excluded before UIA acquisition. Do not enumerate taskbar descendants, start background host scans, or retain taskbar caches.
 
 **Change observation:** Subscribe selectively to UIA structure/property events and `SetWinEventHook(...WINEVENT_OUTOFCONTEXT)` signals for menu, focus, reorder, show/hide, and window location transitions. Use them to invalidate cached geometry and element identity; do **not** assume all events are raised by all providers. [S09] [S13] [S26]
 
@@ -780,7 +780,7 @@ The table below is **a proposed design space**, not a promise of universal detec
 | Menu item entered | Light `Hover` | UIA `MenuItem`, point transition | MVP+ | Nested menus/popups and fast movement |
 | Disabled control | **None** | UIA `IsEnabled` | MVP | A disabled affordance is not a success |
 | Window minimize/maximize button hover | Light `Hover` (optional) | UIA TitleBar/Window controls | Early | Native/shell conflicts; optional by default |
-| Window Close button hover | One light `Hover`, no group `Step` | UIA Button touching its TitleBar's right edge | Early | Default On (`CloseButtonHoverEnabled`); RTL captions stay generic |
+| Window Close button hover | One light `Hover`, no group `Step` | UIA Button directly under TitleBar, right edges within 2 logical pixels; no live native caption probing | Early | Default On (`CloseButtonHoverEnabled`); unsupported captions stay silent |
 | Start menu / taskbar control | Selective boundary cue | Shell UIA correctness | Early/manual | Native behavior and layout change |
 | Slider step or tick | `Step` | `RangeValuePattern` and physical gesture | **High-value** | Avoid imaginary ticks |
 | Slider endpoint | `Collide` | Verified bound reached | High-value | Some widgets clamp values silently |
@@ -921,12 +921,135 @@ The lab may expose detailed per-effect waveform experimentation. The tray should
 - **On** — semantic augmentation with visible active device and ability to stop immediately.
 - **Intensity:** Low / Medium / Strong or slider, always respecting Windows device haptic settings and user preference.
 - **Effect profile:** Quiet / Balanced / Experimental; Experimental must explicitly warn of additional density/latency and potential duplication.
-- **More is better (opt-in):** an independent setting for users who prefer denser feedback. Remove landing and per-app density thinning and allow up to 25 pulses per second, while retaining the selected style, Off switch, safety suppressions and app exclusions.
+- **More is better (opt-in):** shorter reentry cooldown and up to 25 pulses per second, retaining universal dwell, the selected style, Off switch, safety suppressions and app exclusions.
 - **Show ripples (opt-in):** draw a brief click-through, non-activating ripple at the pointer for each cue that policy emits, alongside the haptic. Dry-run and suppressed decisions draw nothing; it never takes focus or input and is not evidence of physical output.
 - **Per-app exclusions:** easy to add current app; protected and elevated UIs suppressed by default.
 - **One-click kill switch:** visible from the tray and available even when a provider hangs.
 
 Do not obscure the fact that enabling the app allows it to observe which UI controls are under the pointer. That visibility is part of informed consent.
+
+### 8.5 Style refinement (user decisions through 2026-11-04)
+
+Taskbar observation is removed in every style: no descendant discovery, geometry cache, icon classification,
+refresh timer/pacing or configurable enablement. Old taskbar settings are ignored. A native root-class exclusion
+for primary/secondary taskbars runs before UIA lookup, avoiding shell provider work entirely.
+Close hover is removed from Focused pending a replacement implementation; both the geometry and native classifications
+are ineligible. Close is also switched off in local tray settings and Showcase. The live pipeline always dispatches
+`ObserveCaptions = false`, so no native caption probing or custom caption helper is re-enabled.
+
+The current Focused style is selective rather than Quiet plus every actionable control. Its included targets are
+unselected navigation tabs, inline/text-sized Group links, dropdown pickers, menu launchers and slider thumbs. They use Hover
+regardless of size. Ordinary toolbar commands, recognized browser toolbar commands and leaf open-menu choices are
+removed from Focused and remain available in Everything. Selected tabs, group entry and strip-edge cues
+remain silent in Focused. Links outside the inline/text-sized Group rules and dropdown options are Everything-only; unknown navigation/content rows are not guessed.
+
+Every style, including Everything and More-is-better configurations, uses 30 ms continuous dwell for small targets
+and 50 ms for every TabItem and targets at least 56 logical pixels tall or 48 by 48 logical pixels.
+Physical bounds are divided by monitor scale. Slider size uses the observed Thumb bounds, not owner track bounds.
+Missing bounds conservatively use 50 ms. A visit captures its dwell duration; newer geometry may extend it but
+cannot shorten it or restart residence. A fresh visit reclassifies size.
+Neither slow entry nor deceleration bypasses dwell. Small movement inside a target preserves its deadline;
+leaving before completion cancels it. Re-entry after an unsampled departure rearms the same identity using fresh
+pointer/snapshot context. Valid metadata arriving after dwell can complete immediately, but uses the same pointer
+containment and freshness checks as a timer callback. Per-app density thinning is off by default for all styles/apps.
+Global safety limits, selected-target silence, same-element cooldown, generation and stale-work guards remain.
+Replies queried at an older pointer position cannot consume the unresolved movement to the final position.
+A nearby reply whose bounds do not contain the current point is discarded before it can alter arrival state.
+Tabs use zero geometry expansion for residence and bypass the old tab-to-tab hysteresis hold; brief crossings
+are cancelled by dwell instead. This prevents a previous tab from retaining or emitting the final tab's landing.
+Other control jitter handling and genuine stationary UI-change suppression remain intact.
+
+Quiet is a subset of Focused: no scenario suppressed by Focused may gain a pulse in Quiet. The shared policy
+enforces Focused target eligibility for Quiet arrivals and restricts group-entry Hover to Everything.
+Strip-exit feedback is removed from every style: no GroupEdge events are generated, and legacy events are policy-suppressed
+even if the retained `EdgeBumpsEnabled` configuration field is true. Unselected radio options use Hover in Everything.
+Quiet retains eligible tab/inline-link Hover and slider drag steps/endpoints, but no radio-option or other control landings.
+This is shared behavior in both tray and Showcase, including the tray's More-is-better configuration.
+Everything includes every Focused scenario, including click-confirmed toggle changes, and additionally all links,
+direct ComboBox options, toggle-button hover, broader controls and group-entry Hover. Shared scenarios
+use Focused's waveform in every style: tabs use Hover, including in Quiet, and all automatic landings use Hover
+regardless of size. Quiet's tab and inline-link rules are explicit exceptions to generic-hover silence. Slider/toggle Step and
+slider-endpoint Collide remain unchanged. No style bypasses safety limits. Explicit waveform previews and cooperative requests
+are unchanged; legacy size-tuning fields are retained for configuration compatibility but no longer select Click.
+
+Focused navigation classification uses a shared structural allowlist, without process-specific content blacklists:
+TabItem under Tab; ComboBox; MenuItem under MenuBar; expandable MenuItem under
+Menu/MenuItem; Hyperlink directly under Text/Document/Edit; and dropdown-capable Buttons or SplitButtons inside ToolBar/Menu/MenuBar/MenuItem.
+Recognized browser toolbar commands are explicitly excluded. A standalone SplitButton, TabItem or MenuItem with
+missing/ambiguous parent does not qualify.
+`HasDropdown` represents expand/collapse capability, not evidence that a card is a command. It cannot make a generic
+people/content card hover, and opening a card's menu does not make the whole card eligible. Leaf menu choices stay
+silent in Focused. Unknown navigation rails may therefore be silent. Accepted arrivals record their structural
+`focused:*` reason in semantic evidence. No new UIA reads, ancestor traversal or content inspection are added.
+The content-card tests are authored structural negatives; actual Teams participant metadata has not been captured,
+so incorrect provider roles remain a coverage limitation.
+
+WPF can expose a menu/tab label as a separate Text element. Direct Text/Image children of MenuItem/TabItem resolve
+to that owner with its runtime identity, bounds and selection state, preserving child and owner safety flags.
+This consumes the sole parent hop: no grandparent is read or invented. `IsHeaderOwner` records this structural
+provenance; Focused admits an owned TabItem or an expandable owned MenuItem without requiring grandparent metadata.
+Leaf menu choices and children of generic buttons/cards/hyperlinks do not gain Focused hover eligibility. Padding/label transitions
+preserve one continuous dwell and one landing per visit.
+Direct Text/Image children of a CheckBox exposing toggle availability likewise normalize to that checkbox.
+The owner supplies identity, bounds and toggle state; child safety flags remain restrictive and no grandparent
+is read. This prevents label hit tests from clearing the tracked checkbox or interrupting toggle polling.
+Direct Text/Image children of Buttons and Hyperlinks also normalize to their owner using the same single-hop,
+process and child-safety checks. `IsButtonOwner` records Button ownership without inventing grandparent metadata.
+Everything can therefore maintain dwell across a button's padding, icon and label. Live Teams app-rail sampling
+found toggle Buttons under Group and direct Image hits; no process-specific selector or content read is needed.
+
+Slider steps and endpoint limits are unchanged: Step at existing quantized intervals (10 in the demo), Collide at
+minimum/maximum, only during a primary-button drag. Focused and Everything additionally emit one Hover after size-aware dwell
+inside a directly hit UIA Thumb's bounds, never the full track. `SliderThumbBounds` retains the child bounds while
+the normalized snapshot keeps its Slider owner's identity, bounds and range. Normalization uses one parent hop,
+checks process identity and preserves child safety flags. No new UIA properties, tree scans or geometry guesses
+are used. Missing Thumb metadata means no hover. Thumb residence is tracked separately from owner/range history:
+leaving/reentering the thumb rearms dwell, but neither a stationary thumb change nor drag release does.
+Pressing cancels pending hover; drag entry cannot arm it. Policy independently rejects track or drag hover.
+Checkbox hover is silent in every style, including unselected/Off and unknown-state checkboxes.
+Toggle-button hover is Everything-only, whether On or Off, including formatting buttons and app-rail buttons.
+Pressing cancels pending toggle hover and no hover arms during the press; release alone creates no new arrival.
+In both Focused and Everything, an observed Off-to-On or On-to-Off transition associated with a primary-button click
+emits Step, once, within 150 ms of release. Checkboxes cannot generate a group-entry pulse either.
+Unknown/indeterminate state, unchanged state and state changes without a qualifying mouse click are silent.
+Polling retains the original device route and interaction generation, never a new raw-input timestamp.
+Foreground/device/input-class changes and explicit invalidation cancel the pending toggle confirmation.
+Dropdowns use landing feedback only, not a second click-to-open pulse.
+
+Recognized Chromium toolbar commands are silent in Focused, including panel buttons that expose Toggle state.
+Recognition requires the native `Chrome_WidgetWin_1` host, Button role, Pane/ToolBar parent (or a directly resolved
+Button owner with no second parent read), and an exact observed class:
+`PinnedActionToolbarButton`, `PageActionView`, `ExtensionsToolbarButton`, `AvatarToolbarButton`, or `BrowserAppMenuButton`.
+They do not arm toggle confirmation. Other toolbar toggles remain click-confirmed state changes.
+Inline Hyperlink roles directly under Text/Document/Edit hover in Quiet, Focused and Everything.
+Focused additionally accepts a Hyperlink directly under Group when its DPI-normalized height is at most 24 px,
+its bounds are fully contained by the immediate parent's bounds, and the parent is at least twice its height.
+Bounds must be nonempty and finite; DPI must be positive and finite. The `group-link-land` rule uses Hover and
+is disabled in Quiet, which retains only the original inline-link rule. Missing parent metadata, full-parent
+cards, and ListItem/ToolBar parents do not qualify. Fresh metadata that fails the heuristic cancels pending dwell.
+This intentionally conservative geometry heuristic may still admit compact button-like or rail links with the
+same structure; it does not identify visual text styling or link purpose. No new UIA reads, scans, or app-specific
+CSS matches are added. Other links remain Everything-only.
+These use the same size-aware dwell, not visual underline detection. Direct Text/Image parts resolve only
+to their immediate Hyperlink owner. No URL, text or image content is read; safety flags and exclusions still apply.
+
+The user approved adding read-only toggle-state and dropdown-capability metadata. Toggle state is read through
+property identifiers, never action-pattern objects; the forbidden-type list remains intact. The native caption
+implementation below is retained for explicit worker diagnostics/replay compatibility, but is disabled in the live
+pipeline. It uses bounded WM_NCHITTEST / WM_GETTITLEBARINFOEX queries without reading labels or manipulating windows.
+The native check is independent of UIA role: a caption can be exposed as a pane, title bar or missing/offscreen UIA proxy.
+Positive native caption identity uses the owning PID, a hashed window/button key, native window visibility/enabled state
+and caption availability flags; observed password/disabled protection is retained. Only reported, point-containing
+rectangles are used. Without one, pending landings may not emit at an unconfirmed pointer position.
+To avoid synchronous caption messages on ordinary content and shell popups, queries are restricted to UIA caption roles
+or a loose search region derived from DWM's caption bounds. The search region never becomes a button hit box.
+Inside it, reported per-button rectangles are checked even for HTCLIENT (observed in Explorer). The observed
+`GitHubCopilotCaptionHost` resolves only to a same-process `Tauri Window` root owner before querying caption identity.
+No general owned-window fallback is allowed.
+There is no taskbar-specific worker scheduling. Normal app queries retain latest-wins coalescing, original pointer
+timestamps, interaction generations and bounded timeout/restart behavior.
+See README "Focused controls" for the current matrix and provider-dependent limits.
+Quiet is a subset of Focused, and Everything is a superset of Focused, as described above.
 
 ---
 
@@ -1002,8 +1125,9 @@ Track `t6-t0` and `t8-t0` **separately**. `t7` is not physical completion or sen
 - Pending arrivals refresh from newer same-element metadata without restarting dwell; protected, disabled,
   offscreen or failed lookups cancel them. Older same-element answers cannot replace newer metadata.
   An error inside the current element preserves identity/range history; outside it, normal Leave/reset
-  behavior applies. Dwell is due at the later of pointer arrival plus 80 ms and the first accepted lookup.
-  Cause time is that fixed due time, not callback time. A callback later than the due time
+  behavior applies. Dwell is due at the later of pointer arrival plus the target's 30/50 ms duration and the
+  first accepted lookup. New geometry can extend the duration, never shorten it. Cause time is the due time,
+  not callback time. A callback later than the due time
   plus 45 ms scheduling tolerance expires silently, as does a delayed pointer observation. Semantic
   events retain their interaction generation for downstream routing.
 - Strip-edge events keep the source group for meaning and a separate destination snapshot for safety.
@@ -1011,7 +1135,7 @@ Track `t6-t0` and `t8-t0` **separately**. `t7` is not physical completion or sen
   unallowlisted destinations are silent. Cooperative events retain the latest accepted element context,
   including non-interactive fields and lookup failures, rather than borrowing a safe interactive target.
   Sender and target app restrictions both apply; target PID need not equal foreground PID.
-- Global density `0` is authoritative: per-app density overrides cannot re-enable thinning in Everything.
+- Global density `0` is authoritative and the default in all styles: per-app overrides cannot re-enable thinning.
 - Output sink has a **small queue (ideally one current intent plus critical stop)**. Expired intents are dropped; sustained overflow disables the noisy rule and logs why.
 - Coalesce transitions by semantic key, not raw pixel equivalence. No click suppression or extra global input capture.
 - Use per-process quarantine/backoff on slow UIA providers; cap outstanding workers/process restarts.
@@ -1286,8 +1410,9 @@ EXP-070 checks both directions of trace coverage: an unlisted trace or a missing
 Optional pointer `handle`, `origin` and `inputClass` metadata, device `handle`/`arrived` fields and a
 `foreground` event support authored transition scenarios without changing legacy trace decisions.
 `PointerInputClass` distinguishes Handle, Handleless and Promoted input as data only; it is not physical
-evidence or a new routing rule. Caption characterizations pin the first-arrival Step on Minimize and
-Maximize, and the Hover when moving within the same TitleBar group. Close is the one deliberate change:
+evidence or a new routing rule. Everything caption characterizations pin the first-arrival Step on Minimize and
+Maximize, and the Hover when moving within the same TitleBar group. Focused suppresses both and requires
+native Close classification (see §8.5). Other styles retain structural Close recognition:
 a Button whose one-hop TitleBar parent's outer right edge it touches (within 2 logical px) lands with a
 single `close-hover` Hover, never a group Step or large-target Click, gated by
 `PolicyConfig.CloseButtonHoverEnabled` (default On; Off is silent). The tray's Settings window exposes
@@ -1297,7 +1422,9 @@ Dwell, cooldown, exclusion, password,
 disabled and `windows-snap-titlebar-drag` still apply. The tolerance comes from an interactive WinForms UIA
 fixture (`CaptionCloseUiaTests`, 150%: Close overhangs by 1 px, Maximize sits ~47 logical px away). No
 direction field is read, so mirrored (RTL) captions, where Close is at the left, and title bars without
-parent bounds keep the generic Step/Hover behavior; that is the coverage limit.
+parent bounds keep the generic Step/Hover behavior in Everything; that is the geometry-only coverage limit.
+Focused's native caption kind or OS-reported Close rectangle does not depend on left/right layout; if neither
+is available it stays silent. Explicit Minimize/Maximize metadata cannot be overridden by geometry.
 
 ### 12.4 Controlled desktop test driver
 

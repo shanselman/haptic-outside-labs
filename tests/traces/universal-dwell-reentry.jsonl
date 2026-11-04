@@ -1,0 +1,18 @@
+{"type":"comment","text":"Small controls require 30 ms dwell. Focused/Everything: Hover at 32 and 361; Quiet: no hover. Leaving before dwell cancels; returning to the same target without an intervening UIA identity rearms. The final fly-by stays silent."}
+{"type":"process","pid":100,"name":"ms-teams"}
+{"t":0,"type":"pointer","x":20,"y":15,"fg":100}
+{"t":2,"type":"element","req":0,"pid":100,"controlType":"ComboBox","rid":"first","bounds":[0,0,60,30]}
+{"t":49,"type":"tick"}
+{"t":50,"type":"tick"}
+{"t":300,"type":"pointer","x":200,"y":15,"fg":100}
+{"t":302,"type":"element","req":300,"pid":100,"controlType":"ComboBox","rid":"second","bounds":[180,0,60,30]}
+{"t":320,"type":"pointer","x":260,"y":15,"fg":100}
+{"t":330,"type":"pointer","x":200,"y":15,"fg":100}
+{"t":331,"type":"element","req":330,"pid":100,"controlType":"ComboBox","rid":"second","bounds":[180,0,60,30]}
+{"t":379,"type":"tick"}
+{"t":380,"type":"tick"}
+{"t":600,"type":"pointer","x":300,"y":15,"fg":100}
+{"t":602,"type":"element","req":600,"pid":100,"controlType":"ComboBox","rid":"third","bounds":[280,0,60,30]}
+{"t":620,"type":"pointer","x":400,"y":15,"fg":100}
+{"t":622,"type":"element","req":620,"pid":100,"controlType":"Pane","rid":"outside","bounds":[380,0,60,30]}
+{"t":700,"type":"tick"}

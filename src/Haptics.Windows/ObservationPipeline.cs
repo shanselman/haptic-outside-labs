@@ -101,6 +101,7 @@ public sealed class ObservationPipeline : IDisposable
     private long _raw, _bgRaw, _snaps, _emits, _dry, _supp, _acc, _rej, _exp;
     private string? _lastOutput;
     private string? _lastRoutingNote;
+    private double _nextToggleQueryMs;
 
     public ObservationPipeline(PolicyConfig config, PipelineOptions? options = null)
     {
@@ -227,6 +228,8 @@ public sealed class ObservationPipeline : IDisposable
         }
 
         _uia = _opt.UiaFactory?.Invoke(_opt.Uia) ?? UiaClient.ForCurrentProcess(_opt.Uia);
+        // Close uses the existing UIA snapshot/parent geometry, not native caption messages.
+        _uia.ObserveCaptions = static () => false;
         _uia.Response += OnUia;
         _uia.Diagnostic += m => Publish(new DiagnosticEvent(Now, m));
         _thread = new MessageWindowThread("haptics-raw-input", _opt.WindowKind, registerRawMouse: true);
@@ -288,13 +291,31 @@ public sealed class ObservationPipeline : IDisposable
 
     private void Tick()
     {
-        // A pointer that stops on a target sends no more input; dwell landings resolve here.
+        PointerObservation? refresh = null;
+        long generation = 0;
+        var now = Now;
         lock (_lock)
         {
-            if (_interpreter.HasPendingArrival)
+            _interpreter.Config.Profile = Policy.Config.Profile;
+            _interpreter.Config.LargeTargetLogicalHeight = Policy.Config.LargeTargetLogicalHeight;
+            _interpreter.Config.LargeTargetLogicalSide = Policy.Config.LargeTargetLogicalSide;
+            HandleLocked(_interpreter.OnTick(now), now, _latestInputRoute);
+            if (Policy.Config.Mode != HapticsMode.Off && _interpreter.ObservingToggle &&
+                _interpreter.LastPointer is { } p && now >= _nextToggleQueryMs &&
+                _latestInputRoute is { } input && input.Generation == _interpreter.Generation &&
+                _opt.PointerPosition() == (p.X, p.Y) && _opt.ForegroundPid() == p.ForegroundPid)
             {
-                HandleLocked(_interpreter.OnTick(Now), Now, _latestInputRoute);
+                // Refresh only the hovered toggle, including briefly after release, to observe delayed UI updates.
+                refresh = p;
+                generation = input.Generation;
+                RememberRequest(now, input);
+                _nextToggleQueryMs = now + (_interpreter.NeedsToggleRefresh(now) ? 25 : 100);
             }
+        }
+
+        if (refresh is { } pointer)
+        {
+            _uia?.RequestLatest(pointer.X, pointer.Y, now, pointer.ForegroundPid, generation, focused: true);
         }
     }
 
@@ -322,7 +343,6 @@ public sealed class ObservationPipeline : IDisposable
         lock (_lock)
         {
             _raw++;
-            _interpreter.Config.LandingSpeedPxPerSec = Policy.Config.LandingSpeedPxPerSec;
             if (raw.Code == RawInputCode.Background)
             {
                 _bgRaw++;
@@ -332,20 +352,30 @@ public sealed class ObservationPipeline : IDisposable
             var input = ObservePointerLocked(obs);
             generation = input.Generation;
             moved = (x, y) != _lastPos || previousGeneration != generation;
+            if ((raw.Buttons & RawMouseButtons.LeftUp) != 0)
+            {
+                _nextToggleQueryMs = raw.TimestampMs + 25;
+            }
+
             _lastPos = (x, y);
             if (moved || (raw.Buttons & (RawMouseButtons.LeftDown | RawMouseButtons.LeftUp)) != 0)
             {
-                _requestRoutes[(raw.TimestampMs, input.Generation)] = input;
-                while (_requestRoutes.Count > 64)
-                {
-                    _requestRoutes.Remove(_requestRoutes.Keys.MinBy(key => key.TimestampMs));
-                }
+                RememberRequest(raw.TimestampMs, input);
             }
         }
 
         if (moved || (raw.Buttons & (RawMouseButtons.LeftDown | RawMouseButtons.LeftUp)) != 0)
         {
-            _uia?.RequestLatest(x, y, raw.TimestampMs, fg, generation);
+            _uia?.RequestLatest(x, y, raw.TimestampMs, fg, generation, focused: Policy.Config.Profile != EffectProfile.Quiet);
+        }
+    }
+
+    private void RememberRequest(double timestampMs, InputRouteContext input)
+    {
+        _requestRoutes[(timestampMs, input.Generation)] = input;
+        while (_requestRoutes.Count > 64)
+        {
+            _requestRoutes.Remove(_requestRoutes.Keys.MinBy(key => key.TimestampMs));
         }
     }
 
@@ -436,6 +466,10 @@ public sealed class ObservationPipeline : IDisposable
 
     private InputRouteContext ObservePointerLocked(PointerObservation observation)
     {
+        _interpreter.Config.Profile = Policy.Config.Profile;
+        _interpreter.Config.LargeTargetLogicalHeight = Policy.Config.LargeTargetLogicalHeight;
+        _interpreter.Config.LargeTargetLogicalSide = Policy.Config.LargeTargetLogicalSide;
+        _interpreter.Config.LandingSpeedPxPerSec = Policy.Config.LandingSpeedPxPerSec;
         var result = _interpreter.OnPointer(observation);
         var input = new InputRouteContext(
             observation.DeviceHandle, observation.InputClass, observation.ForegroundPid, observation.TimestampMs,
