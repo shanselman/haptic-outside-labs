@@ -59,6 +59,41 @@ engine to avoid duplicate feedback; quit the tray before enabling this engine or
 Requirements: Windows 11 with the haptics API (build 26100+, Universal API Contract 19; built and tested on 28000) and a
 haptic mouse or touchpad.
 
+### Experimental single-pen support
+
+The tray has an **Experimental single pen** switch in Settings, off by default. Turn it on and hover or glide
+your haptic pen over Settings once; **Ready** lists `Pen` when its controller is captured. Use only one pen:
+Windows exposes a pen-input signature here, not the identity of the individual pen. Toggle the option off/on
+to select and prime another pen. Turning Haptics Off or removing any input device clears the pen route and
+requires priming again. A lost pen controller also stays silent until primed again.
+
+Pen feedback uses the existing interpreter, policy and output queue, but a separate manually primed controller:
+pen events cannot select the mouse/touchpad, and touch-promoted events remain silent. Unsupported discrete pen
+sensations fall back to the pen's supported Click waveform, recorded as a fallback; mouse/touchpad behavior is
+unchanged. This is not exact per-pen routing or a validated multiple-pen mode. The Showcase does not opt into it.
+Background delivery and coexistence need operator checks on each setup.
+
+To establish a pen's foreground baseline, quit other Haptics Everywhere instances and run
+`haptics-lab run EXP-010 --target pen`. Use only the pen over the dark pad and check the live
+`device=Pen` / `controller=present` status before starting the randomized pulse/no-pulse trials.
+Wrong-type or missing controllers cannot send, and those trials cannot establish a baseline.
+Leave the native-haptics confirmation unchecked unless you have actually felt the pen's native tactile feedback.
+
+One operator run on a Surface Pro 12in 2nd Ed Snapdragon felt 6/6 Click pulses vs 0/6 silent controls
+([evidence ledger](docs/EVIDENCE_LEDGER.md)); the exact pen model and stable controller identity were not established.
+This tests the current-thread acquisition route, not every possible Windows pen API. A missing controller is not
+proof that the pen cannot vibrate. `EXP-030 --target pen` records passive input-source counts.
+`EXP-020 --target pen` compares cached-controller and temporary-override background output using one explicitly
+primed pen and pen-class signatures, not per-pen identity. Both routes passed one blinded Click test at intensity 1.0;
+this does not validate integrated tray feedback or distinguish hover from screen contact.
+Using the tray is not a substitute for a blinded background trial.
+
+An unblinded operator check felt pen hover feedback in the tray's own Settings window (last recorded output:
+Click at 0.80), but reported skipped cues and no feedback in other apps. Background tray reliability remains
+unresolved despite the separate successful background route trial. Do not rely on this experimental mode for
+consistent cross-app pen feedback yet. Settings Details exposes input class, output intensity/fallback and routing
+notes; API acceptance is not evidence that a pulse was felt.
+
 ## What you feel
 
 Four sensations, one meaning each, so they become a language rather than a buzz:

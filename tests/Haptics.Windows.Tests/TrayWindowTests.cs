@@ -9,6 +9,31 @@ namespace Haptics.Windows.Tests;
 public class TrayWindowTests
 {
     [Fact]
+    public void SettingsEnableVerticalTouchPanningWithoutTakingHorizontalSliderGestures() => ShowcaseTests.OnStaThread(() =>
+    {
+        var window = new SettingsWindow(new FakeHost(), autoClose: false);
+        Assert.Equal(System.Windows.Controls.PanningMode.VerticalFirst, window.SettingsScroller.PanningMode);
+    });
+
+    [Fact]
+    public void ExperimentalPenToggleIsAccessibleOptInAndRefreshDoesNotApply() => ShowcaseTests.OnStaThread(() =>
+    {
+        var host = new FakeHost();
+        var window = new SettingsWindow(host, autoClose: false);
+        Assert.False(window.PenSwitch.IsChecked);
+        Assert.Equal("Experimental single pen", System.Windows.Automation.AutomationProperties.GetName(window.PenSwitch));
+        Toggle(window.PenSwitch);
+        Assert.True(host.Settings.ExperimentalPenEnabled);
+        Assert.Equal(1, host.Applied);
+        Assert.Contains("only one pen", window.StatusHint.Text);
+        host.Raise();
+        Assert.Equal(1, host.Applied);
+        Toggle(window.PenSwitch);
+        Assert.False(host.Settings.ExperimentalPenEnabled);
+        Assert.Equal(2, host.Applied);
+    });
+
+    [Fact]
     public void CloseHoverToggleAppliesAccessibleChangesAndRefreshesWithoutApplying() => ShowcaseTests.OnStaThread(() =>
     {
         var host = new FakeHost();

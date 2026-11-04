@@ -138,9 +138,15 @@ jobs:
             ZIPs remain available for portable use. See [MSIX notes](https://github.com/shanselman/haptic-outside-labs/blob/main/docs/RELEASING.md#optional-msix-bundle)
             for limitations and the packaged-app validation checklist.
 
-            Signed and self-contained: unzip, run `haptics-tray.exe`, and wiggle your haptic mouse or touchpad over its
-            window once. Needs Windows 11 (build 26100+) and a haptic mouse or touchpad. Passive only: it never moves,
-            clicks or focuses anything, and nothing leaves your PC.
+            Signed and self-contained: unzip and run `haptics-tray.exe`. Automatic lookup is attempted; if needed,
+            move your haptic mouse or touchpad over Settings once to prime it. Needs Windows 11 (build 26100+)
+            and compatible haptic hardware. Passive only: it never moves, clicks or focuses anything,
+            and nothing leaves your PC.
+
+            Experimental single-pen support is off by default. Enable it in Settings, then hover one haptic pen
+            over that window to prime. Felt hover feedback has been reported in our Settings window, but consistent
+            cross-app tray feedback is unresolved. A separate blinded background Click trial passed; that does not
+            validate the integrated tray. See the README for identity, waveform fallback and re-priming limitations.
 
             Tried it on a new device, or something felt wrong?
             [Tell us](https://github.com/shanselman/haptic-outside-labs/issues/new?template=tester-report.yml).

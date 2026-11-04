@@ -64,7 +64,12 @@ public sealed record PipelineStats(
     double InputToCallP50,
     double InputToCallP95,
     double MaxRawCallbackMs,
-    UiaClientStats? Uia);
+    UiaClientStats? Uia)
+{
+    public PointerInputClass? LatestInputClass { get; init; }
+    public string? LastOutput { get; init; }
+    public string? LastRoutingNote { get; init; }
+}
 
 /// <summary>
 /// Production observation loop (shared by Lab Live Observer and the Tray). Passive: raw mouse input
@@ -91,8 +96,11 @@ public sealed class ObservationPipeline : IDisposable
     private (int X, int Y) _lastPos = (int.MinValue, int.MinValue);
     private InputRouteContext? _latestInputRoute;
     private CapturedController? _controller;
+    private CapturedController? _penController;
     private IReadOnlyDictionary<long, CapturedController>? _controllers;
     private long _raw, _bgRaw, _snaps, _emits, _dry, _supp, _acc, _rej, _exp;
+    private string? _lastOutput;
+    private string? _lastRoutingNote;
 
     public ObservationPipeline(PolicyConfig config, PipelineOptions? options = null)
     {
@@ -113,6 +121,28 @@ public sealed class ObservationPipeline : IDisposable
     {
         get { lock (_lock) { return _controller; } }
         set { lock (_lock) { _controller = value; } }
+    }
+
+    /// <summary>Explicitly primed single-pen experimental route. Never a mouse/touchpad fallback.</summary>
+    public CapturedController? PenController
+    {
+        get { lock (_lock) { return _penController; } }
+        set
+        {
+            lock (_lock)
+            {
+                if (ReferenceEquals(_penController, value))
+                {
+                    return;
+                }
+
+                _penController = value is not null && _revokedMappings.TryGetValue(value, out var revoked) && revoked.Contains(0)
+                    ? null
+                    : value;
+                _interpreter.Invalidate("pen-controller-changed");
+                _requestRoutes.Clear();
+            }
+        }
     }
 
     /// <summary>Optional exact raw-device mappings. Replace the whole map to update it.</summary>
@@ -245,7 +275,12 @@ public sealed class ObservationPipeline : IDisposable
         {
             return new PipelineStats(_raw, _bgRaw, _snaps, _emits, _dry, _supp, _acc, _rej, _exp,
                 Pct(_lookup, 0.5), Pct(_lookup, 0.95), Pct(_inputToCall, 0.5), Pct(_inputToCall, 0.95),
-                _thread?.MaxCallbackMs ?? 0, _uia?.Stats);
+                _thread?.MaxCallbackMs ?? 0, _uia?.Stats)
+            {
+                LatestInputClass = _latestInputRoute?.InputClass,
+                LastOutput = _lastOutput,
+                LastRoutingNote = _lastRoutingNote,
+            };
         }
     }
 
@@ -355,6 +390,10 @@ public sealed class ObservationPipeline : IDisposable
         lock (_lock)
         {
             Publish(new DeviceChangeEvent(Now, handle, arrived));
+            if (!arrived)
+            {
+                RevokePenController();
+            }
             if (arrived)
             {
                 Publish(new DiagnosticEvent(Now, $"device arrived ({RawInputDevices.Describe(handle).VidPid ?? "unknown"})"));
@@ -576,18 +615,25 @@ public sealed class ObservationPipeline : IDisposable
             if (a is not null && controller is not null && input is not null &&
                 ControllerHealth.Classify(a) == ControllerFailure.Lost)
             {
-                RevokeDeviceMapping(input.DeviceHandle);
-                if (_controllers is { } mappings)
+                if (input.InputClass == PointerInputClass.Pen)
                 {
-                    foreach (var alias in mappings.Where(pair =>
-                                 ControllerRouting.AffectedByLoss(input.DeviceHandle, pair.Key, pair.Value, controller)))
+                    RevokePenController();
+                }
+                else
+                {
+                    RevokeDeviceMapping(input.DeviceHandle);
+                    if (_controllers is { } mappings)
                     {
-                        RevokeDeviceMapping(alias.Key);
-                    }
+                        foreach (var alias in mappings.Where(pair =>
+                                     ControllerRouting.AffectedByLoss(input.DeviceHandle, pair.Key, pair.Value, controller)))
+                        {
+                            RevokeDeviceMapping(alias.Key);
+                        }
 
-                    Controllers = mappings.Where(pair =>
-                        !ControllerRouting.AffectedByLoss(input.DeviceHandle, pair.Key, pair.Value, controller))
-                        .ToDictionary();
+                        Controllers = mappings.Where(pair =>
+                            !ControllerRouting.AffectedByLoss(input.DeviceHandle, pair.Key, pair.Value, controller))
+                            .ToDictionary();
+                    }
                 }
 
                 if (ReferenceEquals(_controller, controller))
@@ -601,7 +647,13 @@ public sealed class ObservationPipeline : IDisposable
             }
         }
 
-        Publish(new OutputEvent(Now, intent, a, a is null ? "dry-run-route" : a.Accepted ? "api-accepted" : $"api-rejected:{a.Error ?? "false"}"));
+        var status = a is null ? "dry-run-route" : a.Accepted ? "api-accepted" : $"api-rejected:{a.Error ?? "false"}";
+        lock (_lock)
+        {
+            _lastOutput = $"{controller?.DeviceType}: {intent.Waveform}, intensity {intensity:0.00}, {status}" +
+                          (a is { FallbackId: > 0 } ? $", fallback {HapticsApi.WaveformName(a.FallbackId)}" : "");
+        }
+        Publish(new OutputEvent(Now, intent, a, status));
 
         HapticAttempt? Send() => _opt.OutputSink is { } sink
             ? sink.Send(new PipelineOutputRequest(Route, controller, intent, intensity))
@@ -625,6 +677,11 @@ public sealed class ObservationPipeline : IDisposable
 
     private ControllerRoute ResolveController(InputRouteContext input)
     {
+        if (input.InputClass == PointerInputClass.Pen)
+        {
+            return ControllerRouting.Resolve(null, input.DeviceHandle, input.InputClass, _penController);
+        }
+
         if (input.DeviceHandle != 0 && _removedDevices.Contains(input.DeviceHandle))
         {
             return new(null, "skip:removed-device");
@@ -650,6 +707,15 @@ public sealed class ObservationPipeline : IDisposable
             : route;
     }
 
+    private void RevokePenController()
+    {
+        if (_penController is { } pen)
+        {
+            _revokedMappings.GetOrCreateValue(pen).Add(0);
+            PenController = null;
+        }
+    }
+
     private string? ResolveName(int pid)
     {
         var now = Now;
@@ -665,6 +731,14 @@ public sealed class ObservationPipeline : IDisposable
 
     private void Publish(PipelineEvent e)
     {
+        if (e is NoteEvent note)
+        {
+            lock (_lock)
+            {
+                _lastRoutingNote = note.Note;
+            }
+        }
+
         try
         {
             Event?.Invoke(e);

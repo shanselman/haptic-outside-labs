@@ -21,6 +21,8 @@ public enum PointerInputClass
     Handleless,
     Handle,
     Promoted,
+    /// <summary>Pen promotion signature; identifies a class, not an individual pen or physical input.</summary>
+    Pen,
 }
 
 [method: JsonConstructor]

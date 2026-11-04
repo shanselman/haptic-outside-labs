@@ -161,6 +161,68 @@ shows the cues full-size. `DecisionEvent` carries the observed pointer position.
 overlay is disposed when the setting turns off or the tray quits. Ripple placement across mixed-DPI monitors is
 unverified.
 
+## Pen integration: experimental single-pen route (2026-11-04)
+
+The product goal now includes mouse, touchpad and pen. The existing router already handles exact mouse-device
+mappings and uniquely identified, manually primed touchpads, with generation and removal/loss protection.
+Extend that shared mechanism rather than adding an independent output path.
+
+EXP-010 accepts `--target pen` and requires a present Pen controller before any pulse. A wrong-type controller,
+missing controller or loss of foreground invalidates the trial and prevents output, for every target.
+The live thread-manager readout is the first operator check. This only tests InputHapticsManager acquisition;
+Windows also documents PenDevice.SimpleHapticsController, which is not yet wired here.
+Operator run `20261104-072206-EXP-010-1cd790` passed: pen Click felt 6/6 vs controls 0/6, all trials type Pen.
+See the evidence ledger. The exact pen model is unverified and every controller ID was `none`; the run cannot
+supply a stable device-specific identity baseline.
+
+EXP-030 run `20261104-072504-EXP-030-6db447` observed 763 background pen-signature events but no device handles.
+Its formal result remains INDETERMINATE: the mouse-oriented nonzero-handle assertion cannot establish pen identity,
+and its max callback exceeded 2 ms. The operator approved an experimental, explicitly primed **single-pen** mode.
+
+Tray Settings now has **Experimental single pen**, off by default. Its ControllerBank stores one pen separately
+from the raw-device map, so handle zero never overwrites the touchpad. Only fresh pen-class input over our UI can
+capture a Pen controller; captures do not silently select a second pen. The pipeline routes pen signatures only to
+that slot, invalidates queued output on changes and refuses stale lost/removed pen objects. Disabling the option
+revokes before settings persistence. Haptics Off, input-device removal or explicit controller loss require re-priming.
+Pen discrete-waveform misses can use a supported Click, recorded in attempt fallback metadata.
+
+EXP-020/022 now accept `--target pen`: one explicitly primed Pen controller, pen-class input only, observed pointer
+movement rather than raw mouse deltas, and R3a/R3b versus silent controls (R2 skipped). Waiting diagnostics show
+which precondition is unmet without revealing pulse/control. Run `20261104-081454-EXP-020-677084` passed both routes:
+6/6 felt versus 0/6 controls each, Click at 1.0. See the evidence ledger for fingerprint and identity limitations.
+
+The operator then reported little/no hover feedback and persistent stray ink after touching an Explorer window
+during trials. Contact and hover were not distinguished by this harness; do not call the result a hover pass or a
+normal-input-behavior pass. After the experiment closed, neither Lab nor Tray was running, but Windows TabTip exposed
+a full-screen "Shell Handwriting Canvas". Its snapshot did not reveal the stroke, so ownership/causality is unproven.
+An authorized Escape dismissal was blocked by Windows integrity isolation, and manual Escape did not clear it.
+The operator then ended TabTip.exe and confirmed the line disappeared, identifying Windows' handwriting overlay
+as its owner. The operator suspects pen contact on Explorer's address bar offered a text/handwriting opportunity;
+this is an unverified trigger hypothesis, not evidence that haptic output caused it. Defer further investigation
+unless it recurs. Keep hover and contact separate in subsequent pen trials.
+
+Subsequent unblinded tray check: the operator explicitly confirmed felt feedback while hovering over **our Settings
+window only**, then reported no felt feedback outside it and some skipped cues. The screenshot showed Ready: Pen,
+20 accepted calls, no rejected/expired calls, last output Pen: Click at 0.80, latest input Handleless and last routing
+note skip:stale-device-generation. These are aggregate/last-event diagnostics, not a causal trace of each missed cue.
+Do not describe this as validated cross-app tray hover support. The background trial sends during pen WM_INPUT;
+the tray sends after semantic/UIA processing via its queue. Timing/context, class switching and actuator rate limits
+are hypotheses to distinguish, not grounds to discard safety generations or attribute unmarked input to the pen.
+The operator authorized releasing experimental support and deferring remaining checks; keep these limitations visible.
+
+Deferred pen checks:
+- Compare hover-only input/output over our Settings and safe controls in another app; record class changes,
+  generations, waveform/intensity, foreground/background delivery and final send timing without sensitive UI data.
+- Compare supported Hover with Click and sparse with dense cues before choosing any pen-specific intensity/rate change.
+- Check mouse/touchpad coexistence, Off/re-prime, loss/removal and sleep/reconnect on hardware.
+- Keep contact/hover trials separate; investigate Windows handwriting again only if the TabTip issue recurs.
+
+Still pending: stable per-pen identity, cross-app tray feedback, mixed-device use, separate hover/contact trials,
+ink-overlay investigation if it recurs, Settings touch/pen panning, and wider hardware/lifecycle testing. Settings Details now
+shows latest input class, last output waveform/intensity/fallback and last routing note to help diagnose silence;
+an accepted API call is not a felt pulse. The Showcase does not opt into pen mode. Raw Input remains mouse-only;
+touch-promoted input remains silent. No foreground result is promoted into background PHYSICAL evidence.
+
 ## Next-session entry point
 
 Select an unchecked operator task from the automatic-priming test plan. Existing focused UI coverage runs with

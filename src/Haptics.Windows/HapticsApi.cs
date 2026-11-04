@@ -395,11 +395,19 @@ public static class HapticsApi
         a.ControllerPresent = true;
         a.DeviceType = captured.DeviceType.ToString();
         a.ControllerIdHash = captured.IdHash;
-        var feedback = ctrl.SupportedFeedback.FirstOrDefault(f => f.Waveform == a.WaveformId);
+        var supported = ctrl.SupportedFeedback;
+        var selected = SelectControllerWaveform(captured.DeviceType, a.WaveformId, supported.Select(f => f.Waveform).ToArray(),
+            DiscreteWaveformNames.Contains(a.Waveform) ? WaveformId("Click") : null);
+        var feedback = selected is { } id ? supported.FirstOrDefault(f => f.Waveform == id) : null;
         if (feedback is null)
         {
             a.Error = "waveform-not-supported-by-controller";
             return;
+        }
+
+        if (feedback.Waveform != a.WaveformId)
+        {
+            a.FallbackId = feedback.Waveform;
         }
 
         a.Called = true;
@@ -417,6 +425,14 @@ public static class HapticsApi
         a.Accepted = true; // void API: "did not throw" is the only acceptance signal available.
         a.CallEndMs = MonotonicClock.Instance.NowMs;
     }
+
+    internal static ushort? SelectControllerWaveform(
+        HapticDeviceType deviceType, ushort requested, IReadOnlyList<ushort> supported, ushort? clickFallback) =>
+        supported.Contains(requested)
+            ? requested
+            : deviceType == HapticDeviceType.Pen && clickFallback is { } fallback && supported.Contains(fallback)
+                ? fallback
+                : null;
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void SendOverrideCore(HapticAttempt a, CapturedController captured, double? inputTs)

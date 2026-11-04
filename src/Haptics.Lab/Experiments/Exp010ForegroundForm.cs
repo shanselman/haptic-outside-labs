@@ -4,7 +4,7 @@ using Haptics.Windows;
 namespace Haptics.Lab.Experiments;
 
 /// <summary>
-/// EXP-010: our own focused window receives physical mouse input; on that UI thread we call the documented
+/// EXP-010: our own focused window receives target-device input; on that UI thread we call the documented
 /// GetForCurrentThread().TrySendHapticWaveform. Randomized pulse/no-pulse trials; the operator answers
 /// before learning which was which. The API return value is logged separately and never counts as proof.
 /// </summary>
@@ -18,7 +18,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
     private readonly NumericUpDown _controls = new() { Minimum = 3, Maximum = 30, Value = 6, Width = 60 };
     private readonly NumericUpDown _intensity = new() { Minimum = 0.05m, Maximum = 1m, Increment = 0.05m, DecimalPlaces = 2, Value = 1m, Width = 60 };
     private readonly ComboBox _target = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
-    private readonly CheckBox _nativeConfirmed = new() { Text = "I have felt this device's native haptics (e.g. Snap on a mouse, a click on the touchpad) at the current intensity", AutoSize = true };
+    private readonly CheckBox _nativeConfirmed = new() { Text = "I have felt this device's native haptics (mouse Snap, touchpad click, or pen tactile feedback) at the current intensity", AutoSize = true };
     private readonly Button _start = new() { Text = "Start blinded trials", AutoSize = true };
     private readonly Panel _pad = new() { BackColor = Color.FromArgb(36, 40, 52), Dock = DockStyle.Fill, Cursor = Cursors.Cross };
     private readonly Label _padText = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, Font = Ui.Big };
@@ -46,19 +46,20 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         Font = Ui.Body;
         KeyPreview = true;
 
+        var target = ParseTarget(opt.Get("target"));
         foreach (var w in HapticsApi.Waveforms.Keys)
         {
-            _arms.Items.Add(w, w is "Click" or "Step");
+            _arms.Items.Add(w, w == "Click" || w == "Step" && target != "pen");
         }
 
-        _target.Items.AddRange(["mouse", "touchpad", "any"]);
-        _target.SelectedItem = (opt.Get("target") ?? "mouse").ToLowerInvariant();
+        _target.Items.AddRange(["mouse", "touchpad", "pen", "any"]);
+        _target.SelectedItem = target;
         _perArm.Value = Math.Clamp(opt.Int("trials-per-arm", 6), 3, 30);
         _controls.Value = Math.Clamp(opt.Int("controls", 6), 3, 30);
         _intensity.Value = (decimal)Math.Clamp(opt.Double("intensity", 1.0), 0.05, 1.0);
 
         var intro = Ui.Text(
-            $"Use ONLY the target haptic device ({(opt.Get("target") ?? "mouse").ToLowerInvariant()}). Glide it inside the dark pad (on a touchpad: glide, don't press). After a random delay the pad flashes NOW: " +
+            $"Use ONLY the target haptic device ({_target.SelectedItem}). Glide it inside the dark pad (touchpad: glide, don't press; pen: hover or glide the tip over the pad). After a random delay the pad flashes NOW: " +
             "a pulse may or may not have been sent. Answer honestly (keys F / N / U, or the buttons). About a third of the trials are silent controls.", width: 860);
         var setup = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8) };
         setup.Controls.AddRange([
@@ -178,7 +179,7 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         _state = State.Arming;
         _answers.Visible = false;
         _pad.BackColor = Color.FromArgb(36, 40, 52);
-        _padText.Text = $"Trial {_next + 1} of {_schedule.Count}\nkeep moving the mouse in this pad…";
+        _padText.Text = $"Trial {_next + 1} of {_schedule.Count}\nkeep moving the target device in this pad…";
     }
 
     private void Tick()
@@ -214,18 +215,9 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         t.Context["inputAgeMs"] = Math.Round(now - _lastMove, 1);
         t.Context["labForeground"] = ActiveForm == this;
         _outputOwnership?.Record(t);
-        var target = (string)_target.SelectedItem!;
-        if (target != "any" && !string.Equals(st.DeviceType, target, StringComparison.OrdinalIgnoreCase))
-        {
-            t.Invalidate($"device-type:{st.DeviceType} (target {target})");
-        }
+        ValidateTarget(t, (string)_target.SelectedItem!, st, ActiveForm == this);
 
-        if (ActiveForm != this)
-        {
-            t.Invalidate("lab-window-not-foreground");
-        }
-
-        if (!plan.IsControl && _outputOwnership?.TryRun(() =>
+        if (!plan.IsControl && t.ProvenanceValid && _outputOwnership?.TryRun(() =>
                 t.Attempt = HapticsApi.SendViaThreadManager(OutputRoutes.ForegroundManager, plan.Arm, (double)_intensity.Value, _lastMove)) != true)
         {
             t.Invalidate("output-owner-not-held");
@@ -314,8 +306,10 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
         r.Limitations.Add("The operator could potentially hear an actuator click; an acoustic cue is still a physical effect but is noted here.");
         r.Limitations.Add("Software timestamps measure call issue time (t6), not physical onset (t8).");
         r.NextDecision = r.Status == ExperimentStatus.PASS
-            ? "Foreground actuation confirmed. Run EXP-020 with another app in the foreground."
-            : "Check the mouse's haptic intensity in Windows Settings, battery, pairing, and that you used the mouse (not the touchpad); then rerun.";
+            ? (_target.SelectedItem as string) == "pen"
+                ? "Foreground pen actuation confirmed. With exactly one pen, run EXP-020 --target pen to compare cached and override background routes; per-pen identity remains unverified."
+                : "Foreground actuation confirmed. Run EXP-020 with another app in the foreground."
+            : "Check the target device's tactile/haptic settings, battery, compatibility, and the live device/controller status; then rerun with only that device.";
         try
         {
             ResultPath = _session.Complete();
@@ -340,6 +334,32 @@ public sealed class Exp010ForegroundForm : Form, IExperimentForm
                 : t.Attempt?.ControllerIdHash).ToArray();
         return identities.Length > 0 && identities.All(EvidenceLedger.KnownControllerIdentity) &&
                identities.Distinct(StringComparer.Ordinal).Count() == 1 ? identities[0] : null;
+    }
+
+    internal static string ParseTarget(string? target)
+    {
+        var value = (target ?? "mouse").ToLowerInvariant();
+        return value is "mouse" or "touchpad" or "pen" or "any"
+            ? value
+            : throw new ArgumentException("EXP-010 --target must be mouse, touchpad, pen, or any.");
+    }
+
+    internal static void ValidateTarget(TrialRecord trial, string target, ThreadManagerState state, bool foreground)
+    {
+        if (!state.ControllerPresent)
+        {
+            trial.Invalidate("no-target-controller");
+        }
+
+        if (target != "any" && !string.Equals(state.DeviceType, target, StringComparison.OrdinalIgnoreCase))
+        {
+            trial.Invalidate($"device-type:{state.DeviceType} (target {target})");
+        }
+
+        if (!foreground)
+        {
+            trial.Invalidate("lab-window-not-foreground");
+        }
     }
 
     private static double? Pct(IEnumerable<double> values, double p)

@@ -42,7 +42,7 @@ public readonly record struct RawMouseInput(
 
     public PointerInputClass InputClass =>
         (ExtraInformation & 0xFFFFFF00) == 0xFF515700
-            ? PointerInputClass.Promoted
+            ? (ExtraInformation & 0x80) == 0 ? PointerInputClass.Pen : PointerInputClass.Promoted
             : DeviceHandle != 0 ? PointerInputClass.Handle : PointerInputClass.Handleless;
 }
 

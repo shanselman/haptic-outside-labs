@@ -43,6 +43,7 @@ public class InputTraceTests
     [InlineData("HardwareRaw", 42, "Handle", InputOrigin.HardwareRaw, PointerInputClass.Handle)]
     [InlineData("SyntheticOrUnknown", 0, "Handleless", InputOrigin.SyntheticOrUnknown, PointerInputClass.Handleless)]
     [InlineData("SyntheticOrUnknown", 42, "Promoted", InputOrigin.SyntheticOrUnknown, PointerInputClass.Promoted)]
+    [InlineData("SyntheticOrUnknown", 0, "Pen", InputOrigin.SyntheticOrUnknown, PointerInputClass.Pen)]
     public void ReplayPreservesInputMetadata(string origin, long handle, string inputClass, InputOrigin expectedOrigin, PointerInputClass expectedClass)
     {
         var output = TraceReplay.Run([

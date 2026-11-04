@@ -22,6 +22,9 @@ public sealed class TraySettings
     /// <summary>Draw a click-through ripple at the pointer whenever a haptic plays.</summary>
     public bool ShowRipples { get; set; }
 
+    /// <summary>One manually primed pen; promoted input has no stable per-pen identity.</summary>
+    public bool ExperimentalPenEnabled { get; set; }
+
     public List<string> ExcludedProcesses { get; set; } = new();
 
     internal static readonly EffectProfile[] Styles = [EffectProfile.Quiet, EffectProfile.Focused, EffectProfile.Everything];

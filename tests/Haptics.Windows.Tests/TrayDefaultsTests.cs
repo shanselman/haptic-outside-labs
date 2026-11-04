@@ -7,6 +7,18 @@ namespace Haptics.Windows.Tests;
 public class TrayDefaultsTests
 {
     [Theory]
+    [InlineData("{}", false)]
+    [InlineData("""{"experimentalPenEnabled":true}""", true)]
+    [InlineData("""{"experimentalPenEnabled":false}""", false)]
+    public void ExperimentalPenIsOffByDefaultAndPersistsExplicitChoice(string json, bool expected)
+    {
+        var settings = JsonSerializer.Deserialize<TraySettings>(json, HapticsJson.Indented)!;
+        Assert.Equal(expected, settings.ExperimentalPenEnabled);
+        var saved = JsonSerializer.SerializeToElement(settings, HapticsJson.Indented);
+        Assert.Equal(expected, saved.GetProperty("experimentalPenEnabled").GetBoolean());
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public void ToPolicyMapsCloseButtonHover(bool enabled)

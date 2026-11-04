@@ -170,7 +170,7 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
 
     public void Apply()
     {
-        var saved = RevokeAndSave(Settings, _pipeline, Settings.Save);
+        var saved = RevokeAndSave(Settings, _pipeline, Settings.Save, _bank);
         _pipeline = saved.Pipeline;
         if (!Settings.Enabled)
         {
@@ -299,8 +299,14 @@ internal sealed class TrayContext : ApplicationContext, ITrayHost
     }
 
     internal static (ObservationPipeline? Pipeline, string? Error) RevokeAndSave(
-        TraySettings settings, ObservationPipeline? pipeline, Action save)
+        TraySettings settings, ObservationPipeline? pipeline, Action save, ControllerBank? bank = null)
     {
+        if (bank is not null)
+        {
+            bank.ExperimentalPenEnabled = settings.Enabled && settings.ExperimentalPenEnabled;
+            bank.ApplyTo(pipeline);
+        }
+
         if (!settings.Enabled)
         {
             pipeline?.Dispose(); // Revokes authorization and invalidates pending work before teardown.

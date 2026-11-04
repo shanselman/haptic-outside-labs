@@ -7,6 +7,135 @@ namespace Haptics.Windows.Tests;
 public class PipelineOutputTests
 {
     [Fact]
+    public void PenMouseAndTouchpadUseSeparateControllersAndTouchPromotionStaysSilent()
+    {
+        using var rig = new Rig();
+        rig.Sink.OnSend = request => new HapticAttempt { Route = request.Route, Called = true, Accepted = true };
+        var pen = Controller();
+        var pad = Controller();
+        SetController(pen, global::Windows.Devices.Haptics.HapticDeviceType.Pen, "none");
+        SetController(pad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "pad");
+        rig.Pipeline.PenController = pen;
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [0] = pad, [12] = rig.Mouse };
+        rig.Observe(100, 0, Snapshot(100), PointerInputClass.Pen);
+        rig.Flush(110);
+        Assert.Same(pen, Assert.Single(rig.Sink.Requests).Controller);
+        var stats = rig.Pipeline.Stats();
+        Assert.Equal(PointerInputClass.Pen, stats.LatestInputClass);
+        Assert.Contains("Pen: Hover", stats.LastOutput);
+        Assert.Contains("api-accepted", stats.LastOutput);
+        rig.Observe(400, 0, Snapshot(400) with { RuntimeIdHash = "pad", QueryX = 21 });
+        rig.Flush(410);
+        Assert.Same(pad, rig.Sink.Requests[1].Controller);
+        rig.Observe(700, 12, Snapshot(700) with { RuntimeIdHash = "mouse", QueryX = 22 });
+        rig.Flush(710);
+        Assert.Same(rig.Mouse, rig.Sink.Requests[2].Controller);
+        rig.Observe(1000, 0, Snapshot(1000) with { RuntimeIdHash = "touch", QueryX = 23 }, PointerInputClass.Promoted);
+        rig.Flush(1010);
+        Assert.Equal(3, rig.Sink.Requests.Count);
+    }
+
+    [Fact]
+    public void UnprimedPenNeverFallsBackToMouseOrTouchpad()
+    {
+        using var rig = new Rig();
+        rig.Pipeline.Controller = rig.Mouse;
+        rig.Observe(100, 0, Snapshot(100), PointerInputClass.Pen);
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
+        Assert.Contains(rig.Events.OfType<NoteEvent>(), e => e.Note == "skip:pen-not-primed");
+        Assert.Equal("skip:pen-not-primed", rig.Pipeline.Stats().LastRoutingNote);
+    }
+
+    [Theory]
+    [InlineData(true, "api-accepted")]
+    [InlineData(false, "api-rejected:fixture-rejection")]
+    public void PenOutputDiagnosticsIncludeActualFallbackAndResult(bool accepted, string status)
+    {
+        using var rig = new Rig();
+        var pen = Controller();
+        SetController(pen, global::Windows.Devices.Haptics.HapticDeviceType.Pen, "none");
+        rig.Pipeline.PenController = pen;
+        rig.Sink.OnSend = request => new HapticAttempt
+        {
+            Route = request.Route,
+            Called = true,
+            Accepted = accepted,
+            Error = accepted ? null : "fixture-rejection",
+            FallbackId = HapticsApi.WaveformId("Click")!.Value,
+        };
+        rig.Observe(100, 0, Snapshot(100), PointerInputClass.Pen);
+        rig.Flush(110);
+
+        var output = rig.Pipeline.Stats().LastOutput;
+        Assert.Contains("Pen: Hover", output);
+        Assert.Contains("intensity ", output);
+        Assert.Contains("fallback Click", output);
+        Assert.Contains(status, output);
+    }
+
+    [Fact]
+    public void DisablingPenRevokesAlreadyQueuedPenOutput()
+    {
+        using var rig = new Rig();
+        var pen = Controller();
+        SetController(pen, global::Windows.Devices.Haptics.HapticDeviceType.Pen, "none");
+        rig.Pipeline.PenController = pen;
+        rig.Observe(100, 0, Snapshot(100), PointerInputClass.Pen);
+        Assert.Equal(1, rig.Sink.Pending);
+        rig.Pipeline.PenController = null;
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
+    }
+
+    [Fact]
+    public void LostPenCannotBeRestoredByReapplyingTheStaleBank()
+    {
+        using var rig = new Rig();
+        var pen = Controller();
+        var pad = Controller();
+        SetController(pen, global::Windows.Devices.Haptics.HapticDeviceType.Pen, "none");
+        SetController(pad, global::Windows.Devices.Haptics.HapticDeviceType.Touchpad, "pad");
+        rig.Pipeline.PenController = pen;
+        rig.Pipeline.Controllers = new Dictionary<long, CapturedController> { [0] = pad, [12] = rig.Mouse };
+        rig.Sink.OnSend = request => new HapticAttempt
+        {
+            Route = request.Route,
+            Called = true,
+            HResult = unchecked((int)0x80010108),
+            Error = "disconnected",
+        };
+        rig.Observe(100, 0, Snapshot(100), PointerInputClass.Pen);
+        rig.Flush(110);
+        Assert.Null(rig.Pipeline.PenController);
+        Assert.Same(pad, rig.Pipeline.Controllers![0]);
+        Assert.Same(rig.Mouse, rig.Pipeline.Controllers[12]);
+        Assert.Same(pen, Assert.Single(rig.Events.OfType<ControllerLostEvent>()).Controller);
+        rig.Pipeline.PenController = pen;
+        Assert.Null(rig.Pipeline.PenController);
+        var fresh = Controller();
+        SetController(fresh, global::Windows.Devices.Haptics.HapticDeviceType.Pen, "none");
+        rig.Pipeline.PenController = fresh;
+        Assert.Same(fresh, rig.Pipeline.PenController);
+    }
+
+    [Theory]
+    [InlineData(HapticsMode.Off, false)]
+    [InlineData(HapticsMode.ObserveOnly, false)]
+    [InlineData(HapticsMode.On, true)]
+    public void PenStillUsesPolicyAndPasswordProtection(HapticsMode mode, bool password)
+    {
+        using var rig = new Rig();
+        var pen = Controller();
+        SetController(pen, global::Windows.Devices.Haptics.HapticDeviceType.Pen, "none");
+        rig.Pipeline.PenController = pen;
+        rig.Pipeline.Policy.Config.Mode = mode;
+        rig.Observe(100, 0, Snapshot(100) with { IsPassword = password }, PointerInputClass.Pen);
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
+    }
+
+    [Fact]
     public void DecisionEventsCaptureTheObservedPointerPosition()
     {
         using var rig = new Rig();

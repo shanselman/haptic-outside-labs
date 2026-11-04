@@ -30,7 +30,7 @@ internal static class Program
           --waveform <name>         EXP-020 waveform (default Click)
           --intensity <0..1>        default 1.0 for physical discrimination
           --window message|hidden   EXP-020 raw-input window kind (default message)
-          --target mouse|touchpad|any   which haptic device the operator is using (default mouse)
+          --target mouse|touchpad|pen|any   target device (pen: experimental single-pen mode; default mouse)
           --seconds <n>             EXP-030 capture duration (default 20)
           --require-pass            exit nonzero for any result other than PASS (CI opt-in)
         """;

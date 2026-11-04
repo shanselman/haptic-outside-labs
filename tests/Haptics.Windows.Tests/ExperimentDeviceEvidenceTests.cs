@@ -1,11 +1,101 @@
 using System.Text.Json;
 using Haptics.Core;
+using Haptics.Lab;
 using Haptics.Lab.Experiments;
+using Haptics.Windows;
 
 namespace Haptics.Windows.Tests;
 
 public class ExperimentDeviceEvidenceTests
 {
+    [Theory]
+    [InlineData(0L, 0xFF515700U, "promoted-pen")]
+    [InlineData(0L, 0xFF515701U, "promoted-pen")]
+    [InlineData(12L, 0xFF515700U, "promoted-pen")]
+    [InlineData(0L, 0xFF515780U, "promoted-touch")]
+    [InlineData(0L, 0xFF5157FFU, "promoted-touch")]
+    [InlineData(0L, 0U, "Handleless")]
+    [InlineData(12L, 0U, "Handle")]
+    [InlineData(12L, 0xFF515600U, "Handle")]
+    public void InputProbeSeparatesPenAndTouchPromotionWithoutEnablingOutput(
+        long handle, uint extra, string expected)
+    {
+        var input = new RawMouseInput(0, RawInputCode.Background, handle, 0, RawMouseButtons.None, 0, 0, 0, extra);
+
+        Assert.Equal(expected, Exp030RawInputForm.DescribeSource(input));
+        if (expected.StartsWith("promoted-", StringComparison.Ordinal))
+        {
+            Assert.Equal(expected == "promoted-pen" ? PointerInputClass.Pen : PointerInputClass.Promoted, input.InputClass);
+            Assert.Null(ControllerRouting.Resolve(null, handle, input.InputClass).Controller);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, "mouse")]
+    [InlineData("mouse", "mouse")]
+    [InlineData("touchpad", "touchpad")]
+    [InlineData("pen", "pen")]
+    [InlineData("PEN", "pen")]
+    [InlineData("any", "any")]
+    public void ForegroundTargetIncludesPen(string? input, string expected) =>
+        Assert.Equal(expected, Exp010ForegroundForm.ParseTarget(input));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("stylus")]
+    [InlineData("unknown")]
+    public void UnknownForegroundTargetIsRejected(string target) =>
+        Assert.Throws<ArgumentException>(() => Exp010ForegroundForm.ParseTarget(target));
+
+    [Theory]
+    [InlineData("unknown")]
+    public void UnsupportedBackgroundTargetReportsAnErrorInsteadOfStartingTrials(string target) =>
+        Assert.Throws<ArgumentException>(() => new Exp020BackgroundForm(CliOptions.Parse(["--target", target])));
+
+    [Theory]
+    [InlineData(PointerInputClass.Pen, true)]
+    [InlineData(PointerInputClass.Promoted, false)]
+    [InlineData(PointerInputClass.Handle, false)]
+    [InlineData(PointerInputClass.Handleless, false)]
+    public void BackgroundPenTrialsCanOnlyBeTriggeredByPenClassInput(PointerInputClass inputClass, bool expected) =>
+        Assert.Equal(expected, Exp020BackgroundForm.AcceptsInput(true, inputClass));
+
+    [Theory]
+    [InlineData(true, 0, 0, 20, 30, true)]
+    [InlineData(true, 2, 1, 10, 10, false)]
+    [InlineData(true, 0, 0, int.MinValue, int.MinValue, false)]
+    [InlineData(false, 0, 0, 20, 30, false)]
+    [InlineData(false, 2, 1, 10, 10, true)]
+    public void PenMovementUsesObservedPositionRatherThanPromotedMouseDeltas(
+        bool pen, int dx, int dy, int x, int y, bool expected)
+    {
+        var input = new RawMouseInput(0, RawInputCode.Background, 0, 0, RawMouseButtons.None, 0, dx, dy, 0xFF515700);
+        Assert.Equal(expected, Exp020BackgroundForm.IsMovement(pen, input, (x, y), (10, 10)));
+        Assert.False(Exp020BackgroundForm.IsMovement(true, input, (x, y), null));
+    }
+
+    [Theory]
+    [InlineData("pen", "Pen", true, true, true)]
+    [InlineData("pen", "Mouse", true, true, false)]
+    [InlineData("pen", "Touchpad", true, true, false)]
+    [InlineData("pen", "None", false, true, false)]
+    [InlineData("pen", "Pen", false, true, false)]
+    [InlineData("pen", "Pen", true, false, false)]
+    [InlineData("mouse", "Mouse", true, true, true)]
+    [InlineData("touchpad", "Touchpad", true, true, true)]
+    [InlineData("any", "Pen", true, true, true)]
+    public void ForegroundTrialRequiresTheSelectedControllerAndForeground(
+        string target, string actual, bool present, bool foreground, bool expected)
+    {
+        var trial = Trial("controller-a", control: false);
+        var state = new ThreadManagerState(1, true, true, 1, present, actual, present ? "controller-a" : null, null);
+
+        Exp010ForegroundForm.ValidateTarget(trial, target, state, foreground);
+
+        Assert.Equal(expected, trial.ProvenanceValid);
+        Assert.Equal(expected, trial.ProvenanceIssues.Count == 0);
+    }
+
     [Fact]
     public void SameVidPidDevicesRetainSeparateHashedIdentitiesAndCounts()
     {

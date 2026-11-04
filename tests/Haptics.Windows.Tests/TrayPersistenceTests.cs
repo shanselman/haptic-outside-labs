@@ -7,6 +7,37 @@ namespace Haptics.Windows.Tests;
 
 public class TrayPersistenceTests
 {
+    [Fact]
+    public void PenOptOutRevokesQueuedOutputBeforeSaveFailure()
+    {
+        var pen = Controller();
+        typeof(CapturedController).GetField("<DeviceType>k__BackingField",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(pen, global::Windows.Devices.Haptics.HapticDeviceType.Pen);
+        var bank = new ControllerBank(() => pen) { ExperimentalPenEnabled = true };
+        Assert.True(bank.TryCapture(0, PointerInputClass.Pen, 100, 100));
+        var clock = new FakeClock { NowMs = 100 };
+        var sink = new RecordingPipelineOutputSink();
+        using var pipeline = new ObservationPipeline(new TraySettings().ToPolicy(),
+            new PipelineOptions { Clock = clock, OutputSink = sink });
+        pipeline.Policy.ConsentGiven = true;
+        pipeline.Policy.OutputRouteVerified = true;
+        bank.ApplyTo(pipeline);
+        Pointer(pipeline, 100, 20, 15, 0, PointerInputClass.Pen);
+        pipeline.SubmitCooperative("Align", 0);
+        Assert.Equal(1, sink.Pending);
+        var result = TrayContext.RevokeAndSave(new TraySettings { ExperimentalPenEnabled = false }, pipeline, () =>
+        {
+            Assert.Null(bank.PenController);
+            Assert.Null(pipeline.PenController);
+            sink.Flush();
+            Assert.Empty(sink.Requests);
+            throw new IOException("fixture disk full");
+        }, bank);
+        Assert.Same(pipeline, result.Pipeline);
+        Assert.Contains("fixture disk full", result.Error);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

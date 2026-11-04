@@ -149,3 +149,54 @@ mouse collection and a USB mouse (VID_3434&PID_D030). No Surface Mouse was paire
 | EXP-010 foreground baseline | operator + Surface Mouse | `PASS` [PHYSICAL] 2026-10-23 |
 | EXP-020 background routes R2 / R3a / R3b | operator + Surface Mouse | `PASS` [PHYSICAL] 2026-10-23 (R3a, R3b pass; R2 fails) |
 | EXP-030 raw input attribution | operator | `NOT_RUN` |
+
+### 2026-11-04 · EXP-010 · `PASS` [PHYSICAL] — foreground pen Click
+
+- Run `20261104-072206-EXP-010-1cd790`, base commit `bc74db1d55da029c3843c7750652138dcc5597eb`
+  **with uncommitted pen-target baseline changes**, machine `0deb2bf74476ff1f`
+  (Surface Pro 12in 2nd Ed Snapdragon, build 28000.3231, Arm64).
+- R1-foreground-manager:Click: PASS — pulses felt **6/6** vs controls **0/6**
+  (one-sided Fisher p=0.0011); 12/12 trials answered, 0 invalid, API accepted 6/6 sends.
+- Target `pen`; every trial's device type was `Pen`; intensity 1.0.
+  Labels: OUTPUT_API_ACCEPTED, PHYSICAL_CONFIRMED.
+- Limitations: exact pen model is not verified. Controller hashes are `none` on both observed controls and sent
+  pulses, so `targetControllerIdHash` is absent. This run proves felt foreground pen output, but does **not**
+  qualify as a stable device-specific baseline for background failure judgments or multi-device routing.
+  It does not establish background pen input delivery, captured-controller output, or tray pen support.
+- Promotion decision: no hypothesis promotion; retain the run's foreground result and identity limitation.
+
+### 2026-11-04 · EXP-030 · `INDETERMINATE` [OBSERVED] — pen promotion without device identity
+
+- Run `20261104-072504-EXP-030-6db447`, base commit `bc74db1d55da029c3843c7750652138dcc5597eb`
+  **with uncommitted pen-target/source-count diagnostic changes**, machine `0deb2bf74476ff1f`
+  (Surface Pro 12in 2nd Ed Snapdragon, build 28000.3231, Arm64).
+- Operator-selected target `pen`, 15-second passive capture; mouse-only Raw Input registered.
+  Background events: 763 pen-promotion signatures, 15 touch-promotion signatures, 354 unmarked handleless events.
+  Foreground events: 84 touch-promotion signatures and 156 unmarked handleless events.
+- No event had a nonzero device handle. The selected target and signatures do not independently identify
+  an actuator; unmarked events cannot be attributed to the pen from these counts alone.
+  Max callback 4.549 ms exceeded the harness's 2 ms assertion; operator reported normal behavior.
+  No waveform was sent by this experiment.
+- Promotion decision: none. This is evidence for pen-class background observation on this setup, **not**
+  per-pen identity, physical background output or production pen-routing correctness.
+
+### 2026-11-04 · EXP-020 · `PASS` [PHYSICAL] — single-pen background Click
+
+- Run `20261104-081454-EXP-020-677084`, base commit `bc74db1d55da029c3843c7750652138dcc5597eb`
+  **with uncommitted single-pen routing/trial changes**, machine `e09c60edb1b7ecba`
+  (Surface Pro 12in 2nd Ed Snapdragon, build 28000.3365, Arm64).
+- R3a cached controller and R3b temporary override each passed: pulses felt **6/6** versus controls **0/6**;
+  API accepted 6/6 per route. 18/18 trials answered, no invalid trials. Click at intensity 1.0.
+  The raw thread had a current controller in 0/95 background samples; R2 was skipped for pen mode.
+- The operator explicitly selected one pen; its controller type was Pen but its ID hash was `none`.
+  This is not stable per-pen identity, a same-controller foreground failure baseline, or multiple-pen evidence.
+  The fingerprint/build differs from the earlier foreground run. The immutable result and generated summary
+  retain their route-scoped PASS.
+- Subsequent operator observation: little/no feedback during hover, and a persistent stray line after pen contact
+  on an Explorer window during trials. The harness did not distinguish hover from contact, so this run does not
+  establish hover feedback or absence of input side effects. The operator subsequently confirmed that ending
+  TabTip.exe cleared the line, identifying Windows' handwriting overlay as its owner. Pen contact on Explorer's
+  address bar is the operator's unverified trigger hypothesis; causality from haptic output is not established.
+  Integrated tray behavior remains open.
+- Promotion decision: no hypothesis promotion; retain controlled pulse discrimination only, with the input-behavior
+  concern recorded for follow-up if it recurs; hover and contact still require separate trials.

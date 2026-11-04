@@ -40,6 +40,7 @@ internal partial class SettingsWindow
         OnToggled(BoostSwitch, on => Change(s => s.TouchpadBoost = on ? 1.3 : 1.0));
         OnToggled(CooperationSwitch, on => Change(s => s.CooperationEnabled = on));
         OnToggled(RipplesSwitch, on => Change(s => s.ShowRipples = on));
+        OnToggled(PenSwitch, on => Change(s => s.ExperimentalPenEnabled = on));
         OnToggled(StartupSwitch, SetStartup);
         StyleBox.SelectionChanged += (_, _) =>
         {
@@ -66,6 +67,8 @@ internal partial class SettingsWindow
         ShowcaseButton.Click += (_, _) => _host.OpenShowcase();
 
         PreviewMouseMove += (_, _) => Prime();
+        PreviewStylusMove += (_, _) => Prime();
+        PreviewStylusInAirMove += (_, _) => Prime();
         PreviewMouseDown += (_, _) => KeepOpen();
         PreviewMouseWheel += (_, _) => KeepOpen();
         PreviewKeyDown += (_, _) => KeepOpen();
@@ -169,6 +172,7 @@ internal partial class SettingsWindow
         BoostSwitch.IsChecked = s.TouchpadBoost > 1.01;
         CooperationSwitch.IsChecked = s.CooperationEnabled;
         RipplesSwitch.IsChecked = s.ShowRipples;
+        PenSwitch.IsChecked = s.ExperimentalPenEnabled;
         StartupSwitch.IsChecked = _host.StartWithWindows;
         ExcludedList.Children.Clear();
         foreach (var app in s.ExcludedProcesses)
@@ -200,6 +204,10 @@ internal partial class SettingsWindow
         StatusText.Text = status;
         StatusHint.Text = hint;
         StatsText.Text = Stats();
+        if (s.Enabled && s.ExperimentalPenEnabled)
+        {
+            StatusHint.Text += " Experimental single pen: use only one pen; hover it over this window to prime. Re-prime after Off or device removal.";
+        }
         var app = _host.LastApp;
         var canExclude = app is not null && !s.ExcludedProcesses.Contains(app, StringComparer.OrdinalIgnoreCase);
         ExcludeButton.Visibility = canExclude ? Visibility.Visible : Visibility.Collapsed;
@@ -218,9 +226,12 @@ internal partial class SettingsWindow
             $"Startup        {_host.DiscoveryStatus}",
             $"Landing speed  {_host.LandingSpeed:0} px/s (learns from your clicks)",
             $"Raw events     {s.RawEvents} (background {s.BackgroundRawEvents})",
+            $"Latest input   {s.LatestInputClass?.ToString() ?? "none"}",
             $"UIA lookup     p50 {s.LookupP50:0.0} ms · p95 {s.LookupP95:0.0} ms",
             $"Decisions      {s.Emits} emitted · {s.Suppressed} suppressed",
             $"Pulse calls    {s.ApiAccepted} accepted · {s.ApiRejected} rejected · {s.Expired} too late",
+            $"Last output    {s.LastOutput ?? "none"}",
+            $"Last route note {s.LastRoutingNote ?? "none"}",
             $"Input to call  p50 {s.InputToCallP50:0.0} ms · p95 {s.InputToCallP95:0.0} ms");
     }
 

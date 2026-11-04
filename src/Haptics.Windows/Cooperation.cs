@@ -19,6 +19,7 @@ public sealed class ControllerBank
     private readonly Func<CapturedController?> _captureController;
     private IReadOnlyDictionary<long, CapturedController> _map = new Dictionary<long, CapturedController>();
     private long _latestHandle;
+    private bool _experimentalPenEnabled;
 
     public ControllerBank() : this(() => HapticsApi.TryCaptureCurrentController()) { }
 
@@ -29,7 +30,22 @@ public sealed class ControllerBank
 
     public IReadOnlyDictionary<long, CapturedController> Map => _map;
 
-    public bool Any => Latest is not null || _map.Count > 0;
+    public CapturedController? PenController { get; private set; }
+
+    public bool ExperimentalPenEnabled
+    {
+        get => _experimentalPenEnabled;
+        set
+        {
+            _experimentalPenEnabled = value;
+            if (!value)
+            {
+                PenController = null;
+            }
+        }
+    }
+
+    public bool Any => Latest is not null || _map.Count > 0 || PenController is not null;
 
     public void AddDiscovered(ControllerDiscoveryResult discovery)
     {
@@ -43,6 +59,18 @@ public sealed class ControllerBank
     }
 
     public bool RemoveDevice(long handle, CapturedController? expected = null)
+    {
+        var removed = RemoveMapping(handle, expected);
+        if (expected is not null || PenController is null)
+        {
+            return removed;
+        }
+
+        PenController = null; // No per-pen device handle: any device removal requires explicit re-priming.
+        return true;
+    }
+
+    private bool RemoveMapping(long handle, CapturedController? expected = null)
     {
         if (!_map.TryGetValue(handle, out var removed) ||
             expected is not null && !ReferenceEquals(expected, removed))
@@ -72,6 +100,17 @@ public sealed class ControllerBank
 
     public bool RemoveLostController(long handle, CapturedController expected)
     {
+        if (expected.DeviceType == HapticDeviceType.Pen)
+        {
+            if (!ReferenceEquals(PenController, expected))
+            {
+                return false;
+            }
+
+            PenController = null;
+            return true;
+        }
+
         var current = ControllerRouting.Resolve(_map, handle,
             handle == 0 ? PointerInputClass.Handleless : PointerInputClass.Handle).Controller;
         if (!ReferenceEquals(current, expected))
@@ -83,7 +122,7 @@ public sealed class ControllerBank
                      ControllerRouting.AffectedByLoss(handle, pair.Key, pair.Value, expected))
                      .Select(pair => pair.Key).ToArray())
         {
-            RemoveDevice(mappedHandle);
+            RemoveMapping(mappedHandle);
         }
 
         return true;
@@ -98,10 +137,21 @@ public sealed class ControllerBank
             return false;
         }
 
+        if (inputClass == PointerInputClass.Pen && (!ExperimentalPenEnabled || PenController is not null))
+        {
+            return false;
+        }
+
         var c = _captureController();
         if (c is null || !ControllerRouting.MatchesInputClass(inputClass, c.DeviceType))
         {
             return false;
+        }
+
+        if (inputClass == PointerInputClass.Pen)
+        {
+            PenController = c;
+            return true;
         }
 
         var sameController = _map.Where(pair => pair.Key != deviceHandle && ControllerRouting.SameController(pair.Value, c)).ToArray();
@@ -140,6 +190,7 @@ public sealed class ControllerBank
 
     public string Describe() =>
         !Any ? "nothing yet" : string.Join(" + ", _map.Values.Concat(Latest is { } latest ? [latest] : [])
+            .Concat(PenController is { } pen ? [pen] : [])
             .Select(c => c.DeviceType == global::Windows.Devices.Haptics.HapticDeviceType.Generic ? "Haptic device" : c.DeviceType.ToString()).Distinct());
 
     public void ApplyTo(ObservationPipeline? pipeline)
@@ -148,6 +199,7 @@ public sealed class ControllerBank
         {
             pipeline.Controller = null;
             pipeline.Controllers = _map;
+            pipeline.PenController = PenController;
         }
     }
 }
@@ -174,8 +226,16 @@ internal static class ControllerRouting
     internal static ControllerRoute Resolve(
         IReadOnlyDictionary<long, CapturedController>? controllers,
         long deviceHandle,
-        PointerInputClass inputClass)
+        PointerInputClass inputClass,
+        CapturedController? penController = null)
     {
+        if (inputClass == PointerInputClass.Pen)
+        {
+            return penController?.DeviceType == HapticDeviceType.Pen
+                ? new(penController, "experimental-single-pen")
+                : new(null, "skip:pen-not-primed");
+        }
+
         if (inputClass == PointerInputClass.Promoted)
         {
             return new(null, "skip:promoted-input");
@@ -225,6 +285,7 @@ internal static class ControllerRouting
         {
             PointerInputClass.Handle => deviceType == HapticDeviceType.Mouse,
             PointerInputClass.Handleless => deviceType == HapticDeviceType.Touchpad,
+            PointerInputClass.Pen => deviceType == HapticDeviceType.Pen,
             _ => false,
         };
 
@@ -240,9 +301,9 @@ internal static class ControllerRouting
         double.IsFinite(inputTimestampMs) && double.IsFinite(nowMs) &&
         double.IsFinite(freshnessMs) && freshnessMs >= 0 &&
         nowMs >= inputTimestampMs && nowMs - inputTimestampMs <= freshnessMs &&
-        (deviceHandle == 0
+        (inputClass == PointerInputClass.Pen || (deviceHandle == 0
             ? inputClass == PointerInputClass.Handleless
-            : inputClass == PointerInputClass.Handle);
+            : inputClass == PointerInputClass.Handle));
 }
 
 /// <summary>

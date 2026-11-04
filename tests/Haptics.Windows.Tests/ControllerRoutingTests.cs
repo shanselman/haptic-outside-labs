@@ -7,6 +7,77 @@ namespace Haptics.Windows.Tests;
 
 public class ControllerRoutingTests
 {
+    [Theory]
+    [InlineData(HapticDeviceType.Pen, 2, (ushort)1, (ushort)2)]
+    [InlineData(HapticDeviceType.Pen, 3, (ushort)1, (ushort)1)]
+    [InlineData(HapticDeviceType.Pen, 3, (ushort)9, null)]
+    [InlineData(HapticDeviceType.Pen, 3, null, null)]
+    [InlineData(HapticDeviceType.Mouse, 3, (ushort)1, null)]
+    [InlineData(HapticDeviceType.Touchpad, 3, (ushort)1, null)]
+    public void OnlyPenDiscreteOutputCanUseTheRecordedClickFallback(
+        HapticDeviceType type, ushort requested, ushort? click, ushort? expected) =>
+        Assert.Equal(expected, HapticsApi.SelectControllerWaveform(type, requested, [1, 2], click));
+
+    [Fact]
+    public void PenPrimingIsExplicitAndSeparateFromHandlelessTouchpad()
+    {
+        var pen = Controller(HapticDeviceType.Pen, "none");
+        var pad = Controller(HapticDeviceType.Touchpad, "pad");
+        var current = pad;
+        var calls = 0;
+        var bank = new ControllerBank(() => { calls++; return current; });
+        Assert.True(bank.TryCapture(0, PointerInputClass.Handleless, 100, 100));
+        current = pen;
+        Assert.False(bank.TryCapture(0, PointerInputClass.Pen, 200, 200));
+        Assert.Equal(1, calls);
+        bank.ExperimentalPenEnabled = true;
+        Assert.True(bank.TryCapture(0, PointerInputClass.Pen, 200, 200));
+        Assert.Same(pad, bank.Map[0]);
+        Assert.Same(pen, bank.PenController);
+        Assert.False(bank.TryCapture(0, PointerInputClass.Pen, 300, 300));
+        Assert.Equal(2, calls);
+        Assert.Same(pen, ControllerRouting.Resolve(bank.Map, 0, PointerInputClass.Pen, bank.PenController).Controller);
+        Assert.Same(pad, ControllerRouting.Resolve(bank.Map, 0, PointerInputClass.Handleless, bank.PenController).Controller);
+        Assert.Null(ControllerRouting.Resolve(bank.Map, 0, PointerInputClass.Promoted, bank.PenController).Controller);
+        bank.ExperimentalPenEnabled = false;
+        Assert.Null(bank.PenController);
+        Assert.Same(pad, bank.Map[0]);
+        bank.ExperimentalPenEnabled = true;
+        Assert.Null(bank.PenController);
+    }
+
+    [Fact]
+    public void PenCaptureRejectsWrongTypeAndStaleInput()
+    {
+        var bank = new ControllerBank(() => Controller(HapticDeviceType.Mouse, "mouse"))
+        {
+            ExperimentalPenEnabled = true,
+        };
+        Assert.False(bank.TryCapture(0, PointerInputClass.Pen, 100, 100));
+        Assert.False(bank.TryCapture(0, PointerInputClass.Pen, 0, 1001));
+        Assert.Null(bank.PenController);
+        Assert.Empty(bank.Map);
+        Assert.False(bank.Any);
+    }
+
+    [Fact]
+    public void LosingPenDoesNotRemoveTouchpadOrMouseAndRequiresFreshPriming()
+    {
+        var mouse = Controller(HapticDeviceType.Mouse, "mouse");
+        var pen = Controller(HapticDeviceType.Pen, "none");
+        var bank = new ControllerBank(() => pen) { ExperimentalPenEnabled = true };
+        bank.AddDiscovered(new ControllerDiscoveryResult(new Dictionary<long, CapturedController> { [12] = mouse }, "ready"));
+        Assert.True(bank.TryCapture(0, PointerInputClass.Pen, 100, 100));
+        Assert.False(bank.RemoveLostController(0, Controller(HapticDeviceType.Pen, "none")));
+        Assert.True(bank.RemoveLostController(0, pen));
+        Assert.Null(bank.PenController);
+        Assert.Same(mouse, bank.Map[12]);
+        Assert.True(bank.TryCapture(0, PointerInputClass.Pen, 200, 200));
+        Assert.True(bank.RemoveDevice(99));
+        Assert.Null(bank.PenController);
+        Assert.Same(mouse, bank.Map[12]);
+    }
+
     [Fact]
     public void NonzeroHandleUsesOnlyItsExactMapping()
     {

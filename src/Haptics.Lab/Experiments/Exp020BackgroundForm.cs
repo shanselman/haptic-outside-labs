@@ -35,6 +35,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
     private readonly Dictionary<string, long> _rawCounts = new();
     private readonly List<Dictionary<string, object?>> _rawThreadSamples = new();
     private readonly Random _rng = new();
+    private readonly System.Windows.Forms.Timer _progress = new() { Interval = 250 };
     private MessageWindowThread? _raw;
     private AnswerPanel? _panel;
     private ExperimentSession? _session;
@@ -46,6 +47,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
     private bool _baselinePassed;
     private string _waveName = "Click";
     private double _intensityValue = 1.0;
+    private bool _penTarget;
 
     // Raw-thread-only state.
     private ScheduledTrial? _pending;
@@ -53,11 +55,23 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
     private long _targetDevice;
     private bool _targetLocked;
     private Rectangle _panelBounds;
+    private (int X, int Y)? _lastPenPosition;
+    private string _waitingReason = "Waiting for the input thread to arm the trial.";
+    private string? _observerError;
+    private double _lastInputAt = double.NaN;
+    private long _penInputs;
+    private long _otherInputs;
 
     private TrialRecord? _awaiting;
 
     public Exp020BackgroundForm(CliOptions opt)
     {
+        var target = (opt.Get("target") ?? "mouse").ToLowerInvariant();
+        if (target is not ("mouse" or "touchpad" or "pen" or "any"))
+        {
+            throw new ArgumentException("EXP-020/022 --target must be mouse, touchpad, pen, or any.");
+        }
+
         _opt = opt;
         Text = "EXP-020 · Background output route (critical gate)";
         ClientSize = new Size(940, 640);
@@ -80,8 +94,8 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
         _window.Items.AddRange(["message", "hidden"]);
         _window.SelectedItem = opt.Get("window") ?? "message";
-        _target.Items.AddRange(["mouse", "touchpad", "any"]);
-        _target.SelectedItem = (opt.Get("target") ?? "mouse").ToLowerInvariant();
+        _target.Items.AddRange(["mouse", "touchpad", "pen", "any"]);
+        _target.SelectedItem = target;
         _perArm.Value = Math.Clamp(opt.Int("trials-per-arm", 6), 3, 30);
         _controls.Value = Math.Clamp(opt.Int("controls", 6), 3, 30);
         _intensity.Value = (decimal)Math.Clamp(opt.Double("intensity", 1.0), 0.05, 1.0);
@@ -91,7 +105,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _baseline.MaximumSize = new Size(880, 0);
 
         var intro = Ui.Text(
-            "1) Start: glide the TARGET device (mouse or touchpad, as selected) over the pad below for a second. This captures its controller for the R3 arms and identifies the device. " +
+            "1) Start: glide the TARGET device over the pad below for a second. This captures its controller for the R3 arms. Pen mode requires exactly ONE pen; its signature does not identify an individual pen. " +
             "2) Begin: this window minimizes and a small non-activating panel appears bottom-right. Click into another app (e.g. Notepad) and keep " +
             "moving the pointer over it with the same device. When the panel says NOW, judge, then click Felt / Not felt / Unsure on the panel. The panel never takes focus.", width: 900);
         var setup = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8) };
@@ -112,8 +126,11 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
         _start.Click += (_, _) => StartPrime();
         _begin.Click += (_, _) => BeginTrials();
+        _progress.Tick += (_, _) => RefreshProgress();
         FormClosing += (_, _) =>
         {
+            _progress.Stop();
+            _progress.Dispose();
             Finish(aborted: true);
             _raw?.Dispose();
             _panel?.Close();
@@ -144,11 +161,13 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
         _waveName = (string)_waveform.SelectedItem!;
         _intensityValue = (double)_intensity.Value;
+        _penTarget = TargetDevice == "pen";
+        _target.Enabled = false;
         var kind = (string)_window.SelectedItem! == "hidden" ? MessageWindowKind.HiddenTopLevel : MessageWindowKind.MessageOnly;
         try
         {
             _raw = new MessageWindowThread("exp020-raw-input", kind, registerRawMouse: true);
-            _raw.RawMouse += OnRaw;
+            _raw.RawMouse += ObserveRaw;
             _raw.Start();
             _session = ExperimentSession.Start("EXP-020", "physical", _opt.Get("out"));
         }
@@ -165,7 +184,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _session.Result.Method["outputOwnershipGranted"] = _outputOwnership.IsOwner;
         _phase = Phase.Prime;
         _start.Enabled = false;
-        _padText.Text = "Move the TARGET mouse around inside this pad…";
+        _padText.Text = "Move the TARGET device around inside this pad…";
         _status.Text = _raw.RawInputRegistered
             ? $"Raw input registered (mouse only, RIDEV_INPUTSINK) on thread {_raw.ThreadId}, window kind {kind}."
             : $"Raw input registration FAILED (win32 {_raw.RawInputRegistrationError}).";
@@ -178,7 +197,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             return;
         }
 
-        HapticDeviceType? require = TargetDevice switch { "mouse" => HapticDeviceType.Mouse, "touchpad" => HapticDeviceType.Touchpad, _ => null };
+        HapticDeviceType? require = TargetDevice switch { "mouse" => HapticDeviceType.Mouse, "touchpad" => HapticDeviceType.Touchpad, "pen" => HapticDeviceType.Pen, _ => null };
         var cap = HapticsApi.TryCaptureCurrentController(require);
         if (cap is not null)
         {
@@ -202,6 +221,12 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _begin.Enabled = false;
         var arms = _arms.CheckedItems.Cast<string>().ToList();
         var skipped = new List<string>();
+        if (_penTarget)
+        {
+            skipped.AddRange(arms.Where(a => a == OutputRoutes.RawThreadManager));
+            arms.RemoveAll(a => a == OutputRoutes.RawThreadManager);
+        }
+
         if (_captured is null)
         {
             skipped.AddRange(arms.Where(a => a != OutputRoutes.RawThreadManager));
@@ -218,7 +243,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         var m0 = _session!.Result.Method;
         lock (_primeDevices)
         {
-            _targetLocked = TargetDevice != "any" && _primeDevices.Count > 0;
+            _targetLocked = !_penTarget && TargetDevice != "any" && _primeDevices.Count > 0;
             _targetDevice = _targetLocked ? _primeDevices.MaxBy(kv => kv.Value).Key : 0;
             m0["primeRawDevices"] = PrimeDeviceCounts(_primeDevices, RawInputDevices.Describe);
         }
@@ -235,7 +260,11 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         m["rawThreadId"] = _raw!.ThreadId;
         m["targetDevice"] = TargetDevice;
         m["targetControllerIdHash"] = _captured?.IdHash;
-        m["targetRawDevice"] = !_targetLocked ? "any" : _targetDevice == 0 ? "no-handle (precision touchpad or synthetic)" : RawInputDevices.Describe(_targetDevice);
+        m["targetRawDevice"] = _penTarget ? "pen signature only; one explicitly selected pen" : !_targetLocked ? "any" : _targetDevice == 0 ? "no-handle (precision touchpad or synthetic)" : RawInputDevices.Describe(_targetDevice);
+        if (_penTarget)
+        {
+            _session.Result.Limitations.Add("Experimental single-pen test: the operator must use only one pen. Pen signatures identify a class, not an individual device; no mouse/touch event may trigger a pen trial.");
+        }
         if (_targetLocked && _targetDevice == 0)
         {
             _session.Result.Limitations.Add("Trial device delivered raw input without a device handle (typical of precision touchpads). " +
@@ -253,7 +282,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _baselinePassed = EvidenceLedger.ForegroundBaselinePassed(EvidenceLedger.Load(), _session.Result.Machine.MachineFingerprint,
             _waveName, _intensityValue, _captured?.IdHash);
         m["baselinePassedForSameControllerWaveformAndIntensity"] = _baselinePassed;
-        m["fireConditions"] = "foreground PID != lab, cursor not over lab panel, physical (hDevice != 0) movement from the primed device for >= 400ms after a random 0.8-2.5s delay; fired inside WM_INPUT handling on the raw-input thread.";
+        m["fireConditions"] = "foreground PID != lab, cursor not over lab panel, movement from the primed raw device (or pen signature in explicit single-pen mode) for >= 400ms after a random 0.8-2.5s delay; fired inside WM_INPUT handling on the raw-input thread.";
         _session.Result.NegativeControls.Add($"{(int)_controls.Value} randomized silent controls fired under identical conditions.");
 
         _phase = Phase.Trials;
@@ -272,6 +301,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _panelBounds = _panel.Bounds;
         WindowState = FormWindowState.Minimized;
         _next = 0;
+        _progress.Start();
         ArmNext();
     }
 
@@ -295,8 +325,9 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
         var plan = _schedule[_next];
         _panel!.SetAnswersEnabled(false);
-        _panel.SetMessage($"Trial {_next + 1}/{_schedule.Count}: keep the OTHER app in front and keep moving the mouse over it. Wait for NOW…");
+        _panel.SetMessage($"Trial {_next + 1}/{_schedule.Count}: keep the OTHER app in front and keep moving the target device over it. Wait for NOW…");
         var bounds = _panel.Bounds;
+        Volatile.Write(ref _waitingReason, "Waiting for the input thread to arm the trial.");
         _raw!.Post(() =>
         {
             _panelBounds = bounds;
@@ -304,16 +335,71 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             _armedAt = MonotonicClock.Instance.NowMs;
             _delay = 800 + (_rng.NextDouble() * 1700);
             _foreignSince = -1;
+            _lastPenPosition = null;
+            Volatile.Write(ref _waitingReason, "Move the target device over another app.");
         });
+    }
+
+    private void RefreshProgress()
+    {
+        if (_phase != Phase.Trials || _awaiting is not null)
+        {
+            return;
+        }
+
+        var error = Volatile.Read(ref _observerError);
+        var lastInput = Volatile.Read(ref _lastInputAt);
+        var reason = error is not null
+            ? $"Input observer failed: {error}. Stop this run."
+            : double.IsNaN(lastInput) || MonotonicClock.Instance.NowMs - lastInput > 1500
+                ? "No recent Raw Input. Move the target device over another app."
+                : Volatile.Read(ref _waitingReason);
+        _panel?.SetMessage($"Trial {_next + 1}/{_schedule.Count}: waiting — {reason}\nPen events: {Interlocked.Read(ref _penInputs)}; other events: {Interlocked.Read(ref _otherInputs)}.");
+    }
+
+    private void ObserveRaw(RawMouseInput input)
+    {
+        if (Volatile.Read(ref _observerError) is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            OnRaw(input);
+        }
+        catch (Exception ex)
+        {
+            // MessageWindowThread isolates listener exceptions; keep the failure visible and revoke further sends.
+            Volatile.Write(ref _observerError, HapticsApi.Describe(ex));
+            _pending = null;
+            _outputOwnership?.StopSending();
+        }
     }
 
     // ---- raw-input thread ----
     private void OnRaw(RawMouseInput input)
     {
+        Volatile.Write(ref _lastInputAt, input.TimestampMs);
+        if (input.InputClass == PointerInputClass.Pen)
+        {
+            Interlocked.Increment(ref _penInputs);
+        }
+        else
+        {
+            Interlocked.Increment(ref _otherInputs);
+        }
+
         var key = $"{input.Code}/{(input.DeviceHandle == 0 ? "synthetic" : "device")}";
         lock (_rawCounts)
         {
             _rawCounts[key] = _rawCounts.GetValueOrDefault(key) + 1;
+        }
+
+        if (!AcceptsInput(_penTarget, input.InputClass))
+        {
+            Volatile.Write(ref _waitingReason, $"Received {input.InputClass}, not pen-class input. Move only the pen.");
+            return;
         }
 
         // Count every prime-phase event, including hDevice == 0: precision touchpads may deliver mouse raw input
@@ -330,6 +416,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         if (_phase == Phase.Trials && now - _lastSample > 250)
         {
             _lastSample = now;
+            Volatile.Write(ref _waitingReason, "Inspecting the raw-thread haptics manager.");
             var st = HapticsApi.InspectCurrentThread();
             lock (_rawThreadSamples)
             {
@@ -351,16 +438,32 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
         if (_targetLocked && input.DeviceHandle != _targetDevice)
         {
+            Volatile.Write(ref _waitingReason, "Input is from a different device than the primed target.");
             return;
         }
 
         var fg = DesktopContext.Foreground().Pid;
         var (cx, cy) = DesktopContext.CursorPosition();
-        var moving = input.LastX != 0 || input.LastY != 0;
-        var provenanceOk = input.Origin == InputOrigin.HardwareRaw || (_targetLocked && _targetDevice == 0);
-        if (fg == DesktopContext.OwnProcessId || fg == 0 || _panelBounds.Contains(cx, cy) || !provenanceOk)
+        var moving = IsMovement(_penTarget, input, (cx, cy), _lastPenPosition);
+        if (_penTarget)
+        {
+            _lastPenPosition = (cx, cy);
+        }
+
+        var provenanceOk = _penTarget || input.Origin == InputOrigin.HardwareRaw || (_targetLocked && _targetDevice == 0);
+        if (fg == DesktopContext.OwnProcessId || fg == 0)
         {
             _foreignSince = -1;
+            Volatile.Write(ref _waitingReason, "Another app must be foreground. Tap its title bar with the pen.");
+            return;
+        }
+
+        if (_panelBounds.Contains(cx, cy) || !provenanceOk)
+        {
+            _foreignSince = -1;
+            Volatile.Write(ref _waitingReason, _panelBounds.Contains(cx, cy)
+                ? "Pointer is over the answer panel. Move the pen away from the panel."
+                : "Input origin does not match the primed device.");
             return;
         }
 
@@ -371,10 +474,14 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
         if (!moving || now - _armedAt < _delay || now - _foreignSince < 400)
         {
+            Volatile.Write(ref _waitingReason, !moving
+                ? "No movement at the observed pointer position. Keep gliding the target device."
+                : "Keep moving over the other app; randomized delay is running.");
             return;
         }
 
         _pending = null;
+        Volatile.Write(ref _waitingReason, "Issuing this trial on the input thread.");
         Fire(plan, input, fg, cx, cy, now);
     }
 
@@ -386,6 +493,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         _outputOwnership?.Record(t);
         t.Context["rawCode"] = input.Code.ToString();
         t.Context["origin"] = input.Origin.ToString();
+        t.Context["inputClass"] = input.InputClass.ToString();
         t.Context["foregroundIsLab"] = fg == DesktopContext.OwnProcessId;
         t.Context["cursorWindowIsLab"] = under == DesktopContext.OwnProcessId;
         t.Context["rawThreadManagerOk"] = st.ManagerOk;
@@ -403,7 +511,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             t.Invalidate("cursor-over-lab-window");
         }
 
-        if (!plan.IsControl && _outputOwnership?.TryRun(() =>
+        if (!plan.IsControl && t.ProvenanceValid && _outputOwnership?.TryRun(() =>
             {
                 t.Attempt = plan.Arm switch
                 {
@@ -456,6 +564,14 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
                pulses.Length > 0 && pulses.All(t => t.Attempt?.ControllerIdHash == targetControllerIdHash);
     }
 
+    internal static bool AcceptsInput(bool penTarget, PointerInputClass inputClass) =>
+        !penTarget || inputClass == PointerInputClass.Pen;
+
+    internal static bool IsMovement(bool penTarget, RawMouseInput input, (int X, int Y) position, (int X, int Y)? previous) =>
+        penTarget
+            ? position.X != int.MinValue && position.Y != int.MinValue && previous is { } last && last != position
+            : input.LastX != 0 || input.LastY != 0;
+
     private void Finish(bool aborted)
     {
         if (_session is null || _phase == Phase.Done)
@@ -465,6 +581,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
 
         _outputOwnership?.StopSending();
         _phase = Phase.Done;
+        _progress.Stop();
         _raw?.Post(() => _pending = null);
         var r = _session.Result;
         var verdicts = new Dictionary<string, ArmVerdict>();
@@ -489,7 +606,7 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
             samples = _rawThreadSamples.ToList();
         }
 
-        var handleless = _targetLocked && _targetDevice == 0;
+        var handleless = _penTarget || _targetLocked && _targetDevice == 0;
         var bgSamples = samples.Where(x => (string?)x["code"] == "Background" && (handleless || (string?)x["origin"] == "HardwareRaw")).ToList();
         var bgWithController = bgSamples.Count(x => x["controllerPresent"] is true);
         if (bgSamples.Count > 0)
@@ -518,12 +635,18 @@ public sealed class Exp020BackgroundForm : Form, IExperimentForm
         r.Observations["trialsScheduled"] = _schedule.Count;
         r.Observations["invalidTrials"] = _trials.Where(t => !t.ProvenanceValid).Select(t => $"#{t.Index}: {string.Join(",", t.ProvenanceIssues)}").ToList();
         r.Observations["trials"] = _trials;
+        r.Observations["inputObserverError"] = Volatile.Read(ref _observerError);
+        r.Observations["lastWaitingReason"] = Volatile.Read(ref _waitingReason);
+        r.Observations["penClassEvents"] = Interlocked.Read(ref _penInputs);
+        r.Observations["otherClassEvents"] = Interlocked.Read(ref _otherInputs);
+        _session.Assert("input observer completed without an exception", Volatile.Read(ref _observerError) is null,
+            Volatile.Read(ref _observerError));
         r.LatencyMs["inputToCallP50"] = Pct(attempts.Select(a => a.InputToCallMs ?? double.NaN), 0.5);
         r.LatencyMs["inputToCallP95"] = Pct(attempts.Select(a => a.InputToCallMs ?? double.NaN), 0.95);
         r.Explanation = (aborted ? "ABORTED early. " : "") +
                         $"Raw thread saw a controller in {bgWithController}/{bgSamples.Count} background samples. " +
                         string.Join(" | ", verdicts.Select(v => $"{v.Key}: {v.Value.Status} ({v.Value.Hits}/{v.Value.Hits + v.Value.Misses} felt, controls {v.Value.FalseAlarms}/{v.Value.FalseAlarms + v.Value.CorrectRejections}, api {v.Value.ApiAccepted} accepted) — {v.Value.Reason}"));
-        r.Limitations.Add("One machine, one mouse, one OS build. A PASS is scoped to this fingerprint and route only.");
+        r.Limitations.Add("One machine, one target device, one OS build. A PASS is scoped to this fingerprint and route only.");
         r.Limitations.Add("R3 arms reuse a controller captured from our own foreground interaction; its lifetime across sleep/re-pair is untested (EXP-082).");
         r.NextDecision = r.Status switch
         {

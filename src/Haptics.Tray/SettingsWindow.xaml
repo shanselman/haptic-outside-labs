@@ -30,7 +30,7 @@
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="SettingsScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto" PanningMode="VerticalFirst">
             <StackPanel Margin="24,4,24,24">
                 <Border
                     Padding="20"
@@ -83,7 +83,7 @@
                     <ui:CardControl.Header>
                         <StackPanel>
                             <ui:TextBlock FontTypography="Body" Text="Haptics" />
-                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="Feel the controls under your mouse or touchpad, in any app" />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="Feel the controls under your mouse, touchpad or opted-in pen, in any app" />
                         </StackPanel>
                     </ui:CardControl.Header>
                     <ui:ToggleSwitch x:Name="EnabledSwitch" AutomationProperties.Name="Haptics" />
@@ -151,6 +151,15 @@
                         </StackPanel>
                     </ui:CardControl.Header>
                     <ui:ToggleSwitch x:Name="BoostSwitch" AutomationProperties.Name="Boost touchpad" />
+                </ui:CardControl>
+                <ui:CardControl Margin="0,0,0,4" Icon="{ui:SymbolIcon Sparkle24}">
+                    <ui:CardControl.Header>
+                        <StackPanel>
+                            <ui:TextBlock FontTypography="Body" Text="Experimental single pen" />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="Use only one haptic pen. Turn on, then hover the pen over this window. Windows cannot identify which pen sent background input. Turn off/on to re-prime." />
+                        </StackPanel>
+                    </ui:CardControl.Header>
+                    <ui:ToggleSwitch x:Name="PenSwitch" AutomationProperties.Name="Experimental single pen" />
                 </ui:CardControl>
                 <ui:CardControl Margin="0,0,0,4" Icon="{ui:SymbolIcon Sparkle24}">
                     <ui:CardControl.Header>
