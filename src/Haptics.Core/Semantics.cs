@@ -166,8 +166,7 @@ public sealed record ElementSnapshot
         { ControlType: "MenuItem", ParentControlType: "MenuBar" } => "menu-launcher",
         { ControlType: "MenuItem", HasDropdown: true, ParentControlType: "Menu" or "MenuItem" } => "menu-launcher",
         { ControlType: "ComboBox" } => "picker",
-        { ControlType: "Button" or "SplitButton", ParentControlType: "ToolBar" or "Menu" or "MenuBar" or "MenuItem" }
-            when HasDropdown || ControlType == "SplitButton" => "menu-launcher",
+        { ControlType: "SplitButton", ParentControlType: "ToolBar" or "Menu" or "MenuBar" or "MenuItem" } => "menu-launcher",
         // Expand/collapse capability alone also describes content cards and tree items.
         _ => null,
     };

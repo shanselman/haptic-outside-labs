@@ -974,7 +974,10 @@ are unchanged; legacy size-tuning fields are retained for configuration compatib
 
 Focused navigation classification uses a shared structural allowlist, without process-specific content blacklists:
 TabItem under Tab; ComboBox; MenuItem under MenuBar; expandable MenuItem under
-Menu/MenuItem; Hyperlink directly under Text/Document/Edit; and dropdown-capable Buttons or SplitButtons inside ToolBar/Menu/MenuBar/MenuItem.
+Menu/MenuItem; Hyperlink directly under Text/Document/Edit; and SplitButtons inside
+ToolBar/Menu/MenuBar/MenuItem. Generic Buttons are not promoted to menu launchers based on dropdown capability,
+class names, or geometry because those signals do not reliably distinguish menu affordances from ordinary commands.
+This conservative allowlist may leave real chevrons silent when UIA exposes them only as Buttons.
 Recognized browser toolbar commands are explicitly excluded. A standalone SplitButton, TabItem or MenuItem with
 missing/ambiguous parent does not qualify.
 `HasDropdown` represents expand/collapse capability, not evidence that a card is a command. It cannot make a generic

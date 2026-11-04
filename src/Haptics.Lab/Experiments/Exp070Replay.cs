@@ -23,7 +23,7 @@ public static class Exp070Replay
         ["style-inclusion-checkbox-repeat.jsonl"] = (5, 5),
         ["everything-toggle-links-options.jsonl"] = (5, 5),
         ["focused-navigation-hover.jsonl"] = (2, 2),
-        ["focused-content-filter.jsonl"] = (3, 3),
+        ["focused-content-filter.jsonl"] = (2, 2),
         ["focused-header-continuity.jsonl"] = (2, 2),
         ["universal-dwell-reentry.jsonl"] = (2, 2),
         ["tab-delayed-landing.jsonl"] = (3, 3),

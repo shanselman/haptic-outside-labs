@@ -116,11 +116,18 @@ Three automatic sensations, plus an explicit Click preview:
   that tell us (see *Cooperating apps*).
 
 **Styles:**
-- **Quiet:** eligible tab/inline-link Hover and slider steps/endpoints, with no other control landings. Anything silent in Focused is also silent in Quiet.
-- **Focused** (default): selected navigation, inline/text-sized Group links and menu landings, slider detents/limits, and checkboxes/toggles turning On or Off
-  after a mouse click. No extra group-entry or strip-edge pulses.
-- **Everything:** every Focused scenario, plus all links, picker options, ordinary toolbar/browser commands,
-  toggle-button hover, open menu choices, radio-option Hover and group-entry Hover, with the same dwell rule.
+| Event | Quiet | Focused | Everything |
+|---|---|---|---|
+| Unselected tabs and inline text links | Hover | Hover | Hover |
+| Text-sized links inside Groups | - | Hover | Hover |
+| Dropdown pickers and explicit menu/SplitButton roles | - | Hover | Hover |
+| Slider thumb hover | - | Hover | Hover |
+| Slider drag detents/endpoints | Step/Collide | Step/Collide | Step/Collide |
+| Click-confirmed checkbox/toggle changes | - | Step | Step |
+| Other links, picker options, ordinary Buttons, toggle/radio hover, open menu choices, group entry | - | - | Hover |
+
+Focused uses explicit UIA navigation/menu roles; a generic Button does not qualify from dropdown capability,
+class name, or geometry. Everything retains broader Button and option hover coverage.
 
 The separate **More is better** setting is off by default. When on, it shortens reentry cooldown and raises the limit to 25 pulses per second; it never bypasses dwell. The selected style, Off switch, password protections and app exclusions still apply.
 
@@ -141,7 +148,8 @@ Examples are inspection targets, not guarantees of accessibility coverage in eve
 | Inline text links | Dwell on Hyperlink directly under Text/Document/Edit; also enabled in Quiet | Showcase: demo hyperlink | Hover |
 | Text-sized Group links | Hyperlink at most 24 logical px tall, fully inside a Group at least twice its height; not enabled in Quiet | Captured Chrome assignment-title link | Hover |
 | Dropdown pickers | Dwell on ComboBox | Showcase: hover the Compact/Comfortable/Spacious picker before opening it | Hover |
-| Menu launchers | Dwell on a menu-bar heading or structurally recognized dropdown/submenu launcher | Showcase: hover File in the menu bar | Hover |
+| Menu launchers | Dwell on a menu-bar MenuItem, submenu MenuItem, or SplitButton in a supported context | Showcase: hover File in the menu bar | Hover |
+| Ordinary toolbar Buttons | Dwell on a toolbar Button; dropdown capability alone does not make it a Focused menu launcher | Showcase: hover an ordinary toolbar command | Everything: Hover |
 | Checkboxes and toggle buttons/switches | Observe Off-to-On or On-to-Off after a primary-button click; no hover pulse | Showcase: click the Bold checkbox or toolbar B on, then off | Step |
 | Slider thumb hover | Dwell on the draggable thumb without dragging; 30 ms for a small thumb, 50 ms for a large one | Showcase: rest on the slider's round control before pressing | Hover |
 | Slider detents | Cross a quantized interval while dragging | Showcase: drag the slider from 50 through 60 and 70 | Step |
@@ -151,6 +159,9 @@ Examples are inspection targets, not guarantees of accessibility coverage in eve
 Ordinary toolbar commands (Showcase +/arrows), recognized browser toolbar commands (Downloads/Extensions),
 and open menu choices (File > Open/Save) are silent in Focused and remain available in Everything.
 Dropdown/submenu launchers are distinct from leaf menu choices; opening them adds no extra click pulse.
+Buttons are not promoted to Focused menu launchers from dropdown capability, CSS class names, or geometry. This
+conservative rule may leave real application chevrons silent when UIA exposes them only as generic Buttons.
+Everything still includes those Buttons.
 Links outside the inline/text-sized Group rules and dropdown options are Everything-only. Taskbar icons, selected tabs,
 radio buttons and content cards remain silent in Focused.
 
@@ -163,9 +174,10 @@ feedback are disabled in every style. Everything restores toggle-button Hover (i
 checkbox/toggle click-confirmed Step is retained in Focused and Everything.
 Explicit Click previews and cooperating-app requests are unchanged.
 
-Focused uses existing role/one-parent evidence: TabItem under Tab; ComboBox;
-MenuItem under MenuBar; expandable MenuItem under Menu/MenuItem; or dropdown-capable Button/SplitButton in a
-ToolBar/Menu/MenuBar/MenuItem. Hyperlinks directly under Text/Document/Edit qualify in Focused and Quiet.
+Focused uses existing role/one-parent evidence: TabItem under Tab; ComboBox; MenuItem under MenuBar; expandable
+MenuItem under Menu/MenuItem; or SplitButton in ToolBar/Menu/MenuBar/MenuItem. Generic Buttons are not promoted
+based on dropdown capability, CSS class names or geometry. Hyperlinks directly
+under Text/Document/Edit qualify in Focused and Quiet.
 Focused additionally accepts a Hyperlink directly under Group when its height is at most 24 logical pixels,
 its bounds are fully inside the parent bounds, and that parent is at least twice as tall. Both rectangles and
 DPI must be available and finite. Missing geometry, ListItem/ToolBar parents and full-parent linked cards do not

@@ -15,6 +15,10 @@ toggle-button Hover (including formatting buttons and Teams app-rail buttons). L
 toggle Buttons and Image parts; direct Text/Image parts now share their immediate Button/Hyperlink owner's
 identity and restrictive safety flags without a second parent read. Taskbar discovery, caching, pacing and
 settings are removed; primary/secondary taskbars are rejected by native root class before UIA lookup.
+Teams and Figma captures showed why dropdown Buttons cannot be classified reliably from their class names or geometry:
+those are implementation details, while `HasDropdown` also appears on ordinary commands. Focused therefore uses
+explicit UIA menu and split-control roles rather than app-specific Button exceptions. Real chevrons exposed only as
+generic Buttons may remain silent; Everything remains available for broader hover coverage.
 
 ## 1. The whole project hinges on one sentence in the docs
 

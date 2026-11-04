@@ -495,12 +495,10 @@ public class VocabularyTests
     }
 
     [Theory]
-    [InlineData("Button", "ToolBar", true)]
     [InlineData("TabItem", "Tab", false)]
     [InlineData("ComboBox", "Pane", false)]
     [InlineData("MenuItem", "MenuBar", false)]
     [InlineData("SplitButton", "ToolBar", false)]
-    [InlineData("Button", "MenuBar", true)]
     public void FocusedNavigationAlwaysUsesHoverIncludingLargeTargets(string type, string parent, bool dropdown)
     {
         foreach (var style in new[] { EffectProfile.Focused, EffectProfile.Everything })
@@ -525,14 +523,10 @@ public class VocabularyTests
 
     [Theory]
     [InlineData("TabItem", "Tab", false, "navigation-tab")]
-    [InlineData("Button", "ToolBar", true, "menu-launcher")]
     [InlineData("SplitButton", "ToolBar", false, "menu-launcher")]
     [InlineData("MenuItem", "Menu", true, "menu-launcher")]
     [InlineData("MenuItem", "MenuBar", true, "menu-launcher")]
     [InlineData("MenuItem", "MenuItem", true, "menu-launcher")]
-    [InlineData("Button", "Menu", true, "menu-launcher")]
-    [InlineData("Button", "MenuBar", true, "menu-launcher")]
-    [InlineData("Button", "MenuItem", true, "menu-launcher")]
     [InlineData("SplitButton", "Menu", false, "menu-launcher")]
     [InlineData("ComboBox", "Pane", true, "picker")]
     public void FocusedNavigationRecordsStructuralEvidence(string type, string parent, bool dropdown, string reason)
@@ -547,6 +541,67 @@ public class VocabularyTests
         Assert.Empty(interpreter.OnSnapshot(element, 1).Events);
         var arrival = Assert.Single(interpreter.OnTick(50).Events, e => e.Kind == SemanticEventKind.EnterControl);
         Assert.Contains($"focused:{reason}", arrival.Evidence);
+    }
+
+    [Fact]
+    public void FocusedToolbarButtonDropdownCapabilityDoesNotEnableOrdinaryCommand()
+    {
+        var element = new ElementSnapshot
+        {
+            ProcessId = 100, ControlType = "Button", ParentControlType = "ToolBar",
+            HasDropdown = true, Bounds = new RectD(0, 0, 100, 60),
+        };
+        Assert.Null(element.FocusedNavigationReason());
+        Assert.False(element.IsFocusedLanding);
+
+        foreach (var style in new[] { EffectProfile.Focused, EffectProfile.Everything })
+        {
+            var policy = new HapticPolicy(PolicyConfig.Sample(style, 0.55), _ => "app")
+            {
+                ConsentGiven = true, OutputRouteVerified = true,
+            };
+            var e = new SemanticEvent(SemanticEventKind.EnterControl, 1, 0, 0, 100, "Button",
+                element.ElementKey, null, 1, [], false, 0, element);
+            var decision = policy.Evaluate(e, 0);
+            Assert.Equal(style == EffectProfile.Focused ? PolicyOutcome.Suppressed : PolicyOutcome.Emit, decision.Outcome);
+            Assert.Equal(style == EffectProfile.Everything ? "Hover" : null, decision.Intent?.Waveform);
+        }
+    }
+
+    [Fact]
+    public void FocusedKeepsAmbiguousDropdownButtonsSilent()
+    {
+        foreach (var parent in new[] { "ToolBar", "Menu", "MenuBar", "MenuItem", "Group" })
+        foreach (var className in new[]
+        {
+            "fui-Button fui-MenuButton generated-style-token",
+            "_19xx72g0 base-icon-button__baseIconButton__TXKzr icon-button__iconButton__CTj--",
+            "generic-button",
+        })
+        {
+            var element = new ElementSnapshot
+            {
+                ProcessId = 100, ControlType = "Button", ParentControlType = parent,
+                ClassName = className, HasDropdown = true,
+                Bounds = new RectD(294, 75, 48, 48),
+                ParentBounds = new RectD(280, 70, 180, 60),
+            };
+            Assert.Null(element.FocusedNavigationReason());
+            Assert.False(element.IsFocusedLanding);
+
+            foreach (var style in new[] { EffectProfile.Focused, EffectProfile.Everything })
+            {
+                var policy = new HapticPolicy(PolicyConfig.Sample(style, 0.55), _ => "app")
+                {
+                    ConsentGiven = true, OutputRouteVerified = true,
+                };
+                var e = new SemanticEvent(SemanticEventKind.EnterControl, 1, 0, 0, 100, "Button",
+                    element.ElementKey, null, 1, [], false, 0, element);
+                var decision = policy.Evaluate(e, 0);
+                Assert.Equal(style == EffectProfile.Focused ? PolicyOutcome.Suppressed : PolicyOutcome.Emit, decision.Outcome);
+                Assert.Equal(style == EffectProfile.Everything ? "Hover" : null, decision.Intent?.Waveform);
+            }
+        }
     }
 
     [Theory]

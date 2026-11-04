@@ -361,14 +361,15 @@ public class ReplayTests
     }
 
     [Fact]
-    public void FocusedContentSweepIsSilentUntilRealNavigationOrMenuTargets()
+    public void FocusedContentSweepOnlyEnablesExplicitNavigationRoles()
     {
         var o = Run("focused-content-filter.jsonl");
-        Assert.Equal([2752, 3052, 3652], o.Haptic.Select(d => d.T));
+        Assert.Equal([2752, 3652], o.Haptic.Select(d => d.T));
         Assert.All(o.Haptic, d => Assert.Equal(("Hover", "EnterControl"), (d.Waveform, d.EventKind)));
         Assert.Contains(o.Notes, n => n == "302:skip:focused-target-not-enabled");
         Assert.Contains(o.Notes, n => n == "602:skip:focused-target-not-enabled");
         Assert.Contains(o.Notes, n => n == "902:skip:focused-target-not-enabled");
+        Assert.Contains(o.Notes, n => n == "3002:skip:focused-target-not-enabled");
     }
 
     [Fact]

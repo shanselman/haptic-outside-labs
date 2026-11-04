@@ -1,4 +1,4 @@
-{"type":"comment","text":"Authored structural cases, not captured Teams metadata: people/content cards stay silent even with expand/collapse or command-like roles. Only the tab, menu launcher, picker and option emit Hover; toolbar commands and leaf menu choices stay silent. Four Hovers."}
+{"type":"comment","text":"Authored structural cases, not captured Teams metadata: people/content cards stay silent even with expand/collapse or command-like roles. Focused emits Hover only for the tab and picker; a generic dropdown-capable Button stays silent even under MenuBar. Everything includes the broader command/option cases."}
 {"type":"process","pid":100,"name":"ms-teams"}
 {"t":0,"type":"pointer","x":20,"y":20,"fg":100}
 {"t":2,"type":"element","req":0,"pid":100,"controlType":"Button","rid":"card-a","bounds":[0,0,60,80],"parentType":"Pane"}
@@ -18,7 +18,7 @@
 {"t":2100,"type":"pointer","x":580,"y":20,"fg":100}
 {"t":2102,"type":"element","req":2100,"pid":100,"controlType":"Pane","rid":"content-pane","bounds":[560,0,60,80],"parentType":"Group","dropdown":true}
 {"t":2400,"type":"pointer","x":660,"y":20,"fg":100}
-{"t":2402,"type":"element","req":2400,"pid":100,"controlType":"Button","rid":"toolbar-command","bounds":[640,0,60,80],"parentType":"ToolBar"}
+{"t":2402,"type":"element","req":2400,"pid":100,"controlType":"Button","rid":"toolbar-command","bounds":[640,0,60,80],"parentType":"ToolBar","dropdown":true}
 {"t":2700,"type":"pointer","x":740,"y":20,"fg":100}
 {"t":2702,"type":"element","req":2700,"pid":100,"controlType":"TabItem","rid":"navigation-tab","bounds":[720,0,60,80],"parentType":"Tab","selected":false}
 {"t":3000,"type":"pointer","x":820,"y":20,"fg":100}
