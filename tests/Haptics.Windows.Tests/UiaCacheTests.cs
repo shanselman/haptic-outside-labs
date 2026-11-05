@@ -602,12 +602,11 @@ public class UiaCacheTests
     }
 
     [Fact]
-    public void TaskbarDiscoveryAndRefreshInfrastructureAreRemoved()
+    public void TaskbarQueriesDoNotReintroduceClientRefreshTimers()
     {
         Assert.Null(typeof(UiaWorker).GetMethod("HostedControlAt", BindingFlags.Static | BindingFlags.NonPublic));
         Assert.Null(typeof(UiaWorker).GetField("HostCache", BindingFlags.Static | BindingFlags.NonPublic));
-        Assert.Null(typeof(UiaWorker).GetMethod("ScanHost", BindingFlags.Static | BindingFlags.NonPublic));
-        Assert.Null(typeof(UiaWorker).GetField("Hosts", BindingFlags.Static | BindingFlags.NonPublic));
+        Assert.NotNull(typeof(UiaWorker).GetMethod("ScanTaskbar", BindingFlags.Static | BindingFlags.NonPublic));
         Assert.Null(typeof(UiaClient).GetField("_taskbarSample", BindingFlags.Instance | BindingFlags.NonPublic));
         Assert.Null(typeof(UiaClient).GetField("_refreshTimer", BindingFlags.Instance | BindingFlags.NonPublic));
     }

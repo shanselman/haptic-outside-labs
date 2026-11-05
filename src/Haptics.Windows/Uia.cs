@@ -18,6 +18,7 @@ public sealed class UiaRequest
     public bool AutomationId { get; set; }
     public bool Focused { get; set; }
     public bool ObserveCaptions { get; set; } = true;
+    public bool ObserveTaskbar { get; set; }
 }
 
 public sealed class UiaResponse
@@ -167,7 +168,7 @@ public static class UiaWorker
         var sw = Stopwatch.StartNew();
         try
         {
-            // Exclude shell hosts before any UIA call; never enumerate taskbar descendants.
+            // Shell lookups never enter the synchronous UIA path.
             {
                 var root = Native.GetAncestor(Native.WindowFromPoint(new Native.POINT { X = req.X, Y = req.Y }), Native.GA_ROOT);
                 if (root != IntPtr.Zero)
@@ -189,6 +190,10 @@ public static class UiaWorker
                                 QueryX = req.X, QueryY = req.Y, IsEnabled = false, IsOffscreen = true,
                             },
                         };
+                    }
+                    if (IsTaskbarHost(rootClass.ToString()))
+                    {
+                        return TaskbarAt(root, req, sw);
                     }
                 }
             }
@@ -365,8 +370,147 @@ public static class UiaWorker
     }
 
     internal static bool SkipHoverObservation(UiaRequest request, string rootClass) =>
-        rootClass is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" ||
+        (IsTaskbarHost(rootClass) && !request.ObserveTaskbar) ||
         (!request.ObserveCaptions && rootClass == "GitHubCopilotCaptionHost");
+
+    private static bool IsTaskbarHost(string rootClass) =>
+        rootClass is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";
+
+    private sealed class TaskbarScan
+    {
+        public required RectD Bounds { get; init; }
+        public required int ProcessId { get; init; }
+        public ElementSnapshot[] Items { get; set; } = [];
+        public long? CompletedAt { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private static readonly object TaskbarGate = new();
+    private static readonly Dictionary<IntPtr, TaskbarScan> Taskbars = new();
+    private static TaskbarScan? ActiveTaskbarScan;
+    private static long TaskbarScanStartedAt;
+
+    private static UiaResponse TaskbarAt(IntPtr hwnd, UiaRequest req, Stopwatch sw)
+    {
+        if (!Native.GetWindowRect(hwnd, out var rect))
+        {
+            return Fail(req, sw, $"taskbar-bounds-error:{System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+        }
+        Native.GetWindowThreadProcessId(hwnd, out var pid);
+        var bounds = new RectD(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+        lock (TaskbarGate)
+        {
+            if (!Taskbars.TryGetValue(hwnd, out var scan) || scan.Bounds != bounds || scan.ProcessId != (int)pid)
+            {
+                if (Taskbars.Count >= 8)
+                {
+                    Taskbars.Clear();
+                }
+                Taskbars[hwnd] = scan = new TaskbarScan { Bounds = bounds, ProcessId = (int)pid };
+            }
+
+            var now = Environment.TickCount64;
+            // At most one native scan can be blocked in this isolated worker. Never start replacement threads.
+            if (ActiveTaskbarScan is not null && now - TaskbarScanStartedAt > 2000)
+            {
+                return Fail(req, sw, "taskbar-scan-timeout");
+            }
+            if (ActiveTaskbarScan is null && (scan.CompletedAt is null || now - scan.CompletedAt >= 1500))
+            {
+                ActiveTaskbarScan = scan;
+                TaskbarScanStartedAt = now;
+                var thread = new Thread(() => ScanTaskbar(hwnd, scan)) { IsBackground = true, Name = "uia-taskbar-scan" };
+                thread.SetApartmentState(ApartmentState.MTA);
+                thread.Start();
+            }
+
+            if (scan.Error is { } error)
+            {
+                return Fail(req, sw, error);
+            }
+            var snap = SelectTaskbarItem(scan.Items, bounds, (int)pid, req.X, req.Y,
+                scan.CompletedAt is { } completed ? now - completed : double.PositiveInfinity);
+            return new UiaResponse
+            {
+                Id = req.Id, Ok = true, LookupMs = sw.Elapsed.TotalMilliseconds,
+                Snapshot = snap is not null
+                    ? snap with { QueryX = req.X, QueryY = req.Y, Scale = MonitorScale(req.X, req.Y) }
+                    : new ElementSnapshot
+                    {
+                        Source = "taskbar-cache-pending", ControlType = "Pane", ProcessId = (int)pid,
+                        Bounds = bounds, QueryX = req.X, QueryY = req.Y, IsEnabled = false, IsOffscreen = true,
+                    },
+            };
+        }
+    }
+
+    internal static ElementSnapshot? SelectTaskbarItem(IEnumerable<ElementSnapshot> items, RectD hostBounds,
+        int processId, int x, int y, double ageMs) =>
+        ageMs is >= 0 and < 1500 && hostBounds.Contains(x, y)
+            ? items.Where(s => s.ProcessId == processId && s.IsEnabled && !s.IsOffscreen && !s.IsPassword &&
+                               s.ControlType is "Button" or "SplitButton" &&
+                               s.Bounds is { IsEmpty: false } b && b.Contains(x, y) &&
+                               b.X >= hostBounds.X && b.Y >= hostBounds.Y &&
+                               b.X + b.Width <= hostBounds.X + hostBounds.Width &&
+                               b.Y + b.Height <= hostBounds.Y + hostBounds.Height)
+                .MinBy(s => s.Bounds!.Width * s.Bounds.Height)
+            : null;
+
+    private static void ScanTaskbar(IntPtr hwnd, TaskbarScan scan)
+    {
+        ElementSnapshot[] items = [];
+        string? error = null;
+        try
+        {
+            var cache = BuildCacheRequest(includeAutomationId: false);
+            cache.TreeScope = TreeScope.Subtree;
+            var root = AutomationElement.FromHandle(hwnd).GetUpdatedCache(cache);
+            var found = new List<ElementSnapshot>();
+            var pending = new Stack<AutomationElement>([root]);
+            var count = 0;
+            while (pending.Count > 0)
+            {
+                var parent = pending.Pop();
+                foreach (AutomationElement child in parent.CachedChildren)
+                {
+                    if (++count > 4096)
+                    {
+                        throw new InvalidOperationException("taskbar-node-limit");
+                    }
+                    pending.Push(child);
+                    if (TypeName(child) is "Button" or "SplitButton")
+                    {
+                        var snap = ToSnapshot(child, parent, new UiaRequest());
+                        var safe = NormalizeOwnerPart(snap,
+                            Get<int>(parent, AutomationElement.ProcessIdProperty),
+                            Get<bool>(parent, AutomationElement.IsEnabledProperty),
+                            Get<bool>(parent, AutomationElement.IsOffscreenProperty),
+                            Get<bool>(parent, AutomationElement.IsPasswordProperty));
+                        if (safe is not null)
+                        {
+                            found.Add(safe with { Source = "taskbar-cache" });
+                        }
+                    }
+                }
+            }
+            items = found.ToArray();
+        }
+        catch (Exception ex)
+        {
+            error = $"taskbar-scan-error:{ex.GetType().Name}";
+        }
+        finally
+        {
+            lock (TaskbarGate)
+            {
+                var timedOut = Environment.TickCount64 - TaskbarScanStartedAt > 2000;
+                scan.Items = timedOut ? [] : items;
+                scan.Error = timedOut ? "taskbar-scan-timeout" : error;
+                scan.CompletedAt = Environment.TickCount64;
+                ActiveTaskbarScan = null;
+            }
+        }
+    }
 
     internal static ElementSnapshot? NormalizeOwnerPart(ElementSnapshot owner, int partPid,
         bool partEnabled, bool partOffscreen, bool partPassword) =>
@@ -622,6 +766,7 @@ public sealed class UiaClient : IDisposable
     public event Action<string>? Diagnostic;
 
     internal Func<bool> ObserveCaptions { get; set; } = static () => true;
+    internal Func<bool> ObserveTaskbar { get; set; } = static () => false;
 
     public UiaClientStats Stats => new(_requests, _responses, _superseded, _timeouts, _restartCount, _quarantined, _late);
 
@@ -755,6 +900,7 @@ public sealed class UiaClient : IDisposable
         {
             Id = next.Id, Cmd = next.Cmd, X = next.X, Y = next.Y, AutomationId = _opt.IncludeAutomationId, Focused = next.Focused,
             ObserveCaptions = ObserveCaptions(),
+            ObserveTaskbar = ObserveTaskbar(),
         };
         try
         {

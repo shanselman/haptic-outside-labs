@@ -178,10 +178,10 @@ public sealed class PolicyConfig
     {
         var p = new PolicyConfig { Mode = HapticsMode.On, IntensityScale = intensity, AppPolicy = AppPolicy.AllExceptExclusions };
         p.ApplyProfile(style);
-        p.GlobalMaxPulsesPerSecond = 12;
-        p.MaxPulsesPerMinute = 600;
+        p.GlobalMaxPulsesPerSecond = style == EffectProfile.Everything ? 25 : 12;
+        p.MaxPulsesPerMinute = style == EffectProfile.Everything ? 1500 : 600;
         p.MinimumGlobalSpacingMs = 40;
-        p.SameElementReentryCooldownMs = 200;
+        p.SameElementReentryCooldownMs = style == EffectProfile.Everything ? 40 : 200;
         p.SemanticIntentExpiryMs = 150;
         p.HoverMaxPointerSpeedPxPerSec = 1_000_000;
         return p;

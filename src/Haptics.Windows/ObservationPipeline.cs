@@ -230,6 +230,7 @@ public sealed class ObservationPipeline : IDisposable
         _uia = _opt.UiaFactory?.Invoke(_opt.Uia) ?? UiaClient.ForCurrentProcess(_opt.Uia);
         // Close uses the existing UIA snapshot/parent geometry, not native caption messages.
         _uia.ObserveCaptions = static () => false;
+        _uia.ObserveTaskbar = () => Policy.Config.Profile == EffectProfile.Everything;
         _uia.Response += OnUia;
         _uia.Diagnostic += m => Publish(new DiagnosticEvent(Now, m));
         _thread = new MessageWindowThread("haptics-raw-input", _opt.WindowKind, registerRawMouse: true);

@@ -26,7 +26,9 @@ Session handoff and remaining review work: [`docs/HANDOFF.md`](../docs/HANDOFF.m
   Checkbox hover and strip exits stay silent. Slider hover uses Thumb bounds.
 - Dwell is 30 ms for small controls, 50 ms for all tabs and targets at least 56 logical px tall or 48 x 48.
   Use the slider thumb's size, not the track. Missing bounds use 50 ms; fresh metadata may extend, never shorten a visit.
-- Taskbar discovery, caching, pacing and settings are removed. A native shell-host exclusion runs before UIA lookup.
+- Taskbar buttons are Everything-only (user decision, 2026-11-04). Quiet/Focused exclude shell hosts before UIA.
+  Everything uses a geometry cache with at most one background scan in the isolated worker, 1.5 s freshness,
+  explicit scan errors and a 2 s scan limit; never block the normal lookup path or spawn replacement scan threads.
   Button/link Text/Image parts use only their direct owner; preserve child safety and never read a grandparent.
 - The tray is a deliberately simple sample (user decision, 2026-10-23): starts On with route R3a, auto-primes, all apps.
   It must still not reference `Haptics.Lab` or fixtures, stay passive, and keep password/exclusion silence.

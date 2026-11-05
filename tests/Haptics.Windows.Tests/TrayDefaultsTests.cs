@@ -7,6 +7,24 @@ namespace Haptics.Windows.Tests;
 public class TrayDefaultsTests
 {
     [Theory]
+    [InlineData(EffectProfile.Quiet, 12, 600, 200)]
+    [InlineData(EffectProfile.Focused, 12, 600, 200)]
+    [InlineData(EffectProfile.Everything, 25, 1500, 40)]
+    public void EverythingUsesExistingDenseLimitsWithoutChangingIntensity(
+        EffectProfile style, int perSecond, int perMinute, double cooldown)
+    {
+        var tray = new TraySettings { Style = style, IntensityScale = 0.55 }.ToPolicy();
+        var showcase = PolicyConfig.Sample(style, 0.55);
+        foreach (var config in new[] { tray, showcase })
+        {
+            Assert.Equal(perSecond, config.GlobalMaxPulsesPerSecond);
+            Assert.Equal(perMinute, config.MaxPulsesPerMinute);
+            Assert.Equal(cooldown, config.SameElementReentryCooldownMs);
+            Assert.Equal(40, config.MinimumGlobalSpacingMs);
+            Assert.Equal(0.55, config.IntensityScale);
+        }
+    }
+    [Theory]
     [InlineData("{}", false)]
     [InlineData("""{"experimentalPenEnabled":true}""", true)]
     [InlineData("""{"experimentalPenEnabled":false}""", false)]

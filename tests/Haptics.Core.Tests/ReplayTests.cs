@@ -6,6 +6,16 @@ namespace Haptics.Core.Tests;
 public class ReplayTests
 {
     [Theory]
+    [InlineData(EffectProfile.Quiet, 0)]
+    [InlineData(EffectProfile.Focused, 0)]
+    [InlineData(EffectProfile.Everything, 2)]
+    public void TaskbarButtonRolesAreEverythingOnlyAndRetainSafety(EffectProfile style, int count)
+    {
+        var output = Run("everything-taskbar-buttons.jsonl", PolicyConfig.Sample(style, 0.8));
+        Assert.Equal(count, output.Emitted);
+        Assert.All(output.Haptic, d => Assert.Equal("Hover", d.Waveform));
+    }
+    [Theory]
     [InlineData(EffectProfile.Quiet)]
     [InlineData(EffectProfile.Focused)]
     [InlineData(EffectProfile.Everything)]

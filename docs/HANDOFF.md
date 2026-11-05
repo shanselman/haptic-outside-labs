@@ -5,6 +5,13 @@ cross-session handoff. Recheck the current tree before acting and update these i
 
 ## Baseline
 
+User-directed revision on 2026-11-04 while testing the style-refinement PR: preserve the selective Quiet/Focused
+rules but restore taskbar buttons in Everything. The local branch now uses one bounded background taskbar scan
+inside the worker, with fresh geometry-only replies; errors/cold caches stay silent. Everything shares the existing
+25/s dense ceiling and 40 ms reentry cooldown across tray/Showcase, without increasing intensity or bypassing dwell.
+Physical taskbar feedback, shell reflow and prolonged scan-stall behavior still need operator checks.
+These changes are included in the v0.8.0 release preparation.
+
 At handoff, `main` was clean at `425cf04` (Version 0.4.0), tagged `v0.4.0`.
 The review fixes below are already committed in `a6b6796`; reconnect recovery is in `9de9f5d`.
 The open "No-wiggle startup diff" canvas is an earlier code snapshot, not an outstanding patch to apply.

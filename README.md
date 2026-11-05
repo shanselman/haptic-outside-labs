@@ -110,7 +110,7 @@ Three automatic sensations, plus an explicit Click preview:
 - **Silent on purpose:** windows, panes, text, list, tree and grid rows (files, emails), the tab you're already on,
   disabled controls, tiny targets, password fields, password managers, and sign-in screens. Inline links hover
   in all styles; Focused also accepts conservatively filtered text-sized links inside Groups. Other links
-  and dropdown options are Everything-only. Taskbar observation is removed.
+  and dropdown options are Everything-only. Taskbar buttons are also Everything-only.
 - **No app-specific thinning by default:** global rate limits and same-target cooldown still apply.
 - **No faked outcomes.** We can't know whether a drop or save worked, so Success, Error and Align come only from apps
   that tell us (see *Cooperating apps*).
@@ -125,18 +125,22 @@ Three automatic sensations, plus an explicit Click preview:
 | Slider drag detents/endpoints | Step/Collide | Step/Collide | Step/Collide |
 | Click-confirmed checkbox/toggle changes | - | Step | Step |
 | Other links, picker options, ordinary Buttons, toggle/radio hover, open menu choices, group entry | - | - | Hover |
+| Primary/secondary taskbar buttons | - | - | Hover |
 
 Focused uses explicit UIA navigation/menu roles; a generic Button does not qualify from dropdown capability,
 class name, or geometry. Everything retains broader Button and option hover coverage.
 
-The separate **More is better** setting is off by default. When on, it shortens reentry cooldown and raises the limit to 25 pulses per second; it never bypasses dwell. The selected style, Off switch, password protections and app exclusions still apply.
+Everything uses the existing dense ceiling of 25 pulses per second and a 40 ms reentry cooldown in both tray and
+Showcase. These are ceilings, not continuous feedback; the intensity slider still controls strength.
+The separate **More is better** setting is off by default and applies the same dense limits to Quiet/Focused.
+Neither bypasses dwell, the selected style, Off, password protections or app exclusions.
 
 Intensity runs Low → Max. Touchpads get a boost, because they feel lighter than mice at the same strength.
 
 ### Focused controls
 
 Close hover is removed from Focused pending a replacement implementation. It is off in local tray settings and
-Showcase; native caption probing stays disabled. Taskbar processing is removed for every style, not a local setting.
+Showcase; native caption probing stays disabled. Taskbar buttons are available only in Everything, not Focused/Quiet.
 Showcase starts Focused at 80% intensity with touchpad boost on and preserves these choices after settings changes.
 
 Examples are inspection targets, not guarantees of accessibility coverage in every app/version.
@@ -200,7 +204,7 @@ Small movement inside the target does not restart the timer. Leaving before comp
 returning to the same target starts a fresh dwell even if UIA never observed another identity between visits.
 If an accepted lookup arrives after dwell elapsed, feedback can be decided immediately using the same containment
 and freshness checks. Per-app density thinning is off by default in every style. Global safety limits
-(40 ms spacing and 12 pulses/sec in the sample), selected-target silence and same-target cooldown still apply.
+(40 ms spacing, 12 pulses/sec in Quiet/Focused and 25 in Everything), selected-target silence and same-target cooldown still apply.
 This is not a requirement for a perfectly motionless pixel; UIA sampling can still miss a brief visit.
 Late replies for a crossed target cannot consume movement to the final target. Tab-to-tab transitions use the
 reported tab bounds and dwell, not the old five-pixel neighbor hold, so resting just inside a tab still lands on it.
@@ -235,9 +239,12 @@ other-style compatibility, not as active Focused effects.
 Caption queries are restricted to UIA caption roles or a loose OS-reported caption region; the region itself never
 identifies Close. This includes Explorer's reported Close rectangle even when hit testing says client content.
 Copilot's observed caption helper resolves only to its same-process Tauri owner, not arbitrary owned windows.
-Taskbar descendant discovery, geometry caches, icon classification, refresh timer/pacing, and settings are removed.
-A cheap native root-class exclusion rejects primary and secondary taskbars before calling UIA, in every style.
-Old taskbar settings are ignored. Ordinary app controls still use the bounded latest-wins worker.
+Quiet/Focused reject primary and secondary taskbars before UIA. Everything restores taskbar Button/SplitButton
+hover using cached geometry, refreshed at most every 1.5 s by a single background scan in the isolated worker.
+Cold or stale caches stay silent; an initial sweep may be needed to warm the cache. Host geometry/PID changes
+invalidate it. A scan exceeding 2 s reports an error rather than trusting its result or spawning replacement
+threads. Ordinary app lookups do not wait for shell discovery. No names/text, icon contents or app identities
+are read; preview windows are not inferred. Old taskbar settings remain ignored: the style is the opt-in.
 
 ## How it works (automatic startup, with priming as a fallback)
 

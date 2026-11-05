@@ -46,6 +46,7 @@ public class RuntimeTests
             new UiaRequest { ObserveCaptions = false }, rootClass));
         Assert.Equal(rootClass is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd",
             UiaWorker.SkipHoverObservation(new UiaRequest(), rootClass));
+        Assert.False(UiaWorker.SkipHoverObservation(new UiaRequest { ObserveTaskbar = true }, rootClass));
     }
 
     [Theory]

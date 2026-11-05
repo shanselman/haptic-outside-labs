@@ -363,7 +363,7 @@ Capture, where available:
 
 **Threading:** Microsoft's UIA guidance recommends a dedicated, non-window-owning COM MTA thread for clients inspecting all desktop elements; register and remove UIA events consistently within that threading model. [S12]
 
-**Provider-risk containment:** A cross-process UIA lookup may block unpredictably. Build an **isolated UIA worker process** or another robust crash/hang containment mechanism before enabling arbitrary targets. Merely putting synchronous UIA on a `Task.Run` and hoping it can be cancelled is not an acceptable bound. Requests carry a deadline; if the result is stale, drop it. Restart the worker after a watchdog violation and temporarily quarantine the problematic process/window from queries. This is a design recommendation to validate, not a guarantee of prompt UIA completion. Primary and secondary taskbar hosts are excluded before UIA acquisition. Do not enumerate taskbar descendants, start background host scans, or retain taskbar caches.
+**Provider-risk containment:** A cross-process UIA lookup may block unpredictably. Build an **isolated UIA worker process** or another robust crash/hang containment mechanism before enabling arbitrary targets. Merely putting synchronous UIA on a `Task.Run` and hoping it can be cancelled is not an acceptable bound. Requests carry a deadline; if the result is stale, drop it. Restart the worker after a watchdog violation and temporarily quarantine the problematic process/window from queries. This is a design recommendation to validate, not a guarantee of prompt UIA completion. Quiet/Focused exclude primary and secondary taskbars before UIA. Everything uses cached taskbar button geometry from at most one background scan in the isolated worker, never a synchronous shell lookup. A blocked scan stays isolated and prevents further scans, not normal app queries; report the error without spawning replacement threads.
 
 **Change observation:** Subscribe selectively to UIA structure/property events and `SetWinEventHook(...WINEVENT_OUTOFCONTEXT)` signals for menu, focus, reorder, show/hide, and window location transitions. Use them to invalidate cached geometry and element identity; do **not** assume all events are raised by all providers. [S09] [S13] [S26]
 
@@ -930,9 +930,14 @@ Do not obscure the fact that enabling the app allows it to observe which UI cont
 
 ### 8.5 Style refinement (user decisions through 2026-11-04)
 
-Taskbar observation is removed in every style: no descendant discovery, geometry cache, icon classification,
-refresh timer/pacing or configurable enablement. Old taskbar settings are ignored. A native root-class exclusion
-for primary/secondary taskbars runs before UIA lookup, avoiding shell provider work entirely.
+Taskbar buttons are Everything-only (user-directed revision, 2026-11-04). Quiet/Focused exclude primary/secondary
+shell hosts before UIA. Everything observes Button/SplitButton roles via a bounded geometry cache in the isolated
+worker, with one background scan at a time, at most eight host entries, 1.5 s cache freshness/refresh spacing and a
+4096-node traversal limit. A scan over 2 s reports an error and its eventual result is discarded; native calls
+cannot be canceled, so no replacement scan is started while one is blocked. Host bounds/PID changes invalidate
+cached geometry. Cold/stale caches stay silent. Parent and child safety/PID checks remain required.
+No shell content, icon labels or preview geometry is inferred. Legacy taskbar settings remain ignored.
+Everything uses the existing dense limits (25/s, 1500/min, 40 ms reentry) in tray and Showcase; intensity is unchanged.
 Close hover is removed from Focused pending a replacement implementation; both the geometry and native classifications
 are ineligible. Close is also switched off in local tray settings and Showcase. The live pipeline always dispatches
 `ObserveCaptions = false`, so no native caption probing or custom caption helper is re-enabled.
@@ -1049,7 +1054,8 @@ or a loose search region derived from DWM's caption bounds. The search region ne
 Inside it, reported per-button rectangles are checked even for HTCLIENT (observed in Explorer). The observed
 `GitHubCopilotCaptionHost` resolves only to a same-process `Tauri Window` root owner before querying caption identity.
 No general owned-window fallback is allowed.
-There is no taskbar-specific worker scheduling. Normal app queries retain latest-wins coalescing, original pointer
+Taskbar scans never run on the synchronous request path or block normal app lookup dispatch.
+Normal app queries retain latest-wins coalescing, original pointer
 timestamps, interaction generations and bounded timeout/restart behavior.
 See README "Focused controls" for the current matrix and provider-dependent limits.
 Quiet is a subset of Focused, and Everything is a superset of Focused, as described above.

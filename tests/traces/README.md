@@ -19,6 +19,7 @@ Each line is one event:
 
 | Trace | Expected haptics |
 |---|---|
+| `everything-taskbar-buttons` | Everything: 2 Hover; Quiet/Focused: 0; protected/disabled button roles stay silent |
 | `toolbar-slow-sweep` | Everything with group pulses disabled: 5 Hover lands after dwell |
 | `toolbar-pixel-crawl` | Hover, Hover (1 px steps must not look stationary) |
 | `toolbar-fast-flick` | ≤ 1 (buttons flown over are `passed-through`, not landed on) |

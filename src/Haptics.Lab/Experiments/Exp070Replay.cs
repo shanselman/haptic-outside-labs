@@ -22,6 +22,7 @@ public static class Exp070Replay
         ["focused-toggle-changes.jsonl"] = (4, 4),
         ["style-inclusion-checkbox-repeat.jsonl"] = (5, 5),
         ["everything-toggle-links-options.jsonl"] = (5, 5),
+        ["everything-taskbar-buttons.jsonl"] = (2, 2),
         ["focused-navigation-hover.jsonl"] = (2, 2),
         ["focused-content-filter.jsonl"] = (2, 2),
         ["focused-header-continuity.jsonl"] = (2, 2),
@@ -80,7 +81,7 @@ public static class Exp070Replay
             {
                 Mode = HapticsMode.On,
                 AppPolicy = AppPolicy.AllExceptExclusions,
-                Profile = toolbarHover || name is "strip-edge-destination-safety.jsonl" or "everything-toggle-links-options.jsonl"
+                Profile = toolbarHover || name is "strip-edge-destination-safety.jsonl" or "everything-toggle-links-options.jsonl" or "everything-taskbar-buttons.jsonl"
                     ? EffectProfile.Everything : EffectProfile.Focused,
                 GroupBoundaryEnabled = !toolbarHover,
             };

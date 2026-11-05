@@ -11,7 +11,7 @@ A desktop-wide accessibility observer is a surveillance capability even when its
 | Cursor position (`GetCursorPos`) | Yes | No | |
 | Foreground window PID / process name | Yes | No (tray); lab artifacts store booleans like "foreground was lab" | Process name is used for allow/deny lists only. |
 | UIA control type, bounds, enabled/offscreen/password flags | Yes | No (tray); EXP-040 stores them for **our fixture only** | |
-| UIA `ClassName`, `IsSelected` (SelectionItem), parent bounds | Yes | No | ClassName identifies slider parts and exact recognized Chromium toolbar classes, never labels. Taskbar UIA lookup is excluded. IsSelected keeps the current tab silent. Read-only: `Select`/`AddToSelection`/`RemoveFromSelection` are forbidden members (EXP-081). |
+| UIA `ClassName`, `IsSelected` (SelectionItem), parent bounds | Yes | No | ClassName identifies slider parts and exact recognized Chromium toolbar classes, never labels. Taskbar geometry discovery is Everything-only in the isolated worker. IsSelected keeps the current tab silent. Read-only: `Select`/`AddToSelection`/`RemoveFromSelection` are forbidden members (EXP-081). |
 | UIA toggle availability/state, dropdown capability | Yes | No (tray); authored states in replay fixtures | Focused observes Off-to-On and On-to-Off after a mouse click. Reads `TogglePatternIdentifiers.ToggleStateProperty`; never obtains or invokes a Toggle/ExpandCollapse action pattern. Unknown/indeterminate state is neither On nor Off. |
 | Window class, native visibility/enabled flags, window/DWM caption bounds, root-owner PID, non-client hit test / caption rectangles (`WM_NCHITTEST`, `WM_GETTITLEBARINFOEX`) | Yes | No | Bounded, read-only queries distinguish window Close from minimize/maximize even without UIA caption buttons. DWM bounds restrict the search, never identify an individual button. Only the observed Copilot helper can resolve to its same-process Tauri owner. Native window/button identity is hashed; missing rectangles are not guessed. These queries never click, close or focus a window. |
 | Monitor DPI scale | Yes | No | Target sizes are judged in logical px. |
@@ -52,8 +52,10 @@ machine unless an operator copies a summary into `docs/EVIDENCE_LEDGER.md`.
 - A directly hit slider Thumb retains its cached bounds while the single parent hop resolves its owning Slider
   identity/range. Owner and child process/safety checks apply. No thumb geometry is inferred, and providers that
   expose only a Slider receive no hover. Drag range feedback does not depend on thumb discovery.
-- Taskbar descendant discovery, caches and refresh pacing are removed. A native root-class exclusion rejects primary
-  and secondary taskbars before UIA lookup in every style. No shell descendant trees are enumerated.
+- Quiet/Focused reject primary/secondary taskbars before UIA. Everything observes only cached Button/SplitButton
+  geometry and the existing property allowlist, never text/names/icon content. At most one background scan runs
+  in the isolated worker; cache freshness is 1.5 s and host bounds/PID changes invalidate it. A blocked scan reports
+  an error after 2 s and cannot create replacement threads or block synchronous ordinary-app queries.
 - The tray does not reference the lab or any fixture code (test).
 - Cross-process mechanisms: our own UIA worker (same binary) over stdin/stdout, and the optional cooperative pipe
   `HapticsEverywhere` (`PipeOptions.CurrentUserOnly`, one waveform word per line, still arbitrated by policy, off via

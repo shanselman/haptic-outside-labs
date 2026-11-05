@@ -13,8 +13,9 @@ Slider size means thumb size; missing bounds use 50 ms. Fresh geometry may exten
 Checkbox hover stays disabled, but Everything restores
 toggle-button Hover (including formatting buttons and Teams app-rail buttons). Live rail metadata exposed
 toggle Buttons and Image parts; direct Text/Image parts now share their immediate Button/Hyperlink owner's
-identity and restrictive safety flags without a second parent read. Taskbar discovery, caching, pacing and
-settings are removed; primary/secondary taskbars are rejected by native root class before UIA lookup.
+identity and restrictive safety flags without a second parent read. By the subsequent user decision on 2026-11-04,
+taskbar buttons return in Everything only via a bounded background geometry scan; Quiet/Focused still reject
+shell hosts before UIA. Everything uses the existing 25/s dense ceiling without increasing intensity or bypassing dwell.
 Teams and Figma captures showed why dropdown Buttons cannot be classified reliably from their class names or geometry:
 those are implementation details, while `HasDropdown` also appears on ordinary commands. Focused therefore uses
 explicit UIA menu and split-control roles rather than app-specific Button exceptions. Real chevrons exposed only as
