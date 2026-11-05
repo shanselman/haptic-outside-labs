@@ -104,7 +104,7 @@
                     <ui:CardControl.Header>
                         <StackPanel>
                             <ui:TextBlock FontTypography="Body" Text="More is better" />
-                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="More ticks on fast sweeps, up to 25 per second. Style and safety rules still apply." />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="Shorter reentry cooldown and up to 25 pulses per second. Every style still requires dwell; safety rules still apply." />
                         </StackPanel>
                     </ui:CardControl.Header>
                     <ui:ToggleSwitch x:Name="MoreIsBetterSwitch" AutomationProperties.Name="More is better" />
@@ -138,7 +138,7 @@
                     <ui:CardControl.Header>
                         <StackPanel>
                             <ui:TextBlock FontTypography="Body" Text="Close button hover" />
-                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="A light tick when you land on a window's Close button. Silent in Quiet style." />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontTypography="Caption" TextWrapping="Wrap" Text="Legacy supported captions in Everything only. Close hover is removed from Focused and silent in Quiet." />
                         </StackPanel>
                     </ui:CardControl.Header>
                     <ui:ToggleSwitch x:Name="CloseHoverSwitch" AutomationProperties.Name="Close button hover" />

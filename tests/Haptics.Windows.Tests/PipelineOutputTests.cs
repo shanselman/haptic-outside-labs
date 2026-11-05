@@ -135,22 +135,71 @@ public class PipelineOutputTests
         Assert.Empty(rig.Sink.Requests);
     }
 
-    [Fact]
-    public void DecisionEventsCaptureTheObservedPointerPosition()
+    [Theory]
+    [InlineData(HapticsMode.On, PolicyOutcome.Emit)]
+    [InlineData(HapticsMode.ObserveOnly, PolicyOutcome.DryRun)]
+    public void DecisionEventsCaptureTheObservedPointerPosition(HapticsMode mode, PolicyOutcome outcome)
     {
-        using var rig = new Rig();
-        rig.Observe(100, 12, Snapshot(100) with { QueryX = 77, QueryY = 44 });
-        rig.Flush(110);
+        using var rig = new Rig(useDwell: true);
+        rig.Pipeline.Policy.Config.Mode = mode;
+        rig.Observe(100, 12, Snapshot(100) with
+        {
+            QueryX = 77, QueryY = 44, Bounds = new RectD(60, 30, 40, 30),
+        });
+        rig.Tick(129);
+        Assert.Empty(rig.Events.OfType<DecisionEvent>());
+        rig.Tick(130);
+        rig.Flush(140);
 
         var decision = Assert.Single(rig.Events.OfType<DecisionEvent>());
+        Assert.Equal(outcome, decision.Decision.Outcome);
         Assert.Equal(77, decision.PointerX);
         Assert.Equal(44, decision.PointerY);
     }
 
     [Theory]
-    [InlineData("Button", 40, 30, "Hover")]
-    [InlineData("Button", 44, 80, "Click")]
-    [InlineData("TabItem", 80, 30, "Step")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void GeometryOnlyCloseNeverReachesFocusedOutput(bool enabled)
+    {
+        using var rig = new Rig();
+        rig.Pipeline.Policy.Config.CloseButtonHoverEnabled = enabled;
+        rig.Observe(100, 12, Snapshot(100, width: 48, height: 80) with
+        {
+            ParentControlType = "TitleBar", ParentBounds = new RectD(-272, 0, 320, 80),
+        });
+        rig.Flush(110);
+        Assert.Empty(rig.Sink.Requests);
+    }
+
+    [Theory]
+    [InlineData("Button", "Pane")]
+    [InlineData("SplitButton", "Group")]
+    [InlineData("TabItem", "Group")]
+    [InlineData("MenuItem", "Pane")]
+    public void ExpandableContentCardsNeverReachOutput(string type, string parent)
+    {
+        using var rig = new Rig();
+        rig.Observe(100, 12, Snapshot(100, type, 200, 200) with
+        {
+            ParentControlType = parent, HasDropdown = true,
+        });
+        rig.Flush(110);
+        Assert.Equal(0, rig.Sink.Pending);
+        Assert.Empty(rig.Sink.Requests);
+
+        rig.Observe(400, 12, Snapshot(400) with
+        {
+            RuntimeIdHash = "toolbar-command", Bounds = new RectD(220, 0, 40, 30), QueryX = 240,
+        });
+        rig.Flush(410);
+        Assert.Equal("Hover", Assert.Single(rig.Sink.Requests).Intent.Waveform);
+    }
+
+    [Theory]
+    [InlineData("ComboBox", 40, 30, "Hover")]
+    [InlineData("ComboBox", 44, 80, "Hover")]
+    [InlineData("TabItem", 80, 30, "Hover")]
     public void SingleMouseArrivalReachesRecordingSink(string type, int width, int height, string waveform)
     {
         using var rig = new Rig();
@@ -168,9 +217,10 @@ public class PipelineOutputTests
     }
 
     [Fact]
-    public void SingleMouseStripEdgeReachesRecordingSinkAsCollide()
+    public void SingleMouseGroupEntryIsHoverAndStripExitNeverReachesTheSink()
     {
         using var rig = new Rig();
+        rig.Pipeline.Policy.Config.Profile = EffectProfile.Everything;
         rig.Observe(100, 12, Snapshot(100) with
         {
             Bounds = new RectD(80, 0, 40, 30),
@@ -188,7 +238,8 @@ public class PipelineOutputTests
         });
         rig.Flush(400);
 
-        Assert.Equal(["Step", "Collide"], rig.Sink.Requests.Select(r => r.Intent.Waveform));
+        Assert.Equal(["Hover"], rig.Sink.Requests.Select(r => r.Intent.Waveform));
+        Assert.Equal("group-entry", Assert.Single(rig.Sink.Requests).Intent.SourceRule);
         Assert.All(rig.Sink.Requests, r => Assert.Same(rig.Mouse, r.Controller));
     }
 
@@ -803,24 +854,96 @@ public class PipelineOutputTests
         Assert.Equal(sent ? "dry-run-route" : "expired-before-output", output.Status);
     }
 
-    [Fact]
-    public void DwellUsesInjectedClockWithoutWaitingForATimer()
+    [Theory]
+    [InlineData(EffectProfile.Quiet)]
+    [InlineData(EffectProfile.Focused)]
+    [InlineData(EffectProfile.Everything)]
+    public void InlineLinkDwellUsesInjectedClockInEveryStyle(EffectProfile profile)
     {
-        using var rig = new Rig();
+        using var rig = new Rig(useDwell: true, profile: profile);
         Pointer(rig.Pipeline, 0, 0, 15, 12);
-        rig.Observe(10, 12, Snapshot(10) with { Bounds = new RectD(80, 0, 40, 30), QueryX = 100 });
+        rig.Observe(10, 12, Snapshot(10) with
+        {
+            ControlType = "Hyperlink", Bounds = new RectD(80, 0, 40, 30), QueryX = 100, ParentControlType = "Text",
+        });
         Assert.True(rig.Pipeline.Interpreter.HasPendingArrival);
-        rig.Tick(89);
+        rig.Tick(39);
         Assert.Equal(0, rig.Sink.Pending);
-        rig.Tick(90);
+        rig.Tick(40);
         Assert.False(rig.Pipeline.Interpreter.HasPendingArrival);
         Assert.Equal(1, rig.Sink.Pending);
-        rig.Flush(90);
+        rig.Flush(40);
 
         var request = Assert.Single(rig.Sink.Requests);
-        Assert.Equal(90, request.Intent.PointerTimestampMs);
+        Assert.Equal(40, request.Intent.PointerTimestampMs);
         Assert.Equal("Hover", request.Intent.Waveform);
-        Assert.Equal(90, Assert.Single(rig.Events.OfType<DecisionEvent>()).Decision.DecidedAtMs);
+        Assert.Equal(40, Assert.Single(rig.Events.OfType<DecisionEvent>()).Decision.DecidedAtMs);
+    }
+
+    [Theory]
+    [InlineData(EffectProfile.Quiet)]
+    [InlineData(EffectProfile.Focused)]
+    [InlineData(EffectProfile.Everything)]
+    public void TextSizedGroupLinkUsesSharedPolicyAndThirtyMillisecondDwell(EffectProfile profile)
+    {
+        using var rig = new Rig(useDwell: true, profile: profile);
+        Pointer(rig.Pipeline, 0, 0, 15, 12);
+        rig.Observe(10, 12, Snapshot(10) with
+        {
+            ControlType = "Hyperlink", Bounds = new RectD(80, 0, 120, 24), QueryX = 100,
+            ParentControlType = "Group", ParentBounds = new RectD(0, 0, 300, 60),
+        });
+        rig.Tick(39);
+        Assert.Equal(0, rig.Sink.Pending);
+        rig.Tick(40);
+        Assert.Equal(profile == EffectProfile.Quiet ? 0 : 1, rig.Sink.Pending);
+        rig.Flush(40);
+        Assert.Equal(profile == EffectProfile.Quiet ? 0 : 1, rig.Sink.Requests.Count);
+        Assert.All(rig.Sink.Requests, request =>
+        {
+            Assert.Equal(40, request.Intent.PointerTimestampMs);
+            Assert.Equal("Hover", request.Intent.Waveform);
+        });
+    }
+
+    [Theory]
+    [InlineData(30, 50)]
+    [InlineData(56, 30)]
+    public void LivePipelineUsesPolicySizeThresholds(double heightThreshold, double dwell)
+    {
+        using var rig = new Rig(useDwell: true);
+        rig.Pipeline.Policy.Config.LargeTargetLogicalHeight = heightThreshold;
+        rig.Observe(10, 12, Snapshot(10) with { Bounds = new RectD(80, 0, 40, 30), QueryX = 100, ParentControlType = null });
+        rig.Tick(10 + dwell - 1);
+        Assert.Equal(0, rig.Sink.Pending);
+        rig.Tick(10 + dwell);
+        Assert.Equal(1, rig.Sink.Pending);
+        rig.Flush(10 + dwell);
+        Assert.Equal(10 + dwell, Assert.Single(rig.Sink.Requests).Intent.PointerTimestampMs);
+    }
+
+    [Theory]
+    [InlineData(EffectProfile.Focused)]
+    [InlineData(EffectProfile.Everything)]
+    public void SameTargetReentryAfterAFlybyWaitsForANewDwell(EffectProfile profile)
+    {
+        using var rig = new Rig(useDwell: true, profile: profile);
+        var target = Snapshot(10) with { Bounds = new RectD(80, 0, 40, 30), QueryX = 100, ParentControlType = null };
+        rig.Observe(10, 12, target);
+        Pointer(rig.Pipeline, 20, 150, 15, 12);
+        Assert.False(rig.Pipeline.Interpreter.HasPendingArrival);
+        Assert.Equal(0, rig.Sink.Pending);
+
+        rig.Observe(40, 12, target with { RequestedAtMs = 40, ReceivedAtMs = 40 });
+        Assert.True(rig.Pipeline.Interpreter.HasPendingArrival);
+        rig.Tick(69);
+        Assert.Equal(0, rig.Sink.Pending);
+        rig.Tick(70);
+        Assert.Equal(1, rig.Sink.Pending);
+        rig.Flush(70);
+        var request = Assert.Single(rig.Sink.Requests);
+        Assert.Equal(70, request.Intent.PointerTimestampMs);
+        Assert.Equal("Hover", request.Intent.Waveform);
     }
 
     [Theory]
@@ -976,9 +1099,9 @@ public class PipelineOutputTests
         public ObservationPipeline Pipeline { get; }
         public List<PipelineEvent> Events { get; } = [];
 
-        public Rig(OutputOwnership? outputOwnership = null)
+        public Rig(OutputOwnership? outputOwnership = null, bool useDwell = false, EffectProfile profile = EffectProfile.Focused)
         {
-            Pipeline = new ObservationPipeline(PolicyConfig.Sample(EffectProfile.Focused, 0.8), new PipelineOptions
+            Pipeline = new ObservationPipeline(PolicyConfig.Sample(profile, 0.8), new PipelineOptions
             {
                 Clock = Clock,
                 OutputSink = Sink,
@@ -986,6 +1109,12 @@ public class PipelineOutputTests
                 Route = OutputRoutes.CachedController,
             });
             Pipeline.Policy.ConsentGiven = true;
+            // Routing tests isolate output arbitration; dwell-specific cases use the production duration.
+            if (!useDwell)
+            {
+                Pipeline.Interpreter.Config.LandingDwellMs = 0;
+                Pipeline.Interpreter.Config.SmallTargetDwellMs = 0;
+            }
             Pipeline.Policy.OutputRouteVerified = true;
             Pipeline.Controllers = new Dictionary<long, CapturedController> { [12] = Mouse };
             Pipeline.Event += Events.Add;

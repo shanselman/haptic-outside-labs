@@ -1,9 +1,9 @@
-{"type":"comment","text":"Hover onto a 0..100 slider (LargeChange 10), drag across ticks to the max. Expect 1 Hover, 8 Steps at tick changes, 1 Collide at max. A value change without the button held is silent."}
+{"type":"comment","text":"Enter a 0..100 slider (LargeChange 10), dwell, then drag across ticks to max. Focused: 1 light Hover, 8 Steps, 1 Collide. Quiet omits Hover. A value change without the button held is silent."}
 {"type":"process","pid":100,"name":"WINWORD"}
 {"t":0,"type":"pointer","x":10,"y":200,"fg":100,"primary":false}
 {"t":5,"type":"element","req":0,"x":10,"y":200,"pid":100,"controlType":"Pane","rid":"pane","bounds":[0,0,2000,2000]}
 {"t":100,"type":"pointer","x":10,"y":110,"fg":100,"primary":false}
-{"t":106,"type":"element","req":101,"x":10,"y":110,"pid":100,"controlType":"Slider","rid":"s1","bounds":[0,100,200,20],"range":{"value":5,"min":0,"max":100,"small":1,"large":10}}
+{"t":106,"type":"element","req":101,"x":10,"y":110,"pid":100,"controlType":"Slider","rid":"s1","bounds":[0,100,200,20],"thumbBounds":[0,100,20,20],"range":{"value":5,"min":0,"max":100,"small":1,"large":10}}
 {"t":360,"type":"pointer","x":32,"y":110,"fg":100,"primary":true}
 {"t":366,"type":"element","req":361,"x":32,"y":110,"pid":100,"controlType":"Slider","rid":"s1","bounds":[0,100,200,20],"range":{"value":12,"min":0,"max":100,"small":1,"large":10}}
 {"t":620,"type":"pointer","x":42,"y":110,"fg":100,"primary":true}

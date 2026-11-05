@@ -1,0 +1,22 @@
+{"type":"comment","text":"Focused: unselected tabs, dropdown pickers and dropdown options land with Hover. Toolbar hyperlinks, ordinary toolbar commands, leaf menu choices, selected tabs and disabled items stay silent. Expect three Hovers, no Click or Step."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":20,"y":20,"fg":100}
+{"t":2,"type":"element","req":0,"pid":100,"controlType":"Button","rid":"toolbar-button","bounds":[0,0,48,48],"parentType":"ToolBar","parentRid":"toolbar"}
+{"t":300,"type":"pointer","x":100,"y":20,"fg":100}
+{"t":302,"type":"element","req":300,"pid":100,"controlType":"Hyperlink","rid":"toolbar-link","bounds":[80,0,60,80],"parentType":"ToolBar","parentRid":"toolbar"}
+{"t":600,"type":"pointer","x":180,"y":20,"fg":100}
+{"t":602,"type":"element","req":600,"pid":100,"controlType":"TabItem","rid":"tab","bounds":[160,0,60,80],"parentType":"Tab","selected":false}
+{"t":900,"type":"pointer","x":260,"y":20,"fg":100}
+{"t":902,"type":"element","req":900,"pid":100,"controlType":"ComboBox","rid":"dropdown","bounds":[240,0,60,80],"dropdown":true}
+{"t":1000,"type":"pointer","x":260,"y":20,"fg":100,"primary":true}
+{"t":1002,"type":"element","req":1000,"pid":100,"controlType":"ComboBox","rid":"dropdown","bounds":[240,0,60,80],"dropdown":true}
+{"t":1020,"type":"pointer","x":260,"y":20,"fg":100,"primary":false}
+{"t":1022,"type":"element","req":1020,"pid":100,"controlType":"ComboBox","rid":"dropdown","bounds":[240,0,60,80],"dropdown":true}
+{"t":1200,"type":"pointer","x":340,"y":20,"fg":100}
+{"t":1202,"type":"element","req":1200,"pid":100,"controlType":"MenuItem","rid":"menu","bounds":[320,0,60,80],"parentType":"Menu","parentRid":"menu"}
+{"t":1500,"type":"pointer","x":420,"y":20,"fg":100}
+{"t":1502,"type":"element","req":1500,"pid":100,"controlType":"ListItem","rid":"option","bounds":[400,0,60,80],"parentType":"ComboBox"}
+{"t":1800,"type":"pointer","x":500,"y":20,"fg":100}
+{"t":1802,"type":"element","req":1800,"pid":100,"controlType":"TabItem","rid":"selected","bounds":[480,0,60,80],"parentType":"Tab","selected":true}
+{"t":2100,"type":"pointer","x":580,"y":20,"fg":100}
+{"t":2102,"type":"element","req":2100,"pid":100,"controlType":"MenuItem","rid":"disabled","bounds":[560,0,60,80],"parentType":"Menu","enabled":false}

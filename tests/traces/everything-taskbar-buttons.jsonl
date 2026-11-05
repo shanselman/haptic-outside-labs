@@ -1,0 +1,10 @@
+{"type":"comment","text":"Everything lands on taskbar Button roles with Hover; Quiet/Focused do not. Password and disabled buttons remain silent."}
+{"type":"process","pid":100,"name":"explorer"}
+{"t":0,"type":"pointer","x":20,"y":20,"fg":100,"handle":1}
+{"t":1,"type":"element","req":0,"pid":100,"controlType":"Button","rid":"taskbar-app-1","bounds":[0,0,40,40]}
+{"t":300,"type":"pointer","x":70,"y":20,"fg":100,"handle":1}
+{"t":301,"type":"element","req":300,"pid":100,"controlType":"Button","rid":"taskbar-app-2","bounds":[50,0,40,40]}
+{"t":600,"type":"pointer","x":120,"y":20,"fg":100,"handle":1}
+{"t":601,"type":"element","req":600,"pid":100,"controlType":"Button","rid":"protected","bounds":[100,0,40,40],"password":true}
+{"t":900,"type":"pointer","x":170,"y":20,"fg":100,"handle":1}
+{"t":901,"type":"element","req":900,"pid":100,"controlType":"Button","rid":"disabled","bounds":[150,0,40,40],"enabled":false}

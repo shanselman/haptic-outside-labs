@@ -13,10 +13,26 @@ public static class Exp070Replay
         ["toolbar-fast-flick.jsonl"] = (0, 1),
         ["boundary-jitter.jsonl"] = (1, 1),
         ["same-element-stationary.jsonl"] = (1, 1),
-        ["menu-nested.jsonl"] = (3, 3),
+        ["menu-nested.jsonl"] = (1, 1),
         ["slider-discrete.jsonl"] = (10, 10),
+        ["slider-thumb-hover.jsonl"] = (4, 4),
+        ["size-aware-inline-dwell.jsonl"] = (6, 6),
+        ["focused-group-link-filter.jsonl"] = (2, 2),
+        ["quiet-subset-focused.jsonl"] = (6, 6),
+        ["focused-toggle-changes.jsonl"] = (4, 4),
+        ["style-inclusion-checkbox-repeat.jsonl"] = (5, 5),
+        ["everything-toggle-links-options.jsonl"] = (5, 5),
+        ["everything-taskbar-buttons.jsonl"] = (2, 2),
+        ["focused-navigation-hover.jsonl"] = (2, 2),
+        ["focused-content-filter.jsonl"] = (2, 2),
+        ["focused-header-continuity.jsonl"] = (2, 2),
+        ["universal-dwell-reentry.jsonl"] = (2, 2),
+        ["tab-delayed-landing.jsonl"] = (3, 3),
+        ["focused-browser-sweep.jsonl"] = (13, 13),
+        ["focused-browser-links.jsonl"] = (3, 3),
+        ["focused-native-caption.jsonl"] = (0, 0),
         ["scroll-at-limit.jsonl"] = (0, 0),
-        ["uia-stale-late.jsonl"] = (0, 0),
+        ["uia-stale-late.jsonl"] = (1, 1),
         ["device-disconnect.jsonl"] = (1, 1),
         ["native-duplicate-suppression.jsonl"] = (0, 0),
         ["security-password.jsonl"] = (0, 0),
@@ -31,9 +47,9 @@ public static class Exp070Replay
         ["transient-error-slider.jsonl"] = (1, 1),
         ["dwell-lookup-40ms.jsonl"] = (1, 1),
         ["dwell-lookup-150ms.jsonl"] = (1, 1),
-        ["strip-edge-destination-safety.jsonl"] = (7, 7),
+        ["strip-edge-destination-safety.jsonl"] = (6, 6),
         ["cooperative-context-safety.jsonl"] = (1, 1),
-        ["caption-close-hover.jsonl"] = (3, 3),
+        ["caption-close-hover.jsonl"] = (0, 0),
     };
 
     public static string Run(string? outDir, string? traceDir)
@@ -59,9 +75,19 @@ public static class Exp070Replay
         foreach (var file in files)
         {
             var name = Path.GetFileName(file);
-            var output = TraceReplay.Run(file);
+            var toolbarHover = name is "toolbar-slow-sweep.jsonl" or "toolbar-pixel-crawl.jsonl" or
+                "toolbar-fast-flick.jsonl" or "boundary-jitter.jsonl" or "same-element-stationary.jsonl";
+            var config = new PolicyConfig
+            {
+                Mode = HapticsMode.On,
+                AppPolicy = AppPolicy.AllExceptExclusions,
+                Profile = toolbarHover || name is "strip-edge-destination-safety.jsonl" or "everything-toggle-links-options.jsonl" or "everything-taskbar-buttons.jsonl"
+                    ? EffectProfile.Everything : EffectProfile.Focused,
+                GroupBoundaryEnabled = !toolbarHover,
+            };
+            var output = TraceReplay.Run(file, config);
             var reasons = output.Decisions.GroupBy(d => d.Reason).ToDictionary(g => g.Key, g => (object?)g.Count());
-            rows.Add(new() { ["trace"] = name, ["emitted"] = output.Emitted, ["waveforms"] = string.Join(",", output.Haptic.Select(h => h.Waveform)), ["reasons"] = reasons });
+            rows.Add(new() { ["trace"] = name, ["profile"] = config.Profile.ToString(), ["emitted"] = output.Emitted, ["waveforms"] = string.Join(",", output.Haptic.Select(h => h.Waveform)), ["reasons"] = reasons });
             if (Expectations.TryGetValue(name, out var exp))
             {
                 s.Assert($"{name}: {exp.Min}..{exp.Max} haptics", output.Emitted >= exp.Min && output.Emitted <= exp.Max, $"emitted {output.Emitted}");

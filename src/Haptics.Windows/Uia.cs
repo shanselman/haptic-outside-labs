@@ -16,6 +16,9 @@ public sealed class UiaRequest
     public int X { get; set; }
     public int Y { get; set; }
     public bool AutomationId { get; set; }
+    public bool Focused { get; set; }
+    public bool ObserveCaptions { get; set; } = true;
+    public bool ObserveTaskbar { get; set; }
 }
 
 public sealed class UiaResponse
@@ -128,6 +131,8 @@ public static class UiaWorker
                      AutomationElement.ClassNameProperty,
                      AutomationElement.IsControlElementProperty, AutomationElement.RuntimeIdProperty,
                      AutomationElement.IsSelectionItemPatternAvailableProperty, SelectionItemPattern.IsSelectedProperty,
+                     AutomationElement.IsTogglePatternAvailableProperty, TogglePatternIdentifiers.ToggleStateProperty,
+                     AutomationElement.IsExpandCollapsePatternAvailableProperty,
                  })
         {
             c.Add(p);
@@ -163,40 +168,187 @@ public static class UiaWorker
         var sw = Stopwatch.StartNew();
         try
         {
-            if (ScanningHostAt(req.X, req.Y) is { } scanning)
+            // Shell lookups never enter the synchronous UIA path.
             {
-                // Explorer serializes UIA calls into the taskbar, so ElementFromPoint would wait out our own scan.
-                return Answer(scanning, req, sw);
+                var root = Native.GetAncestor(Native.WindowFromPoint(new Native.POINT { X = req.X, Y = req.Y }), Native.GA_ROOT);
+                if (root != IntPtr.Zero)
+                {
+                    var rootClass = new StringBuilder(256);
+                    if (Native.GetClassNameW(root, rootClass, rootClass.Capacity) == 0)
+                    {
+                        return Fail(req, sw, $"window-class-error:{System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+                    }
+
+                    if (SkipHoverObservation(req, rootClass.ToString()))
+                    {
+                        return new UiaResponse
+                        {
+                            Id = req.Id, Ok = true, LookupMs = sw.Elapsed.TotalMilliseconds,
+                            Snapshot = new ElementSnapshot
+                            {
+                                Source = "hover-observation-disabled", ControlType = "Pane",
+                                QueryX = req.X, QueryY = req.Y, IsEnabled = false, IsOffscreen = true,
+                            },
+                        };
+                    }
+                    if (IsTaskbarHost(rootClass.ToString()))
+                    {
+                        return TaskbarAt(root, req, sw);
+                    }
+                }
             }
 
             AutomationElement el;
             AutomationElement? parent = null;
+            AutomationElement? ownerPart = null;
+            RectD? sliderThumbBounds = null;
+            var headerOwner = false;
             using (cache.Activate())
             {
                 el = AutomationElement.FromPoint(new System.Windows.Point(req.X, req.Y));
                 var type = TypeName(el);
-                AutomationElement? partOf = type is "Thumb" or "Button" ? Parent(el, cache) : null;
-                if (partOf is not null && TypeName(partOf) == "Slider")
+                AutomationElement? partOf = type is "Thumb" or "Button" or "Text" or "Image" ? Parent(el, cache) : null;
+                if (partOf is not null && type is "Text" or "Image" &&
+                    (TypeName(partOf) is "TabItem" or "MenuItem" or "Button" or "Hyperlink" ||
+                     (TypeName(partOf) == "CheckBox" &&
+                      Get<bool>(partOf, AutomationElement.IsTogglePatternAvailableProperty))))
                 {
-                    // A slider's thumb or track (repeat) buttons are parts of the slider, not buttons to land on.
+                    // Labels/icons share their owner's identity and dwell. Do not read a second parent.
+                    ownerPart = el;
                     el = partOf;
-                    type = "Slider";
+                    type = TypeName(el);
+                    headerOwner = type is "TabItem" or "MenuItem";
+                }
+                else if (partOf is not null && type is "Thumb" or "Button" &&
+                         (TypeName(partOf) == "Slider" || (req.Focused && TypeName(partOf) == "ComboBox")))
+                {
+                    // A slider thumb/track or dropdown arrow belongs to its owning control.
+                    ownerPart = el;
+                    if (TypeName(partOf) == "Slider" && type == "Thumb")
+                    {
+                        sliderThumbBounds = ToRect(Get<System.Windows.Rect>(el, AutomationElement.BoundingRectangleProperty));
+                    }
+                    el = partOf;
+                    type = TypeName(partOf);
                     partOf = null;
                 }
-                else if (type == "Pane" && DrillDownHosts.Contains(Get<string>(el, AutomationElement.ClassNameProperty) ?? "") &&
-                         Get<int>(el, AutomationElement.NativeWindowHandleProperty) is not 0 and var hwnd)
-                {
-                    // ElementFromPoint stops at the taskbar's HWND and never enters its XAML island.
-                    return Answer(HostAt(hwnd, ToSnapshot(el, null, req)), req, sw);
-                }
-
-                if (SemanticVocabulary.InteractiveTypes.Contains(type))
+                if (ownerPart is null && (SemanticVocabulary.InteractiveTypes.Contains(type) || type == "ListItem"))
                 {
                     parent = partOf ?? Parent(el, cache);
                 }
             }
 
-            var snap = ToSnapshot(el, parent, req);
+            var snap = ToSnapshot(el, parent, req) with { SliderThumbBounds = sliderThumbBounds };
+            if (ownerPart is not null)
+            {
+                var normalized = NormalizeOwnerPart(snap,
+                    Get<int>(ownerPart, AutomationElement.ProcessIdProperty),
+                    Get<bool>(ownerPart, AutomationElement.IsEnabledProperty),
+                    Get<bool>(ownerPart, AutomationElement.IsOffscreenProperty),
+                    Get<bool>(ownerPart, AutomationElement.IsPasswordProperty));
+                if (normalized is null)
+                {
+                    return Fail(req, sw, headerOwner ? "header-owner-process-mismatch" :
+                        snap.ControlType == "Slider" ? "slider-owner-process-mismatch" : "control-owner-process-mismatch");
+                }
+                snap = normalized with
+                {
+                    IsHeaderOwner = headerOwner,
+                    IsButtonOwner = snap.ControlType == "Button",
+                };
+            }
+            if (req.Focused)
+            {
+                var window = Native.WindowFromPoint(new Native.POINT { X = req.X, Y = req.Y });
+                var root = Native.GetAncestor(window, Native.GA_ROOT);
+                if (root != IntPtr.Zero)
+                {
+                    var className = new StringBuilder(256);
+                    if (Native.GetClassNameW(root, className, className.Capacity) == 0)
+                    {
+                        return Fail(req, sw, $"window-class-error:{System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+                    }
+
+                    {
+                        snap = snap with { IsBrowserToolbarCommand = IsBrowserToolbarCommand(className.ToString(), snap) };
+                        if (!req.ObserveCaptions)
+                        {
+                            return new UiaResponse { Id = req.Id, Ok = true, Snapshot = snap with { LookupMs = sw.Elapsed.TotalMilliseconds }, LookupMs = sw.Elapsed.TotalMilliseconds };
+                        }
+
+                        var hostedCaption = false;
+                        if (className.ToString() == "GitHubCopilotCaptionHost")
+                        {
+                            var owner = Native.GetAncestor(root, Native.GA_ROOTOWNER);
+                            var ownerClass = new StringBuilder(256);
+                            if (owner != IntPtr.Zero && owner != root &&
+                                Native.GetClassNameW(owner, ownerClass, ownerClass.Capacity) > 0)
+                            {
+                                Native.GetWindowThreadProcessId(root, out var hostPid);
+                                Native.GetWindowThreadProcessId(owner, out var ownerPid);
+                                if (CaptionOwnerAllowed(className.ToString(), ownerClass.ToString(), hostPid, ownerPid))
+                                {
+                                    root = owner;
+                                    className = ownerClass;
+                                    hostedCaption = true;
+                                }
+                            }
+                        }
+
+                        snap = snap with { IsBrowserToolbarCommand = IsBrowserToolbarCommand(className.ToString(), snap) };
+                        if (!Native.GetWindowRect(root, out var windowBounds))
+                        {
+                            return Fail(req, sw, $"window-bounds-unavailable:{System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+                        }
+
+                        var captionRegion = Native.DwmGetWindowAttribute(root, 5 /* DWMWA_CAPTION_BUTTON_BOUNDS */,
+                            out var captionBounds, (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.RECT>()) == 0
+                            ? CaptionSearchRegion(windowBounds, captionBounds) : null;
+                        if (NeedsCaptionQuery(snap, captionRegion, hostedCaption))
+                        {
+                            // WM_NCHITTEST only asks which non-client part contains the point; it never activates it.
+                            if (req.X is < short.MinValue or > short.MaxValue || req.Y is < short.MinValue or > short.MaxValue)
+                            {
+                                return Fail(req, sw, "caption-hit-test-coordinate-range");
+                            }
+
+                            var point = new IntPtr(unchecked((int)((uint)(ushort)req.X | ((uint)(ushort)req.Y << 16))));
+                            if (Native.SendMessageTimeoutW(root, Native.WM_NCHITTEST, UIntPtr.Zero, point,
+                                0x0002 /* SMTO_ABORTIFHUNG */, 15, out var hit) == IntPtr.Zero)
+                            {
+                                return Fail(req, sw, $"caption-hit-test-unavailable:{System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+                            }
+
+                            var caption = CaptionButtonFromHitTest(unchecked((int)hit.ToUInt64()));
+                            var info = new Native.TITLEBARINFOEX
+                            {
+                                Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.TITLEBARINFOEX>(),
+                                State = new uint[6],
+                                Bounds = new Native.RECT[6],
+                            };
+                            if (Native.ReadTitleBarInfo(root, Native.WM_GETTITLEBARINFOEX, UIntPtr.Zero, ref info,
+                                0x0002, 15, out _) == IntPtr.Zero)
+                            {
+                                return Fail(req, sw, $"caption-info-unavailable:{System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+                            }
+
+                            caption = caption != CaptionButton.None ? caption : CaptionButtonFromInfo(info, req.X, req.Y);
+                            if (caption != CaptionButton.None)
+                            {
+                                Native.GetWindowThreadProcessId(root, out var rootPid);
+                                if (rootPid == 0)
+                                {
+                                    return Fail(req, sw, "caption-process-unavailable");
+                                }
+
+                                snap = NativeCaptionSnapshot(snap, root.ToInt64(), (int)rootPid, className.ToString(), caption, info,
+                                    Native.IsWindowEnabled(root), Native.IsWindowVisible(root));
+                            }
+                        }
+                    }
+                }
+            }
+
             return new UiaResponse { Id = req.Id, Ok = true, Snapshot = snap with { LookupMs = sw.Elapsed.TotalMilliseconds }, LookupMs = sw.Elapsed.TotalMilliseconds };
         }
         catch (ElementNotAvailableException)
@@ -217,116 +369,236 @@ public static class UiaWorker
         }
     }
 
-    /// <summary>Top-level windows whose interactive content ElementFromPoint does not reach (Windows 11 taskbars).</summary>
-    private static readonly HashSet<string> DrillDownHosts = new(StringComparer.Ordinal) { "Shell_TrayWnd", "Shell_SecondaryTrayWnd" };
+    internal static bool SkipHoverObservation(UiaRequest request, string rootClass) =>
+        (IsTaskbarHost(rootClass) && !request.ObserveTaskbar) ||
+        (!request.ObserveCaptions && rootClass == "GitHubCopilotCaptionHost");
 
-    private sealed class HostScan
+    private static bool IsTaskbarHost(string rootClass) =>
+        rootClass is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";
+
+    private sealed class TaskbarScan
     {
-        public ElementSnapshot Host = new();
-        public List<ElementSnapshot> Items = [];
-        public long? ScannedAt;
-        public bool Scanning;
+        public required RectD Bounds { get; init; }
+        public required int ProcessId { get; init; }
+        public ElementSnapshot[] Items { get; set; } = [];
+        public long? CompletedAt { get; set; }
+        public string? Error { get; set; }
     }
 
-    private static readonly object HostGate = new();
-    private static readonly Dictionary<int, HostScan> Hosts = new();
+    private static readonly object TaskbarGate = new();
+    private static readonly Dictionary<IntPtr, TaskbarScan> Taskbars = new();
+    private static TaskbarScan? ActiveTaskbarScan;
+    private static long TaskbarScanStartedAt;
 
-    /// <summary>A drill-down host whose background scan is running and whose bounds contain the point.</summary>
-    private static HostScan? ScanningHostAt(int x, int y)
+    private static UiaResponse TaskbarAt(IntPtr hwnd, UiaRequest req, Stopwatch sw)
     {
-        lock (HostGate)
+        if (!Native.GetWindowRect(hwnd, out var rect))
         {
-            return Hosts.Values.FirstOrDefault(h => h.Scanning && h.Host.Bounds?.Contains(x, y) == true);
+            return Fail(req, sw, $"taskbar-bounds-error:{System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
         }
-    }
-
-    /// <summary>
-    /// Records the host under the pointer and refreshes its contents in the background when older than ~1.5 s.
-    /// Scanning a taskbar takes 200-600 ms, past the client's 250 ms hang timeout, so it never runs on the request path.
-    /// </summary>
-    private static HostScan HostAt(int hwnd, ElementSnapshot host)
-    {
-        lock (HostGate)
+        Native.GetWindowThreadProcessId(hwnd, out var pid);
+        var bounds = new RectD(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+        lock (TaskbarGate)
         {
-            if (!Hosts.TryGetValue(hwnd, out var scan))
+            if (!Taskbars.TryGetValue(hwnd, out var scan) || scan.Bounds != bounds || scan.ProcessId != (int)pid)
             {
-                Hosts[hwnd] = scan = new HostScan();
+                if (Taskbars.Count >= 8)
+                {
+                    Taskbars.Clear();
+                }
+                Taskbars[hwnd] = scan = new TaskbarScan { Bounds = bounds, ProcessId = (int)pid };
             }
 
-            scan.Host = host;
-            if (!scan.Scanning && !(Environment.TickCount64 - scan.ScannedAt < 1500))
+            var now = Environment.TickCount64;
+            // At most one native scan can be blocked in this isolated worker. Never start replacement threads.
+            if (ActiveTaskbarScan is not null && now - TaskbarScanStartedAt > 2000)
             {
-                scan.Scanning = true;
-                var thread = new Thread(() => ScanHost(hwnd, scan)) { IsBackground = true, Name = "uia-host-scan" };
+                return Fail(req, sw, "taskbar-scan-timeout");
+            }
+            if (ActiveTaskbarScan is null && (scan.CompletedAt is null || now - scan.CompletedAt >= 1500))
+            {
+                ActiveTaskbarScan = scan;
+                TaskbarScanStartedAt = now;
+                var thread = new Thread(() => ScanTaskbar(hwnd, scan)) { IsBackground = true, Name = "uia-taskbar-scan" };
                 thread.SetApartmentState(ApartmentState.MTA);
                 thread.Start();
             }
 
-            return scan;
+            if (scan.Error is { } error)
+            {
+                return Fail(req, sw, error);
+            }
+            var snap = SelectTaskbarItem(scan.Items, bounds, (int)pid, req.X, req.Y,
+                scan.CompletedAt is { } completed ? now - completed : double.PositiveInfinity);
+            return new UiaResponse
+            {
+                Id = req.Id, Ok = true, LookupMs = sw.Elapsed.TotalMilliseconds,
+                Snapshot = snap is not null
+                    ? snap with { QueryX = req.X, QueryY = req.Y, Scale = MonitorScale(req.X, req.Y) }
+                    : new ElementSnapshot
+                    {
+                        Source = "taskbar-cache-pending", ControlType = "Pane", ProcessId = (int)pid,
+                        Bounds = bounds, QueryX = req.X, QueryY = req.Y, IsEnabled = false, IsOffscreen = true,
+                    },
+            };
         }
     }
 
-    /// <summary>Smallest scanned interactive control under the point, else the host itself. A layout over 10 s old is not trusted.</summary>
-    private static UiaResponse Answer(HostScan scan, UiaRequest req, Stopwatch sw)
-    {
-        ElementSnapshot snap;
-        lock (HostGate)
-        {
-            snap = (Environment.TickCount64 - scan.ScannedAt < 10_000
-                ? scan.Items.Where(i => i.Bounds!.Contains(req.X, req.Y)).MinBy(i => i.Bounds!.Width * i.Bounds.Height)
-                : null) ?? scan.Host;
-        }
+    internal static ElementSnapshot? SelectTaskbarItem(IEnumerable<ElementSnapshot> items, RectD hostBounds,
+        int processId, int x, int y, double ageMs) =>
+        ageMs is >= 0 and < 1500 && hostBounds.Contains(x, y)
+            ? items.Where(s => s.ProcessId == processId && s.IsEnabled && !s.IsOffscreen && !s.IsPassword &&
+                               s.ControlType is "Button" or "SplitButton" &&
+                               s.Bounds is { IsEmpty: false } b && b.Contains(x, y) &&
+                               b.X >= hostBounds.X && b.Y >= hostBounds.Y &&
+                               b.X + b.Width <= hostBounds.X + hostBounds.Width &&
+                               b.Y + b.Height <= hostBounds.Y + hostBounds.Height)
+                .MinBy(s => s.Bounds!.Width * s.Bounds.Height)
+            : null;
 
-        var ms = sw.Elapsed.TotalMilliseconds;
-        return new UiaResponse
-        {
-            Id = req.Id, Ok = true, LookupMs = ms,
-            Snapshot = snap with { QueryX = req.X, QueryY = req.Y, Scale = MonitorScale(req.X, req.Y), LookupMs = ms },
-        };
-    }
-
-    private static void ScanHost(int hwnd, HostScan scan)
+    private static void ScanTaskbar(IntPtr hwnd, TaskbarScan scan)
     {
-        List<ElementSnapshot>? items = null;
+        ElementSnapshot[] items = [];
+        string? error = null;
         try
         {
-            var request = BuildCacheRequest(includeAutomationId: false);
-            request.TreeScope = TreeScope.Subtree;
-            var root = AutomationElement.FromHandle(new IntPtr(hwnd)).GetUpdatedCache(request);
-            items = [];
+            var cache = BuildCacheRequest(includeAutomationId: false);
+            cache.TreeScope = TreeScope.Subtree;
+            var root = AutomationElement.FromHandle(hwnd).GetUpdatedCache(cache);
+            var found = new List<ElementSnapshot>();
             var pending = new Stack<AutomationElement>([root]);
+            var count = 0;
             while (pending.Count > 0)
             {
-                var node = pending.Pop();
-                foreach (AutomationElement child in node.CachedChildren)
+                var parent = pending.Pop();
+                foreach (AutomationElement child in parent.CachedChildren)
                 {
-                    pending.Push(child);
-                    if (SemanticVocabulary.InteractiveTypes.Contains(TypeName(child)) &&
-                        ToSnapshot(child, node, new UiaRequest()) is { Bounds: { IsEmpty: false } } snap)
+                    if (++count > 4096)
                     {
-                        items.Add(snap);
+                        throw new InvalidOperationException("taskbar-node-limit");
+                    }
+                    pending.Push(child);
+                    if (TypeName(child) is "Button" or "SplitButton")
+                    {
+                        var snap = ToSnapshot(child, parent, new UiaRequest());
+                        var safe = NormalizeOwnerPart(snap,
+                            Get<int>(parent, AutomationElement.ProcessIdProperty),
+                            Get<bool>(parent, AutomationElement.IsEnabledProperty),
+                            Get<bool>(parent, AutomationElement.IsOffscreenProperty),
+                            Get<bool>(parent, AutomationElement.IsPasswordProperty));
+                        if (safe is not null)
+                        {
+                            found.Add(safe with { Source = "taskbar-cache" });
+                        }
                     }
                 }
             }
+            items = found.ToArray();
         }
-        catch
+        catch (Exception ex)
         {
-            // Keep the previous layout; the next hover retries.
+            error = $"taskbar-scan-error:{ex.GetType().Name}";
         }
         finally
         {
-            lock (HostGate)
+            lock (TaskbarGate)
             {
-                if (items is not null)
-                {
-                    scan.Items = items;
-                    scan.ScannedAt = Environment.TickCount64;
-                }
-
-                scan.Scanning = false;
+                var timedOut = Environment.TickCount64 - TaskbarScanStartedAt > 2000;
+                scan.Items = timedOut ? [] : items;
+                scan.Error = timedOut ? "taskbar-scan-timeout" : error;
+                scan.CompletedAt = Environment.TickCount64;
+                ActiveTaskbarScan = null;
             }
         }
     }
+
+    internal static ElementSnapshot? NormalizeOwnerPart(ElementSnapshot owner, int partPid,
+        bool partEnabled, bool partOffscreen, bool partPassword) =>
+        partPid != owner.ProcessId ? null : owner with
+        {
+            IsEnabled = owner.IsEnabled && partEnabled,
+            IsOffscreen = owner.IsOffscreen || partOffscreen,
+            IsPassword = owner.IsPassword || partPassword,
+        };
+
+    internal static bool CaptionOwnerAllowed(string hostClass, string ownerClass, uint hostPid, uint ownerPid) =>
+        hostClass == "GitHubCopilotCaptionHost" && ownerClass == "Tauri Window" && hostPid != 0 && hostPid == ownerPid;
+
+    internal static RectD? CaptionSearchRegion(Native.RECT window, Native.RECT buttons)
+    {
+        var width = (double)buttons.Right - buttons.Left;
+        var height = (double)buttons.Bottom - buttons.Top;
+        if (width <= 0 || height <= 0)
+        {
+            return null;
+        }
+
+        // DWM bounds can omit resize-border padding. This is only a search region, never a Close hit box.
+        return new RectD((double)window.Left + buttons.Left - height, (double)window.Top + buttons.Top - height,
+            width + (2 * height), 3 * height);
+    }
+
+    internal static bool NeedsCaptionQuery(ElementSnapshot s, RectD? region, bool hostedCaption) =>
+        hostedCaption || s.ControlType == "TitleBar" || s.ParentControlType == "TitleBar" ||
+        region?.Contains(s.QueryX, s.QueryY) == true;
+
+    internal static bool IsBrowserToolbarCommand(string rootClass, ElementSnapshot s) =>
+        rootClass == "Chrome_WidgetWin_1" && s.ControlType == "Button" &&
+        (s.ParentControlType is "Pane" or "ToolBar" || s.IsButtonOwner) &&
+        s.ClassName is "PinnedActionToolbarButton" or "PageActionView" or "ExtensionsToolbarButton" or
+            "AvatarToolbarButton" or "BrowserAppMenuButton";
+
+    internal static CaptionButton CaptionButtonFromHitTest(int hit) => hit switch
+    {
+        20 => CaptionButton.Close,
+        8 => CaptionButton.Minimize,
+        9 => CaptionButton.Maximize,
+        _ => CaptionButton.None,
+    };
+
+    internal static ElementSnapshot NativeCaptionSnapshot(ElementSnapshot observed, long hwnd, int pid, string className,
+        CaptionButton caption, Native.TITLEBARINFOEX info, bool windowEnabled, bool windowVisible)
+    {
+        var index = caption switch { CaptionButton.Close => 5, CaptionButton.Minimize => 2, CaptionButton.Maximize => 3, _ => throw new ArgumentOutOfRangeException(nameof(caption)) };
+        var native = info.Bounds[index];
+        var rect = new RectD(native.Left, native.Top, native.Right - native.Left, native.Bottom - native.Top);
+        var bounds = !rect.IsEmpty && rect.Contains(observed.QueryX, observed.QueryY) ? rect :
+            observed.ProcessId == pid &&
+            observed is { ControlType: "Button", ParentControlType: "TitleBar", IsOffscreen: false, Bounds: { IsEmpty: false } uia } &&
+            uia.Contains(observed.QueryX, observed.QueryY) ? uia : null;
+        return new ElementSnapshot
+        {
+            Source = "native-caption", ProcessId = pid, Hwnd = hwnd, ControlType = "Button", ClassName = className,
+            RuntimeIdHash = HashRuntimeId([unchecked((int)hwnd), unchecked((int)(hwnd >> 32)), (int)caption]),
+            CaptionButton = caption, ParentControlType = "TitleBar", Bounds = bounds, Scale = observed.Scale,
+            IsEnabled = windowEnabled && observed.IsEnabled && (info.State[index] & 0x0001) == 0,
+            IsOffscreen = !windowVisible || (info.State[index] & (0x8000 | 0x10000)) != 0,
+            IsPassword = observed.IsPassword, QueryX = observed.QueryX, QueryY = observed.QueryY,
+        };
+    }
+
+    internal static bool? ToggleOn(object state) => state switch
+    {
+        ToggleState.Off => false,
+        ToggleState.On => true,
+        _ => null,
+    };
+
+    internal static CaptionButton CaptionButtonFromInfo(Native.TITLEBARINFOEX info, int x, int y)
+    {
+        const uint unavailable = 0x0001 | 0x8000 | 0x10000; // Unavailable, invisible, or offscreen.
+        foreach (var (index, kind) in new[] { (5, CaptionButton.Close), (2, CaptionButton.Minimize), (3, CaptionButton.Maximize) })
+        {
+            var bounds = info.Bounds[index];
+            if ((info.State[index] & unavailable) == 0 && x >= bounds.Left && x < bounds.Right && y >= bounds.Top && y < bounds.Bottom)
+            {
+                return kind;
+            }
+        }
+
+        return CaptionButton.None;
+    }
+
 
     private static UiaResponse Fail(UiaRequest req, Stopwatch sw, string error) => new()
     {
@@ -373,6 +645,7 @@ public static class UiaWorker
             ProcessId = Get<int>(el, AutomationElement.ProcessIdProperty),
             Hwnd = Get<int>(el, AutomationElement.NativeWindowHandleProperty),
             ControlType = TypeName(el),
+            ClassName = Get<string>(el, AutomationElement.ClassNameProperty),
             FrameworkId = Get<string>(el, AutomationElement.FrameworkIdProperty),
             RuntimeIdHash = HashRuntimeId(Get<int[]>(el, AutomationElement.RuntimeIdProperty)),
             Bounds = rect.IsEmpty || double.IsInfinity(rect.Width) ? null : new RectD(rect.X, rect.Y, rect.Width, rect.Height),
@@ -384,6 +657,11 @@ public static class UiaWorker
             ParentRuntimeIdHash = parent is null ? null : HashRuntimeId(Get<int[]>(parent, AutomationElement.RuntimeIdProperty)),
             ParentBounds = parent is null ? null : ToRect(Get<System.Windows.Rect>(parent, AutomationElement.BoundingRectangleProperty)),
             IsSelected = Get<bool>(el, AutomationElement.IsSelectionItemPatternAvailableProperty) ? Get<bool>(el, SelectionItemPattern.IsSelectedProperty) : null,
+            IsToggle = Get<bool>(el, AutomationElement.IsTogglePatternAvailableProperty),
+            IsToggledOn = Get<bool>(el, AutomationElement.IsTogglePatternAvailableProperty)
+                ? ToggleOn(el.GetCachedPropertyValue(TogglePatternIdentifiers.ToggleStateProperty, ignoreDefaultValue: true))
+                : null,
+            HasDropdown = Get<bool>(el, AutomationElement.IsExpandCollapsePatternAvailableProperty),
             Scale = MonitorScale(req.X, req.Y),
             Range = range,
             AutomationId = req.AutomationId ? Get<string>(el, AutomationElement.AutomationIdProperty) : null,
@@ -467,7 +745,7 @@ public sealed class UiaClient : IDisposable
     private Process? _proc;
     private long _nextId;
     private (long Id, double SentAt, double PointerTs, int FgPid, int X, int Y, long Generation)? _outstanding;
-    private (long Id, string Cmd, int X, int Y, double PointerTs, int FgPid, long Generation)? _pending;
+    private (long Id, string Cmd, int X, int Y, double PointerTs, int FgPid, long Generation, bool Focused)? _pending;
     private long _requests, _responses, _superseded, _timeouts, _restartCount, _quarantined, _late, _starts;
     private bool _disposed;
     private bool _workerReady;
@@ -486,6 +764,9 @@ public sealed class UiaClient : IDisposable
     public event Action<UiaResponse, double, double>? Response;
 
     public event Action<string>? Diagnostic;
+
+    internal Func<bool> ObserveCaptions { get; set; } = static () => true;
+    internal Func<bool> ObserveTaskbar { get; set; } = static () => false;
 
     public UiaClientStats Stats => new(_requests, _responses, _superseded, _timeouts, _restartCount, _quarantined, _late);
 
@@ -511,7 +792,7 @@ public sealed class UiaClient : IDisposable
     }
 
     /// <summary>Latest-wins: replaces any not-yet-sent request. Never queues per-pixel work.</summary>
-    public void RequestLatest(int x, int y, double pointerTs, int foregroundPid, long generation = 0)
+    public void RequestLatest(int x, int y, double pointerTs, int foregroundPid, long generation = 0, bool focused = false)
     {
         lock (_gate)
         {
@@ -532,14 +813,14 @@ public sealed class UiaClient : IDisposable
                 CompleteWaiter(old.Id, new UiaResponse { Id = old.Id, ClientStatus = "superseded", Generation = old.Generation });
             }
 
-            _pending = (++_nextId, "query", x, y, pointerTs, foregroundPid, generation);
+            _pending = (++_nextId, "query", x, y, pointerTs, foregroundPid, generation, focused);
             _requests++;
             PumpLocked();
         }
     }
 
     /// <summary>Sequential query for experiments. Completes with a ClientStatus on timeout/supersede.</summary>
-    public Task<UiaResponse> QueryAsync(int x, int y, string cmd = "query", long generation = 0)
+    public Task<UiaResponse> QueryAsync(int x, int y, string cmd = "query", long generation = 0, bool focused = false)
     {
         var tcs = new TaskCompletionSource<UiaResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
@@ -562,7 +843,7 @@ public sealed class UiaClient : IDisposable
                 _waiters[id] = (tcs, generation);
             }
 
-            _pending = (id, cmd, x, y, MonotonicClock.Instance.NowMs, 0, generation);
+            _pending = (id, cmd, x, y, MonotonicClock.Instance.NowMs, 0, generation, focused);
             _requests++;
             PumpLocked();
         }
@@ -574,6 +855,11 @@ public sealed class UiaClient : IDisposable
     {
         lock (_gate)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             KillLocked();
             lock (_waiters)
@@ -608,11 +894,17 @@ public sealed class UiaClient : IDisposable
             return; // Pending request stays queued (latest-wins) until the worker says it is ready.
         }
 
+        var now = MonotonicClock.Instance.NowMs;
         _pending = null;
-        var req = new UiaRequest { Id = next.Id, Cmd = next.Cmd, X = next.X, Y = next.Y, AutomationId = _opt.IncludeAutomationId };
+        var req = new UiaRequest
+        {
+            Id = next.Id, Cmd = next.Cmd, X = next.X, Y = next.Y, AutomationId = _opt.IncludeAutomationId, Focused = next.Focused,
+            ObserveCaptions = ObserveCaptions(),
+            ObserveTaskbar = ObserveTaskbar(),
+        };
         try
         {
-            _outstanding = (next.Id, MonotonicClock.Instance.NowMs, next.PointerTs, next.FgPid, next.X, next.Y, next.Generation);
+            _outstanding = (next.Id, now, next.PointerTs, next.FgPid, next.X, next.Y, next.Generation);
             _proc!.StandardInput.WriteLine(JsonSerializer.Serialize(req, HapticsJson.Compact));
             _proc.StandardInput.Flush();
         }

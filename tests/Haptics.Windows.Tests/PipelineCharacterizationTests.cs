@@ -4,7 +4,7 @@ using Haptics.Core;
 
 namespace Haptics.Windows.Tests;
 
-/// <summary>Baseline probes use only pre-seam APIs so the same tests run on the parent revision.</summary>
+/// <summary>Characterize routing and waveforms using targets eligible for the selected style.</summary>
 public class PipelineCharacterizationTests
 {
     [Fact]
@@ -21,9 +21,9 @@ public class PipelineCharacterizationTests
     }
 
     [Theory]
-    [InlineData("Button", 40, 30, "Hover")]
-    [InlineData("Button", 44, 80, "Click")]
-    [InlineData("TabItem", 80, 30, "Step")]
+    [InlineData("ComboBox", 40, 30, "Hover")]
+    [InlineData("ComboBox", 44, 80, "Hover")]
+    [InlineData("TabItem", 80, 30, "Hover")]
     public void SingleMouseArrivalKeepsItsWaveform(string type, int width, int height, string waveform)
     {
         var clock = new FakeClock { NowMs = 100 };
@@ -39,10 +39,11 @@ public class PipelineCharacterizationTests
     }
 
     [Fact]
-    public void SingleMouseLeavingStripEndKeepsCollide()
+    public void SingleMouseLeavingStripEndIsSilent()
     {
         var clock = new FakeClock { NowMs = 100 };
         using var pipeline = Pipeline();
+        pipeline.Policy.Config.Profile = EffectProfile.Everything;
         Pointer(pipeline, clock.NowMs, 100, 15, 12);
         var button = Snapshot(clock.NowMs, "Button", 40, 30) with
         {
@@ -67,9 +68,8 @@ public class PipelineCharacterizationTests
         };
         var decisions = pipeline.Interpreter.OnSnapshot(beyond, clock.NowMs).Events
             .Select(e => pipeline.Policy.Evaluate(e, clock.NowMs)).ToArray();
-        var intent = Assert.Single(decisions, d => d.Outcome == PolicyOutcome.Emit).Intent!;
-        Assert.Equal("Collide", intent.Waveform);
-        Assert.Equal("strip-edge", intent.SourceRule);
+        Assert.DoesNotContain(decisions, d => d.Outcome == PolicyOutcome.Emit);
+        Assert.DoesNotContain(decisions, d => d.Event.Kind == SemanticEventKind.GroupEdge);
     }
 
     [Fact]
@@ -121,6 +121,8 @@ public class PipelineCharacterizationTests
     private static ObservationPipeline Pipeline()
     {
         var pipeline = new ObservationPipeline(PolicyConfig.Sample(EffectProfile.Focused, 0.8));
+        pipeline.Interpreter.Config.LandingDwellMs = 0;
+        pipeline.Interpreter.Config.SmallTargetDwellMs = 0;
         pipeline.Policy.ConsentGiven = true;
         pipeline.Policy.OutputRouteVerified = true;
         return pipeline;
@@ -150,11 +152,12 @@ public class PipelineCharacterizationTests
     internal static object? Invoke(ObservationPipeline pipeline, string method, params object[] args) =>
         typeof(ObservationPipeline).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(pipeline, args);
 
-    internal static ElementSnapshot Snapshot(double t, string type = "Button", int width = 40, int height = 30) => new()
+    internal static ElementSnapshot Snapshot(double t, string type = "ComboBox", int width = 40, int height = 30) => new()
     {
         ProcessId = Environment.ProcessId,
         RuntimeIdHash = "target",
         ControlType = type,
+        ParentControlType = type == "TabItem" ? "Tab" : "ToolBar",
         Bounds = new RectD(0, 0, width, height),
         QueryX = 20,
         QueryY = 15,

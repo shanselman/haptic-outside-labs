@@ -100,7 +100,7 @@ public class TrayWindowTests
 
         w.StyleBox.SelectedIndex = 2;
         Assert.Equal(TraySettings.Styles[2], host.Settings.Style);
-        Assert.StartsWith("Every crossing", w.StyleHint.Text);
+        Assert.Equal("All Focused scenarios plus more controls and group Hover; same dwell", w.StyleHint.Text);
         w.IntensitySlider.Value = 0.3;
         Assert.Equal(0.3, host.Settings.IntensityScale);
         Assert.Equal("Low", w.IntensityLabel.Text);

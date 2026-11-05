@@ -47,7 +47,11 @@ public static class TraceReplay
     {
         config ??= new PolicyConfig { Mode = HapticsMode.On, AppPolicy = AppPolicy.AllExceptExclusions };
         var names = new Dictionary<int, string>();
-        var interpreter = new SemanticInterpreter(new InterpreterConfig { LandingSpeedPxPerSec = config.LandingSpeedPxPerSec });
+        var interpreter = new SemanticInterpreter(new InterpreterConfig
+        {
+            Profile = config.Profile, LandingSpeedPxPerSec = config.LandingSpeedPxPerSec,
+            LargeTargetLogicalHeight = config.LargeTargetLogicalHeight, LargeTargetLogicalSide = config.LargeTargetLogicalSide,
+        });
         var policy = new HapticPolicy(config, pid => names.TryGetValue(pid, out var n) ? n : null)
         {
             ConsentGiven = true,
@@ -184,6 +188,7 @@ public static class TraceReplay
             ControlType = (string?)o["controlType"] ?? "Unknown",
             RuntimeIdHash = (string?)o["rid"],
             Bounds = bounds,
+            SliderThumbBounds = Rect(o["thumbBounds"]),
             IsEnabled = (bool?)o["enabled"] ?? true,
             IsOffscreen = (bool?)o["offscreen"] ?? false,
             IsPassword = (bool?)o["password"] ?? false,
@@ -191,6 +196,13 @@ public static class TraceReplay
             ParentRuntimeIdHash = (string?)o["parentRid"],
             ParentBounds = Rect(o["parentBounds"]),
             IsSelected = (bool?)o["selected"],
+            IsToggle = (bool?)o["toggle"] ?? false,
+            IsToggledOn = (bool?)o["on"],
+            HasDropdown = (bool?)o["dropdown"] ?? false,
+            IsButtonOwner = (bool?)o["buttonOwner"] ?? false,
+            IsBrowserToolbarCommand = (bool?)o["browserToolbar"] ?? false,
+            IsHeaderOwner = (bool?)o["headerOwner"] ?? false,
+            CaptionButton = o["caption"] is { } caption ? Enum.Parse<CaptionButton>(caption.GetValue<string>(), ignoreCase: true) : CaptionButton.None,
             Scale = (double?)o["scale"] ?? 1.0,
             Range = range,
             RequestedAtMs = (double?)o["req"] ?? t,

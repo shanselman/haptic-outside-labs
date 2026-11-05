@@ -1,0 +1,18 @@
+{"type":"comment","text":"Authored native-caption snapshots without rectangles: all caption targets are removed from Focused. Fresh Close, moving away, minimize/maximize and protected Close remain silent. Zero haptics."}
+{"type":"process","pid":100,"name":"notepad"}
+{"t":0,"type":"pointer","x":0,"y":20,"fg":100}
+{"t":10,"type":"pointer","x":20,"y":20,"fg":100}
+{"t":12,"type":"element","req":10,"pid":100,"controlType":"Button","rid":"native-close","caption":"Close","parentType":"TitleBar"}
+{"t":20,"type":"pointer","x":80,"y":20,"fg":100}
+{"t":30,"type":"pointer","x":80,"y":20,"fg":100}
+{"t":40,"type":"pointer","x":80,"y":20,"fg":100}
+{"t":50,"type":"pointer","x":80,"y":20,"fg":100}
+{"t":100,"type":"element","req":50,"pid":100,"controlType":"Pane","rid":"outside","bounds":[60,0,40,40]}
+{"t":400,"type":"pointer","x":20,"y":20,"fg":100}
+{"t":402,"type":"element","req":400,"pid":100,"controlType":"Button","rid":"native-close","caption":"Close","parentType":"TitleBar"}
+{"t":700,"type":"pointer","x":100,"y":20,"fg":100}
+{"t":702,"type":"element","req":700,"pid":100,"controlType":"Button","rid":"native-min","caption":"Minimize","parentType":"TitleBar"}
+{"t":1000,"type":"pointer","x":180,"y":20,"fg":100}
+{"t":1002,"type":"element","req":1000,"pid":100,"controlType":"Button","rid":"native-max","caption":"Maximize","parentType":"TitleBar"}
+{"t":1300,"type":"pointer","x":260,"y":20,"fg":100}
+{"t":1302,"type":"element","req":1300,"pid":100,"controlType":"Button","rid":"protected-close","caption":"Close","parentType":"TitleBar","password":true}

@@ -33,9 +33,9 @@ public sealed class TraySettings
 
     internal static string Describe(EffectProfile style) => style switch
     {
-        EffectProfile.Quiet => "structure only (groups, tabs, edges, sliders)",
-        EffectProfile.Focused => "plus a tick when you land on a control",
-        _ => "every crossing (dense)",
+        EffectProfile.Quiet => "tab/inline-link Hover and slider detents/limits; other landings silent",
+        EffectProfile.Focused => "tabs, inline/text-sized group links, pickers, menu launchers, slider thumb/drag and toggle changes",
+        _ => "all Focused scenarios plus more controls and group Hover; same dwell",
     };
 
     internal static string IntensityName(double value) => IntensityLevels.MinBy(l => Math.Abs(l.Value - value)).Name;

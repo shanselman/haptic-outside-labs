@@ -7,6 +7,24 @@ namespace Haptics.Windows.Tests;
 public class TrayDefaultsTests
 {
     [Theory]
+    [InlineData(EffectProfile.Quiet, 12, 600, 200)]
+    [InlineData(EffectProfile.Focused, 12, 600, 200)]
+    [InlineData(EffectProfile.Everything, 25, 1500, 40)]
+    public void EverythingUsesExistingDenseLimitsWithoutChangingIntensity(
+        EffectProfile style, int perSecond, int perMinute, double cooldown)
+    {
+        var tray = new TraySettings { Style = style, IntensityScale = 0.55 }.ToPolicy();
+        var showcase = PolicyConfig.Sample(style, 0.55);
+        foreach (var config in new[] { tray, showcase })
+        {
+            Assert.Equal(perSecond, config.GlobalMaxPulsesPerSecond);
+            Assert.Equal(perMinute, config.MaxPulsesPerMinute);
+            Assert.Equal(cooldown, config.SameElementReentryCooldownMs);
+            Assert.Equal(40, config.MinimumGlobalSpacingMs);
+            Assert.Equal(0.55, config.IntensityScale);
+        }
+    }
+    [Theory]
     [InlineData("{}", false)]
     [InlineData("""{"experimentalPenEnabled":true}""", true)]
     [InlineData("""{"experimentalPenEnabled":false}""", false)]
@@ -19,6 +37,47 @@ public class TrayDefaultsTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TraySharesInlineLinksAndKeepsOptionsEverythingOnly(bool moreIsBetter)
+    {
+        var trace = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces",
+            "style-inclusion-checkbox-repeat.jsonl");
+        var focused = TraceReplay.Run(trace, new TraySettings { Style = EffectProfile.Focused, MoreIsBetter = moreIsBetter }.ToPolicy());
+        var everything = TraceReplay.Run(trace, new TraySettings { Style = EffectProfile.Everything, MoreIsBetter = moreIsBetter }.ToPolicy());
+        Assert.Equal(5, focused.Emitted);
+        Assert.Equal(6, everything.Emitted);
+        Assert.Equal(focused.Haptic.Select(d => (d.T, d.EventKind, d.ControlType)),
+            everything.Haptic.Where(d => d.ControlType != "ListItem").Select(d => (d.T, d.EventKind, d.ControlType)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TrayUsesSharedQuietSubsetAndFocusedSliderHover(bool moreIsBetter)
+    {
+        var trace = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces", "quiet-subset-focused.jsonl");
+        var focused = TraceReplay.Run(trace, new TraySettings { Style = EffectProfile.Focused, MoreIsBetter = moreIsBetter }.ToPolicy());
+        var quiet = TraceReplay.Run(trace, new TraySettings { Style = EffectProfile.Quiet, MoreIsBetter = moreIsBetter }.ToPolicy());
+        Assert.Equal(["Hover", "Hover", "Hover", "Step", "Collide", "Step"], focused.Haptic.Select(d => d.Waveform));
+        Assert.Equal(["Hover", "Step", "Collide", "Step"], quiet.Haptic.Select(d => d.Waveform));
+        Assert.Single(focused.Haptic, d => d.ControlType == "Slider" && d.Waveform == "Hover");
+        var scenarios = focused.Haptic.Select(d => (d.T, d.EventKind, d.ControlType)).ToHashSet();
+        Assert.All(quiet.Haptic, d => Assert.Contains((d.T, d.EventKind, d.ControlType), scenarios));
+    }
+
+    [Fact]
+    public void LegacyTaskbarSettingsAreIgnoredAndNeverPersisted()
+    {
+        var settings = System.Text.Json.JsonSerializer.Deserialize<TraySettings>(
+            """{"taskbarHover":true,"closeButtonHover":false}""", HapticsJson.Compact)!;
+        var cfg = settings.ToPolicy();
+        Assert.False(cfg.CloseButtonHoverEnabled);
+        Assert.False(JsonSerializer.SerializeToElement(settings, HapticsJson.Compact).TryGetProperty("taskbarHover", out _));
+        Assert.False(JsonSerializer.SerializeToElement(cfg, HapticsJson.Compact).TryGetProperty("taskbarHoverEnabled", out _));
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public void ToPolicyMapsCloseButtonHover(bool enabled)
@@ -28,19 +87,16 @@ public class TrayDefaultsTests
     }
 
     [Fact]
-    public void CloseHoverSettingControlsCaptionReplay()
+    public void FocusedCaptionReplayIsSilentRegardlessOfCloseSetting()
     {
         var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
         var path = Path.Combine(traces, "caption-close-hover.jsonl");
         var on = TraceReplay.Run(path, new TraySettings().ToPolicy());
-        Assert.Equal(["Hover", "Hover", "Hover"], on.Haptic.Select(d => d.Waveform));
-        Assert.Equal(["Button", "Button", "Button"], on.Haptic.Select(d => d.ControlType));
+        Assert.Empty(on.Haptic);
         Assert.DoesNotContain(on.Decisions, d => d.Reason == "coalesced-with-group-boundary");
-        Assert.Contains(on.Decisions, d => d.Reason == "native-suppression:windows-snap-titlebar-drag");
 
         var off = TraceReplay.Run(path, new TraySettings { CloseButtonHover = false }.ToPolicy());
-        Assert.Equal(["Hover"], off.Haptic.Select(d => d.Waveform));
-        Assert.Equal(3, off.Decisions.Count(d => d.Reason == "rule-disabled:close-hover"));
+        Assert.Empty(off.Haptic);
     }
 
     [Fact]
@@ -73,7 +129,7 @@ public class TrayDefaultsTests
         var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
         var replay = TraceReplay.Run(Path.Combine(traces, "caption-close-hover.jsonl"), cfg);
         Assert.Empty(replay.Haptic);
-        Assert.Contains(replay.Decisions, d => d.Reason == "rule-disabled:close-hover");
+        Assert.Contains(replay.Notes, n => n.EndsWith("skip:focused-target-not-enabled", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -88,20 +144,23 @@ public class TrayDefaultsTests
         var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
         Assert.Equal(0, TraceReplay.Run(Path.Combine(traces, "security-password.jsonl"), cfg).Emitted);
         Assert.Equal(0, TraceReplay.Run(Path.Combine(traces, "excluded-app.jsonl"), new TraySettings().ToPolicy()).Emitted);
-        Assert.Equal(5, TraceReplay.Run(Path.Combine(traces, "toolbar-slow-sweep.jsonl"), new TraySettings().ToPolicy()).Emitted);
+        Assert.Equal(2, TraceReplay.Run(Path.Combine(traces, "focused-navigation-hover.jsonl"), new TraySettings().ToPolicy()).Emitted);
     }
 
     [Fact]
-    public void EverythingStyleIsMoreAggressiveThanTheLabDefaults()
+    public void EverythingIncludesToolbarControlsButStillSuppressesFastCrossings()
     {
         var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
         var lab = TraceReplay.Run(Path.Combine(traces, "toolbar-fast-flick.jsonl")).Emitted;
         var sample = TraceReplay.Run(Path.Combine(traces, "toolbar-fast-flick.jsonl"), new TraySettings { Style = EffectProfile.Everything }.ToPolicy()).Emitted;
-        Assert.True(sample >= lab + 3, $"sample {sample} vs lab {lab}");
+        Assert.Equal(0, lab);
+        Assert.InRange(sample, 0, 1);
+        Assert.Equal(5, TraceReplay.Run(Path.Combine(traces, "toolbar-slow-sweep.jsonl"),
+            new TraySettings { Style = EffectProfile.Everything }.ToPolicy()).Emitted);
     }
 
     [Fact]
-    public void MoreIsBetterEmitsOnFastSweepsWithoutChangingSafetySuppressions()
+    public void MoreIsBetterKeepsDwellAndSafetyWhileRaisingRateLimits()
     {
         var traces = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces");
         var fastSweep = Path.Combine(traces, "toolbar-fast-flick.jsonl");
@@ -115,9 +174,11 @@ public class TrayDefaultsTests
         Assert.Equal(40, config.SameElementReentryCooldownMs);
 
         var focused = TraceReplay.Run(fastSweep, new TraySettings().ToPolicy());
-        Assert.Equal(1, focused.Emitted);
+        Assert.Equal(0, focused.Emitted);
         var replay = TraceReplay.Run(fastSweep, config);
-        Assert.Equal(5, replay.Emitted);
+        Assert.Equal(0, replay.Emitted);
+        Assert.InRange(TraceReplay.Run(fastSweep,
+            new TraySettings { Style = EffectProfile.Everything, MoreIsBetter = true }.ToPolicy()).Emitted, 0, 1);
 
         Assert.Equal(0, TraceReplay.Run(Path.Combine(traces, "security-password.jsonl"), config).Emitted);
         Assert.Equal(0, TraceReplay.Run(Path.Combine(traces, "excluded-app.jsonl"), config).Emitted);
@@ -135,7 +196,7 @@ public class TrayDefaultsTests
         var config = settings.ToPolicy();
         Assert.Equal(EffectProfile.Focused, config.Profile);
         Assert.Equal(1200, config.LandingSpeedPxPerSec);
-        Assert.Equal(10, config.DensityLandsPer2s);
+        Assert.Equal(0, config.DensityLandsPer2s);
         Assert.Equal(12, config.GlobalMaxPulsesPerSecond);
         Assert.Equal(600, config.MaxPulsesPerMinute);
         Assert.Equal(40, config.MinimumGlobalSpacingMs);
@@ -145,6 +206,26 @@ public class TrayDefaultsTests
         Assert.False(oldSettings.MoreIsBetter);
         Assert.True(JsonSerializer.SerializeToElement(new TraySettings { MoreIsBetter = true }, HapticsJson.Indented)
             .GetProperty("moreIsBetter").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TrayGroupLinksRemainFocusedOnlyWhileInlineLinksStayQuiet(bool moreIsBetter)
+    {
+        var trace = Path.Combine(ArtifactLocator.FindRepoRoot(AppContext.BaseDirectory)!, "tests", "traces",
+            "focused-group-link-filter.jsonl");
+        foreach (var style in new[] { EffectProfile.Quiet, EffectProfile.Focused, EffectProfile.Everything })
+        {
+            var output = TraceReplay.Run(trace, new TraySettings { Style = style, MoreIsBetter = moreIsBetter }.ToPolicy());
+            Assert.Equal(style switch
+            {
+                EffectProfile.Quiet => 1,
+                EffectProfile.Focused => 2,
+                _ => 4,
+            }, output.Emitted);
+            Assert.All(output.Haptic, d => Assert.Equal("Hover", d.Waveform));
+        }
     }
 
     [Fact]
@@ -161,8 +242,8 @@ public class TrayDefaultsTests
         {
             var t = 40 + i * 20.0;
             var key = $"fast-{i}";
-            var element = new ElementSnapshot { ProcessId = 1, ControlType = "Button", RuntimeIdHash = key };
-            var e = new SemanticEvent(SemanticEventKind.EnterControl, i + 1, t, t, 1, "Button", key, null, 0.9, [], false, 0, element);
+            var element = new ElementSnapshot { ProcessId = 1, ControlType = "ComboBox", RuntimeIdHash = key };
+            var e = new SemanticEvent(SemanticEventKind.EnterControl, i + 1, t, t, 1, "ComboBox", key, null, 0.9, [], false, 0, element);
             if (policy.Evaluate(e, t).Outcome == PolicyOutcome.Emit)
             {
                 emitted++;

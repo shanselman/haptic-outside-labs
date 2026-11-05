@@ -1,0 +1,18 @@
+{"type":"comment","text":"Authored timing/coordinates using captured Chrome roles and dimensions: small title Hyperlink in a larger Group qualifies in Focused only, alongside unchanged inline links in all styles. ListItem rail links and full-parent Group cards stay Everything-only. A small Group-link fly-by stays silent. No content or URLs; logic only."}
+{"type":"process","pid":100,"name":"chrome"}
+{"type":"pointer","t":0,"x":20,"y":15,"fg":100,"primary":false}
+{"type":"element","t":1,"req":0,"x":20,"y":15,"pid":100,"controlType":"Hyperlink","rid":"title-link","bounds":[0,0,249,25],"parentType":"Group","parentRid":"title-container","parentBounds":[0,0,1078,139],"scale":1.5}
+{"type":"tick","t":30}
+{"type":"pointer","t":300,"x":420,"y":15,"fg":100,"primary":false}
+{"type":"element","t":301,"req":300,"x":420,"y":15,"pid":100,"controlType":"Hyperlink","rid":"rail-link","bounds":[400,0,126,95],"parentType":"ListItem","parentRid":"rail-item","parentBounds":[400,0,126,95],"scale":1.5}
+{"type":"tick","t":350}
+{"type":"pointer","t":600,"x":620,"y":15,"fg":100,"primary":false}
+{"type":"element","t":601,"req":600,"x":620,"y":15,"pid":100,"controlType":"Hyperlink","rid":"card-link","bounds":[600,0,180,120],"parentType":"Group","parentRid":"card-container","parentBounds":[600,0,180,120],"scale":1.5}
+{"type":"tick","t":650}
+{"type":"pointer","t":900,"x":920,"y":15,"fg":100,"primary":false}
+{"type":"element","t":901,"req":900,"x":920,"y":15,"pid":100,"controlType":"Hyperlink","rid":"inline-link","bounds":[900,0,100,20],"parentType":"Text","parentRid":"paragraph"}
+{"type":"tick","t":930}
+{"type":"pointer","t":1200,"x":1220,"y":15,"fg":100,"primary":false}
+{"type":"element","t":1201,"req":1200,"x":1220,"y":15,"pid":100,"controlType":"Hyperlink","rid":"flyby-link","bounds":[1200,0,100,20],"parentType":"Group","parentRid":"flyby-container","parentBounds":[1200,0,200,80]}
+{"type":"pointer","t":1229,"x":1450,"y":15,"fg":100,"primary":false}
+{"type":"tick","t":1260}

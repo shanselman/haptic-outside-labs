@@ -25,7 +25,7 @@
     </UserControl.Resources>
     <StackPanel>
         <TextBlock Style="{DynamicResource Section}" Margin="0,0,0,8" Text="Menus &amp; toolbars" />
-        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="A detent when you enter. A land on each command. Slide off the end for an edge." />
+        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="Dwell: 30 ms for small controls; 50 ms for tabs and controls at least 56 logical px tall or 48 x 48. Focused hovers on menu launchers and dropdown pickers, not options. Everything also hovers on options, commands and B/I/U. Confirmed toggle changes tick in both styles." />
         <Menu AutomationProperties.Name="Demo menu" HorizontalAlignment="Left">
             <MenuItem Header="_File">
                 <MenuItem Header="_New" /><MenuItem Header="_Open" /><MenuItem Header="_Save" /><Separator /><MenuItem Header="_Print" />
@@ -37,6 +37,10 @@
                 <MenuItem Header="Zoom _in" /><MenuItem Header="Zoom _out" /><MenuItem Header="_Full screen" />
             </MenuItem>
         </Menu>
+        <ComboBox x:Name="DemoDropdown" Width="160" HorizontalAlignment="Left" Margin="0,8,0,0"
+                  SelectedIndex="0" AutomationProperties.Name="Demo dropdown">
+            <ComboBoxItem Content="Compact" /><ComboBoxItem Content="Comfortable" /><ComboBoxItem Content="Spacious" />
+        </ComboBox>
         <ToolBar Margin="0,8,0,0" HorizontalAlignment="Left" ToolBarTray.IsLocked="True" AutomationProperties.Name="Formatting toolbar">
             <ToggleButton Content="B" FontWeight="Bold" Width="36" Height="32" AutomationProperties.Name="Bold" />
             <ToggleButton Content="I" FontStyle="Italic" Width="36" Height="32" AutomationProperties.Name="Italic" />
@@ -50,7 +54,7 @@
         </ToolBar>
 
         <TextBlock Style="{DynamicResource Section}" Text="A little ribbon" />
-        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="Each group is a region. Big buttons have a firmer landing." />
+        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="These ordinary ribbon buttons stay silent in Focused. Everything uses Hover for group entry and buttons of every size, coalesced into one pulse. Leaving a strip is silent." />
         <WrapPanel>
             <GroupBox Header="Clipboard" Margin="0,0,8,8" Padding="8">
                 <StackPanel Orientation="Horizontal">
@@ -82,7 +86,7 @@
         </WrapPanel>
 
         <TextBlock Style="{DynamicResource Section}" Text="Tabs &amp; choices" />
-        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="A detent per tab or option. The selected tab stays silent; checkboxes land." />
+        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="All styles use Hover after 50 ms on unselected tabs; Everything also uses Hover on unselected radio options and toggle buttons. Checkbox hover is silent in every style. Focused and Everything: click the checkbox box or label on, off, then on for one Step per observed change. Quiet skips checkbox changes. Selected tabs/radios stay silent." />
         <TabControl x:Name="DemoTabs" AutomationProperties.Name="Demo tabs">
             <TabItem Header="Home" IsSelected="True" /><TabItem Header="Insert" /><TabItem Header="Design" />
             <TabItem Header="Review" /><TabItem Header="View" />
@@ -98,9 +102,15 @@
         </GroupBox>
 
         <TextBlock Style="{DynamicResource Section}" Text="Find the edges" />
-        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="Hold and drag: a detent every 10, an edge at either end. Keyboard changes stay silent." />
+        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="Focused and Everything: dwell on the slider's round thumb for one Hover; the track is silent. Hold and drag: a detent every 10, an edge at either end, with no extra hover during the drag or on release. Quiet keeps drag feedback but not thumb hover. Keyboard changes stay silent." />
         <Slider x:Name="DemoSlider" Minimum="0" Maximum="100" Value="50" SmallChange="1" LargeChange="10"
                 TickFrequency="10" TickPlacement="BottomRight" AutomationProperties.Name="Demo slider" />
+
+        <TextBlock Style="{DynamicResource Section}" Text="Inline text links" />
+        <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="Inline links hover in all styles. Focused also accepts links inside a Group if at most 24 logical px tall, fully contained, with a parent at least twice as tall. This is a conservative heuristic, not proof of text styling. Quiet keeps inline-only links. No text or URLs are read." />
+        <TextBlock Margin="0,0,0,8">
+            Try this <Hyperlink x:Name="DemoLink">demo hyperlink</Hyperlink> without leaving the playground.
+        </TextBlock>
 
         <TextBlock Style="{DynamicResource Section}" Text="Silent, on purpose" />
         <TextBlock Style="{DynamicResource Hint}" Margin="0,0,0,8" Text="Tiny targets, disabled controls, passwords and painted surfaces don't earn a pulse." />

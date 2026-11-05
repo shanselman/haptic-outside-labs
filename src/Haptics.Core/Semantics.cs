@@ -50,6 +50,15 @@ public sealed record RectD(double X, double Y, double Width, double Height)
 
 public sealed record RangeInfo(double Value, double Minimum, double Maximum, double SmallChange, double LargeChange);
 
+[JsonConverter(typeof(JsonStringEnumConverter<CaptionButton>))]
+public enum CaptionButton
+{
+    None,
+    Close,
+    Minimize,
+    Maximize,
+}
+
 /// <summary>
 /// Minimal, privacy-preserving UI metadata at a screen point (SPEC §3.4). Deliberately has no Name, Value
 /// text, or document content. <see cref="AutomationId"/> is only populated for our own fixtures.
@@ -60,9 +69,12 @@ public sealed record ElementSnapshot
     public int ProcessId { get; init; }
     public long Hwnd { get; init; }
     public string ControlType { get; init; } = "Unknown";
+    public string? ClassName { get; init; }
     public string? FrameworkId { get; init; }
     public string? RuntimeIdHash { get; init; }
     public RectD? Bounds { get; init; }
+    /// <summary>Bounds of a directly hit UIA Thumb, while Bounds and identity remain those of its owning slider.</summary>
+    public RectD? SliderThumbBounds { get; init; }
     public bool IsEnabled { get; init; } = true;
     public bool IsOffscreen { get; init; }
     public bool IsPassword { get; init; }
@@ -70,6 +82,15 @@ public sealed record ElementSnapshot
 
     /// <summary>Selection state for tabs/radio buttons (read-only SelectionItem property). Null when not exposed.</summary>
     public bool? IsSelected { get; init; }
+
+    public bool IsToggle { get; init; }
+    public bool? IsToggledOn { get; init; }
+    public bool HasDropdown { get; init; }
+    public bool IsBrowserToolbarCommand { get; init; }
+    public bool IsButtonOwner { get; init; }
+    /// <summary>Resolved from a direct Text/Image child using the sole parent hop; no grandparent was read.</summary>
+    public bool IsHeaderOwner { get; init; }
+    public CaptionButton CaptionButton { get; init; }
 
     public string? ParentControlType { get; init; }
     public string? ParentRuntimeIdHash { get; init; }
@@ -105,6 +126,55 @@ public sealed record ElementSnapshot
     public double? LogicalHeight => Bounds is { } b ? b.Height / Math.Max(0.5, Scale) : null;
 
     public double? LogicalWidth => Bounds is { } b ? b.Width / Math.Max(0.5, Scale) : null;
+
+    public bool IsDropdownOption => ControlType == "ListItem" && ParentControlType == "ComboBox";
+
+    public bool IsInlineHyperlink => ControlType == "Hyperlink" &&
+        ParentControlType is { } parent && SemanticVocabulary.TextContainers.Contains(parent);
+
+    /// <summary>A conservative geometry heuristic, not proof of text styling or link purpose.</summary>
+    public bool IsTextSizedGroupHyperlink => ControlType == "Hyperlink" && ParentControlType == "Group" &&
+        Bounds is { IsEmpty: false } b && ParentBounds is { IsEmpty: false } parent &&
+        double.IsFinite(Scale) && Scale > 0 &&
+        double.IsFinite(b.X) && double.IsFinite(b.Y) && double.IsFinite(b.Width) && double.IsFinite(b.Height) &&
+        double.IsFinite(parent.X) && double.IsFinite(parent.Y) && double.IsFinite(parent.Width) && double.IsFinite(parent.Height) &&
+        LogicalHeight <= 24 && parent.Height / b.Height >= 2 &&
+        b.X >= parent.X && b.Y >= parent.Y &&
+        b.X + b.Width <= parent.X + parent.Width && b.Y + b.Height <= parent.Y + parent.Height;
+
+    public bool IsCheckBoxOrToggleButton => ControlType == "CheckBox" || (ControlType == "Button" && IsToggle);
+
+    public bool IsSliderThumb => ControlType == "Slider" &&
+        SliderThumbBounds is { IsEmpty: false } thumb && thumb.Contains(QueryX, QueryY) &&
+        Bounds is { } slider && slider.Contains(QueryX, QueryY);
+
+    public RectD? LandingBounds => ControlType == "Slider" ? SliderThumbBounds : Bounds;
+
+    public bool IsToggleControl => IsToggle && ControlType is "CheckBox" or "Button" &&
+        !IsBrowserToolbarCommand && CaptionButton == CaptionButton.None;
+
+    public bool IsNavigationTarget => FocusedNavigationReason() is not null;
+
+    public string? FocusedNavigationReason() => this switch
+    {
+        { IsBrowserToolbarCommand: true } => null,
+        { IsInlineHyperlink: true } => "inline-hyperlink",
+        { IsTextSizedGroupHyperlink: true } => "text-sized-group-hyperlink",
+        { ControlType: "TabItem", IsHeaderOwner: true } => "navigation-tab",
+        { ControlType: "MenuItem", IsHeaderOwner: true, HasDropdown: true } => "menu-launcher",
+        { ControlType: "TabItem", ParentControlType: "Tab" } => "navigation-tab",
+        { ControlType: "MenuItem", ParentControlType: "MenuBar" } => "menu-launcher",
+        { ControlType: "MenuItem", HasDropdown: true, ParentControlType: "Menu" or "MenuItem" } => "menu-launcher",
+        { ControlType: "ComboBox" } => "picker",
+        { ControlType: "SplitButton", ParentControlType: "ToolBar" or "Menu" or "MenuBar" or "MenuItem" } => "menu-launcher",
+        // Expand/collapse capability alone also describes content cards and tree items.
+        _ => null,
+    };
+
+    public bool IsFocusedLanding =>
+        !IsCheckBoxOrToggleButton &&
+        CaptionButton == CaptionButton.None && ParentControlType != "TitleBar" &&
+        (IsSliderThumb || IsNavigationTarget);
 }
 
 public static class SemanticVocabulary
@@ -140,8 +210,9 @@ public static class SemanticVocabulary
     /// that TitleBar's outer right edge. No layout direction is read, so a mirrored (RTL) Close stays generic.
     /// </summary>
     public static bool IsCaptionClose(ElementSnapshot? s) =>
-        s is { ControlType: "Button", ParentControlType: "TitleBar", Bounds: { IsEmpty: false } b, ParentBounds: { IsEmpty: false } p } &&
-        Math.Abs((p.X + p.Width) - (b.X + b.Width)) / Math.Max(0.5, s.Scale) <= CaptionCloseEdgeTolerancePx;
+        s is { CaptionButton: CaptionButton.Close } ||
+        (s is { CaptionButton: CaptionButton.None, ControlType: "Button", ParentControlType: "TitleBar", Bounds: { IsEmpty: false } b, ParentBounds: { IsEmpty: false } p } &&
+         Math.Abs((p.X + p.Width) - (b.X + b.Width)) / Math.Max(0.5, s.Scale) <= CaptionCloseEdgeTolerancePx);
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<SemanticEventKind>))]
@@ -157,6 +228,7 @@ public enum SemanticEventKind
     GroupEdge,
     RangeStep,
     RangeLimit,
+    ToggleChanged,
     ForegroundChanged,
     DeviceUnavailable,
 
@@ -184,16 +256,21 @@ public sealed record SemanticEvent(
 
 public sealed class InterpreterConfig
 {
+    public EffectProfile Profile { get; set; } = EffectProfile.Focused;
     public double GeometryHysteresisPx { get; set; } = 5;
     public double MaxSnapshotAgeMs { get; set; } = 250;
     public double SupersededDistancePx { get; set; } = 24;
     public int RangeTicksWhenNoLargeChange { get; set; } = 10;
 
-    /// <summary>Arrivals fire immediately at or below this pointer speed, otherwise after a dwell. 0 = fire on every crossing.</summary>
+    /// <summary>Speed threshold for strip-edge interpretation; hover arrivals always require dwell.</summary>
     public double LandingSpeedPxPerSec { get; set; } = 1200;
 
-    /// <summary>Time inside a target after which an arrival fires even if the pointer was fast (it has stopped there).</summary>
-    public double LandingDwellMs { get; set; } = 80;
+    /// <summary>Dwell for tabs, large targets and targets without known bounds; speed never bypasses dwell.</summary>
+    public double LandingDwellMs { get; set; } = 50;
+
+    public double SmallTargetDwellMs { get; set; } = 30;
+    public double LargeTargetLogicalHeight { get; set; } = 56;
+    public double LargeTargetLogicalSide { get; set; } = 48;
 
     /// <summary>Maximum timer scheduling delay after the dwell deadline; later arrivals expire silently.</summary>
     public double LandingTickToleranceMs { get; set; } = 45;
@@ -204,11 +281,12 @@ public sealed class InterpreterConfig
     /// <summary>Targets smaller than this (logical px, smaller side) are ignored.</summary>
     public double MinTargetPx { get; set; } = 10;
 
-    public bool SkipInlineLinks { get; set; } = true;
     public bool SkipSelectedChoices { get; set; } = true;
 
     /// <summary>How long the last group is remembered across gaps (separators, padding) between its controls.</summary>
     public double GroupMemoryMs { get; set; } = 1500;
+
+    public double ToggleConfirmationMs { get; set; } = 150;
 }
 
 public sealed record InterpretResult(IReadOnlyList<SemanticEvent> Events, IReadOnlyList<string> Notes)
@@ -227,9 +305,12 @@ public sealed class SemanticInterpreter
     private ElementSnapshot? _current;
     private ElementSnapshot? _context;
     private Arrival? _pending;
+    private ToggleActivation? _toggle;
     private (string Key, double At)? _lastGroup;
     private bool _movedSinceSnapshot;
     private bool _hadSnapshot;
+    private bool _leftCurrent;
+    private bool _sliderThumbOccupied;
     private PointerObservation? _last;
     private double _speed;
     private int? _lastTick;
@@ -265,7 +346,16 @@ public sealed class SemanticInterpreter
         return new InterpretResult([], [$"state-cleared:{reason}"]);
     }
 
-    /// <summary>Landing speed in effect: configured, or learned from this user's pre-click speeds.</summary>
+    private bool ToggleFeedbackEnabled => Config.Profile != EffectProfile.Quiet;
+
+    public bool ObservingToggle => ToggleFeedbackEnabled &&
+        _current is { IsToggleControl: true, IsEnabled: true, IsPassword: false, IsOffscreen: false };
+
+    public bool NeedsToggleRefresh(double nowMs) =>
+        ToggleFeedbackEnabled && _toggle?.ReleasedAt is { } at &&
+        nowMs - at <= Config.ToggleConfirmationMs;
+
+    /// <summary>Speed threshold for strip edges, configured or learned; hover always requires dwell.</summary>
     public double EffectiveLandingSpeed
     {
         get
@@ -289,6 +379,7 @@ public sealed class SemanticInterpreter
     {
         var events = new List<SemanticEvent>();
         var notes = new List<string>();
+        var wasPrimaryDown = _last?.PrimaryDown ?? false;
         if (_last is { } last)
         {
             var dt = p.TimestampMs - last.TimestampMs;
@@ -316,6 +407,7 @@ public sealed class SemanticInterpreter
             {
                 Generation++;
                 _pending = null;
+                _toggle = null;
                 _speed = 0;
                 notes.Add("state-cleared:device-changed");
             }
@@ -329,9 +421,24 @@ public sealed class SemanticInterpreter
                 }
             }
 
+            if (!last.PrimaryDown && p.PrimaryDown)
+            {
+                _toggle = ToggleFeedbackEnabled &&
+                    _current is { IsToggleControl: true, IsToggledOn: not null, IsEnabled: true, IsPassword: false, IsOffscreen: false,
+                        RuntimeIdHash: not null, Bounds: { } bounds } target &&
+                    target.Generation == Generation && bounds.Contains(p.X, p.Y) && target.RequestedAtMs <= p.TimestampMs &&
+                    p.TimestampMs - target.RequestedAtMs <= Config.MaxSnapshotAgeMs
+                    ? new ToggleActivation(target, p.DeviceHandle, null, Generation)
+                    : null;
+            }
+
             if (last.PrimaryDown && !p.PrimaryDown)
             {
                 notes.Add("primary-released");
+                if (_toggle is { } toggle)
+                {
+                    _toggle = toggle with { ReleasedAt = p.TimestampMs };
+                }
             }
 
             if (p.X != last.X || p.Y != last.Y)
@@ -344,7 +451,31 @@ public sealed class SemanticInterpreter
             _movedSinceSnapshot = true;
         }
 
+        if (_toggle is { } armed &&
+            (!ToggleFeedbackEnabled || armed.Generation != Generation || armed.DeviceHandle != p.DeviceHandle ||
+             armed.Element.Bounds is not { } targetBounds || !targetBounds.Contains(p.X, p.Y)))
+        {
+            _toggle = null;
+        }
+
         _last = p;
+        if (_current?.ControlType == "Slider")
+        {
+            if (p.PrimaryDown)
+            {
+                _sliderThumbOccupied = true;
+            }
+            else if (!wasPrimaryDown && _current.SliderThumbBounds is { } thumb && !thumb.Contains(p.X, p.Y))
+            {
+                _sliderThumbOccupied = false;
+            }
+        }
+        if (_current?.Bounds is { } currentBounds &&
+            !currentBounds.Contains(p.X, p.Y, TargetHysteresis(_current)))
+        {
+            _leftCurrent = true;
+        }
+
         if (_current?.GroupKey is { } g && _lastGroup?.Key == g)
         {
             _lastGroup = (g, p.TimestampMs);
@@ -352,19 +483,25 @@ public sealed class SemanticInterpreter
 
         if (_pending is { } a)
         {
-            if (p.TimestampMs > ArrivalDue(a) + Config.LandingTickToleranceMs)
+            if (a.Element.ControlType == "Slider" && p.PrimaryDown)
+            {
+                _pending = null;
+                notes.Add("skip:slider-drag-hover");
+            }
+            else if (a.Element.IsCheckBoxOrToggleButton && p.PrimaryDown)
+            {
+                _pending = null;
+                notes.Add("skip:toggle-press-hover");
+            }
+            else if (p.TimestampMs > ArrivalDue(a) + Config.LandingTickToleranceMs)
             {
                 _pending = null;
                 notes.Add("arrival-expired");
             }
-            else if (a.Element.Bounds is { } b && !b.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
+            else if (a.Element.LandingBounds is { } b && !b.Contains(p.X, p.Y, TargetHysteresis(a.Element)))
             {
                 _pending = null;
                 notes.Add("passed-through");
-            }
-            else if (_speed <= EffectiveLandingSpeed)
-            {
-                Arrive(a, p, p.TimestampMs, _speed, "landed:slowed", events);
             }
         }
 
@@ -374,6 +511,13 @@ public sealed class SemanticInterpreter
     /// <summary>Resolve a pending arrival once the pointer has rested inside it for the dwell time.</summary>
     public InterpretResult OnTick(double nowMs)
     {
+        if (_toggle is { } toggle &&
+            (!ToggleFeedbackEnabled ||
+             toggle.ReleasedAt is { } released && nowMs - released > Config.ToggleConfirmationMs))
+        {
+            _toggle = null;
+        }
+
         if (_pending is not { } a || _last is not { } p || nowMs < ArrivalDue(a))
         {
             return InterpretResult.Empty;
@@ -386,9 +530,11 @@ public sealed class SemanticInterpreter
             return new InterpretResult([], ["arrival-expired"]);
         }
 
-        if (a.Element.Bounds is { } b && !b.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
+        if ((a.Element.LandingBounds is { } b && !b.Contains(p.X, p.Y, TargetHysteresis(a.Element))) ||
+            (a.Element.LandingBounds is null && (p.X != a.Element.QueryX || p.Y != a.Element.QueryY)))
         {
             _pending = null;
+            _leftCurrent = true;
             return new InterpretResult([], ["passed-through"]);
         }
 
@@ -442,7 +588,35 @@ public sealed class SemanticInterpreter
             return new InterpretResult(events, ["older-snapshot-discarded"]);
         }
 
+        // A nearby reply can still belong to a crossed target. It must not consume the final pointer movement.
+        if (s.Error is null && (s.QueryX != p.X || s.QueryY != p.Y) &&
+            (s.Bounds is not { } observedBounds || !observedBounds.Contains(p.X, p.Y)))
+        {
+            return new InterpretResult(events, ["superseded-snapshot-discarded"]);
+        }
+
         _context = s;
+
+        if (_toggle is { } toggle)
+        {
+            if (s.Error is not null || s.ElementKey != toggle.Element.ElementKey ||
+                !s.IsToggleControl || s.IsToggledOn is null || !s.IsEnabled || s.IsPassword || s.IsOffscreen)
+            {
+                _toggle = null;
+            }
+            else if (!p.PrimaryDown && toggle.ReleasedAt is { } released && s.RequestedAtMs >= released)
+            {
+                if (ToggleFeedbackEnabled && nowMs - released <= Config.ToggleConfirmationMs &&
+                    s.IsToggledOn != toggle.Element.IsToggledOn)
+                {
+                    _transition++;
+                    events.Add(Make(SemanticEventKind.ToggleChanged, p with { TimestampMs = released }, s, 0.9,
+                        [s.IsToggledOn == true ? "toggle-state:off-to-on" : "toggle-state:on-to-off", "primary-click"]));
+                    _toggle = null;
+                }
+            }
+        }
+
         if (s.Error is not null)
         {
             if (_current?.Bounds is { } cb && !cb.Contains(p.X, p.Y, Config.GeometryHysteresisPx))
@@ -460,28 +634,54 @@ public sealed class SemanticInterpreter
 
         var interactive = IsTarget(s, notes);
         var moved = _movedSinceSnapshot || !_hadSnapshot;
-        _movedSinceSnapshot = false;
+        if (s.QueryX == p.X && s.QueryY == p.Y)
+        {
+            _movedSinceSnapshot = false;
+        }
         _hadSnapshot = true;
-        if (_current is not null && s.ElementKey == _current.ElementKey)
+        if (_current?.ControlType == "Slider" && s.ControlType == "Slider" && s.ElementKey == _current.ElementKey)
+        {
+            // Track and thumb share range history, but only a new thumb visit can arm hover.
+            _current = s;
+            _leftCurrent = false;
+            if (s.Range is { } range)
+            {
+                RangeTransitions(p, s, range, events);
+            }
+            var onThumb = s.IsSliderThumb && s.SliderThumbBounds is { } thumb && thumb.Contains(p.X, p.Y);
+            var enteredThumb = onThumb && !_sliderThumbOccupied;
+            _sliderThumbOccupied = onThumb || p.PrimaryDown;
+            if (!interactive || !CanLand(s, p) || !onThumb || !s.IsEnabled || s.IsPassword)
+            {
+                _pending = null;
+            }
+            else if (_pending is { } pending)
+            {
+                _pending = pending with { Element = s, DwellMs = Math.Max(pending.DwellMs, DwellFor(s)) };
+            }
+            else if (enteredThumb && moved)
+            {
+                ArmArrival(s, p, nowMs, events, notes);
+            }
+            return new InterpretResult(events, notes);
+        }
+        if (_current is not null && s.ElementKey == _current.ElementKey &&
+            s.ControlType == _current.ControlType && !_leftCurrent)
         {
             _current = s;
             if (_pending is { } pending)
             {
-                _pending = !interactive || s.IsPassword || !s.IsEnabled
+                _pending = !interactive || s.IsPassword || !s.IsEnabled || !CanLand(s, p)
                     ? null
-                    : pending with { Element = s };
-            }
-
-            if (s.ControlType == "Slider" && s.Range is { } r)
-            {
-                RangeTransitions(p, s, r, events);
+                    : pending with { Element = s, DwellMs = Math.Max(pending.DwellMs, DwellFor(s)) };
             }
 
             return new InterpretResult(events, notes);
         }
 
         // Jitter guard: a different element reported for a point that is only just outside the current one.
-        if (_current?.Bounds is { } held && held.Contains(s.QueryX, s.QueryY, Config.GeometryHysteresisPx) && !held.Contains(s.QueryX, s.QueryY))
+        if (!(_current?.ControlType == "TabItem" && s.ControlType == "TabItem") &&
+            _current?.Bounds is { } held && held.Contains(s.QueryX, s.QueryY, Config.GeometryHysteresisPx) && !held.Contains(s.QueryX, s.QueryY))
         {
             notes.Add("hysteresis-hold");
             return new InterpretResult(events, notes);
@@ -491,6 +691,8 @@ public sealed class SemanticInterpreter
         if (!moved)
         {
             _current = interactive ? s : null;
+            _leftCurrent = false;
+            _sliderThumbOccupied = s.ControlType == "Slider" && (s.IsSliderThumb || p.PrimaryDown);
             _pending = null;
             InitRange(s);
             notes.Add("stationary-ui-change-silent");
@@ -498,16 +700,11 @@ public sealed class SemanticInterpreter
         }
 
         var previous = _current;
+        _leftCurrent = false;
         _pending = null;
         if (previous is not null)
         {
             events.Add(Make(SemanticEventKind.LeaveControl, p, previous, 0.9, ["identity-changed"]));
-            if (previous.ParentBounds is { } pb && previous.GroupKey is not null && s.GroupKey != previous.GroupKey &&
-                ExitsAlongLongAxis(pb, s.QueryX, s.QueryY) && _speed <= EffectiveLandingSpeed * 1.5)
-            {
-                _transition++;
-                events.Add(Make(SemanticEventKind.GroupEdge, p, previous, 0.8, ["left-strip-end", $"group:{previous.ParentControlType}"]) with { Destination = s });
-            }
         }
 
         if (!interactive)
@@ -518,20 +715,46 @@ public sealed class SemanticInterpreter
         }
 
         _current = s;
+        _sliderThumbOccupied = s.ControlType == "Slider" && (s.IsSliderThumb || p.PrimaryDown);
         InitRange(s);
-        var arrival = new Arrival(s, p.TimestampMs, nowMs);
-        if (_speed <= EffectiveLandingSpeed)
+        if (!CanLand(s, p))
         {
-            Arrive(arrival, p, p.TimestampMs, _speed, "landed:slow-entry", events);
+            notes.Add(s.IsCheckBoxOrToggleButton ? "skip:toggle-hover-disabled" :
+                s.ControlType == "Slider" ? p.PrimaryDown ? "skip:slider-drag-hover" : "skip:slider-track-hover" :
+                "skip:focused-target-not-enabled");
+            return new InterpretResult(events, notes);
+        }
+
+        ArmArrival(s, p, nowMs, events, notes);
+        return new InterpretResult(events, notes);
+    }
+
+    private bool CanLand(ElementSnapshot s, PointerObservation p) =>
+        s.ControlType != "CheckBox" &&
+        !(s.IsCheckBoxOrToggleButton && p.PrimaryDown) &&
+        (Config.Profile == EffectProfile.Everything || s.IsFocusedLanding) &&
+        (s.ControlType != "Slider" || (s.IsSliderThumb && !p.PrimaryDown &&
+            s.SliderThumbBounds is { } thumb && thumb.Contains(p.X, p.Y) &&
+            Math.Min(thumb.Width, thumb.Height) / Math.Max(0.5, s.Scale) >= Config.MinTargetPx));
+
+    private void ArmArrival(ElementSnapshot s, PointerObservation p, double nowMs, List<SemanticEvent> events, List<string> notes)
+    {
+        var arrival = new Arrival(s, p.TimestampMs, nowMs, DwellFor(s));
+        _pending = arrival;
+        if (nowMs >= ArrivalDue(arrival))
+        {
+            var landed = OnTick(nowMs);
+            events.AddRange(landed.Events);
+            notes.AddRange(landed.Notes);
         }
         else
         {
-            _pending = arrival;
             notes.Add("arrival-pending");
         }
-
-        return new InterpretResult(events, notes);
     }
+
+    // Tab identity plus dwell handles edge crossings; extending tab bounds can attribute a landing to its neighbor.
+    private double TargetHysteresis(ElementSnapshot target) => target.ControlType is "TabItem" or "Slider" ? 0 : Config.GeometryHysteresisPx;
 
     private void Arrive(Arrival a, PointerObservation p, double at, double speed, string how, List<SemanticEvent> events, double? decidedAt = null)
     {
@@ -554,6 +777,15 @@ public sealed class SemanticInterpreter
         if (SemanticVocabulary.IsCaptionClose(s))
         {
             evidence.Add("caption-close");
+        }
+
+        if (Config.Profile == EffectProfile.Focused && s.IsFocusedLanding && s.FocusedNavigationReason() is { } reason)
+        {
+            evidence.Add($"focused:{reason}");
+        }
+        else if (Config.Profile == EffectProfile.Focused && s.ControlType == "Slider")
+        {
+            evidence.Add("focused:slider-hover");
         }
 
         _transition++;
@@ -632,7 +864,8 @@ public sealed class SemanticInterpreter
     /// <summary>Is this something you can *do*, worth a tick? Records why not in <paramref name="notes"/>.</summary>
     private bool IsTarget(ElementSnapshot s, List<string> notes)
     {
-        if (!SemanticVocabulary.InteractiveTypes.Contains(s.ControlType) || !s.IsControlElement || s.IsOffscreen)
+        if ((!SemanticVocabulary.InteractiveTypes.Contains(s.ControlType) &&
+             !(Config.Profile == EffectProfile.Everything && s.IsDropdownOption)) || !s.IsControlElement || s.IsOffscreen)
         {
             return false;
         }
@@ -640,12 +873,6 @@ public sealed class SemanticInterpreter
         if (s.LogicalMinSide is { } side && side < Config.MinTargetPx)
         {
             notes.Add("skip:too-small");
-            return false;
-        }
-
-        if (Config.SkipInlineLinks && s.ControlType == "Hyperlink" && s.ParentControlType is { } pt && SemanticVocabulary.TextContainers.Contains(pt))
-        {
-            notes.Add("skip:inline-link");
             return false;
         }
 
@@ -658,22 +885,13 @@ public sealed class SemanticInterpreter
         return true;
     }
 
-    private static bool ExitsAlongLongAxis(RectD strip, double x, double y)
-    {
-        if (strip.Contains(x, y))
-        {
-            return false;
-        }
-
-        var inRows = y >= strip.Y && y < strip.Y + strip.Height;
-        var inCols = x >= strip.X && x < strip.X + strip.Width;
-        return strip.Width >= strip.Height ? inRows && !inCols : inCols && !inRows;
-    }
-
     private void ResetElement()
     {
         _current = null;
+        _leftCurrent = false;
+        _sliderThumbOccupied = false;
         _pending = null;
+        _toggle = null;
         _lastTick = null;
         _atMin = _atMax = false;
     }
@@ -684,7 +902,22 @@ public sealed class SemanticInterpreter
 
     private static double Distance(double x1, double y1, double x2, double y2) => Math.Sqrt(Math.Pow(x1 - x2, 2) + Math.Pow(y1 - y2, 2));
 
-    private double ArrivalDue(Arrival arrival) => Math.Max(arrival.Since + Config.LandingDwellMs, arrival.KnownAt);
+    private double DwellFor(ElementSnapshot target)
+    {
+        if (target.ControlType == "TabItem" || target.LandingBounds is not { IsEmpty: false } bounds)
+        {
+            return Config.LandingDwellMs;
+        }
 
-    private sealed record Arrival(ElementSnapshot Element, double Since, double KnownAt);
+        var scale = Math.Max(0.5, target.Scale);
+        return bounds.Height / scale >= Config.LargeTargetLogicalHeight ||
+            Math.Min(bounds.Width, bounds.Height) / scale >= Config.LargeTargetLogicalSide
+            ? Config.LandingDwellMs : Config.SmallTargetDwellMs;
+    }
+
+    private static double ArrivalDue(Arrival arrival) => Math.Max(arrival.Since + arrival.DwellMs, arrival.KnownAt);
+
+    private sealed record Arrival(ElementSnapshot Element, double Since, double KnownAt, double DwellMs);
+
+    private sealed record ToggleActivation(ElementSnapshot Element, long DeviceHandle, double? ReleasedAt, long Generation);
 }

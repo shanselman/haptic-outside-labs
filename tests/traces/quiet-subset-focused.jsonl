@@ -1,0 +1,23 @@
+{"type":"comment","text":"Focused: menu/tab/slider Hover plus drag Step, Collide, Step (six pulses). Quiet: tab Hover plus the same three drag pulses (four), never radio/group/strip cues. Pressing before a second slider dwell cancels its hover without cancelling drag feedback."}
+{"type":"process","pid":100,"name":"haptics-lab"}
+{"t":0,"type":"pointer","x":20,"y":15,"fg":100}
+{"t":2,"type":"element","req":0,"x":20,"y":15,"pid":100,"controlType":"MenuItem","rid":"menu","bounds":[0,0,40,30],"parentType":"MenuBar","parentRid":"bar","parentBounds":[0,0,100,30],"dropdown":true}
+{"t":300,"type":"pointer","x":80,"y":15,"fg":100}
+{"t":302,"type":"element","req":300,"x":80,"y":15,"pid":100,"controlType":"RadioButton","rid":"radio","bounds":[60,0,40,30],"parentType":"Group","selected":false}
+{"t":600,"type":"pointer","x":140,"y":15,"fg":100}
+{"t":602,"type":"element","req":600,"x":140,"y":15,"pid":100,"controlType":"TabItem","rid":"tab","bounds":[120,0,60,30],"parentType":"Tab","parentRid":"tabs","parentBounds":[120,0,60,30],"selected":false}
+{"t":900,"type":"pointer","x":220,"y":15,"fg":100}
+{"t":902,"type":"element","req":900,"x":220,"y":15,"pid":100,"controlType":"Slider","rid":"slider","bounds":[200,0,200,60],"thumbBounds":[210,5,20,20],"range":{"value":0,"min":0,"max":100,"small":1,"large":10}}
+{"t":1200,"type":"pointer","x":230,"y":15,"fg":100,"primary":true}
+{"t":1202,"type":"element","req":1200,"x":230,"y":15,"pid":100,"controlType":"Slider","rid":"slider","bounds":[200,0,200,60],"range":{"value":20,"min":0,"max":100,"small":1,"large":10}}
+{"t":1500,"type":"pointer","x":380,"y":15,"fg":100,"primary":true}
+{"t":1502,"type":"element","req":1500,"x":380,"y":15,"pid":100,"controlType":"Slider","rid":"slider","bounds":[200,0,200,60],"range":{"value":100,"min":0,"max":100,"small":1,"large":10}}
+{"t":1800,"type":"pointer","x":380,"y":15,"fg":100}
+{"t":1802,"type":"element","req":1800,"x":380,"y":15,"pid":100,"controlType":"Slider","rid":"slider","bounds":[200,0,200,60],"range":{"value":50,"min":0,"max":100,"small":1,"large":10}}
+{"t":2100,"type":"pointer","x":450,"y":15,"fg":100}
+{"t":2102,"type":"element","req":2100,"x":450,"y":15,"pid":100,"controlType":"Pane","rid":"outside","bounds":[420,0,50,60]}
+{"t":2400,"type":"pointer","x":520,"y":15,"fg":100}
+{"t":2402,"type":"element","req":2400,"x":520,"y":15,"pid":100,"controlType":"Slider","rid":"second-slider","bounds":[500,0,200,60],"thumbBounds":[510,5,20,20],"range":{"value":0,"min":0,"max":100,"small":1,"large":10}}
+{"t":2420,"type":"pointer","x":530,"y":15,"fg":100,"primary":true}
+{"t":2422,"type":"element","req":2420,"x":530,"y":15,"pid":100,"controlType":"Slider","rid":"second-slider","bounds":[500,0,200,60],"range":{"value":10,"min":0,"max":100,"small":1,"large":10}}
+{"t":2500,"type":"tick"}

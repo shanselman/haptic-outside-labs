@@ -3,6 +3,24 @@
 These notes explain *why* the code looks the way it does: the bets, the trade-offs, and the things that were
 deliberately left out. The spec ([`SPEC.md`](SPEC.md)) says what to build; this says how we interpreted it.
 
+**Current style decisions (2026-11-04):** SPEC section 8.5 supersedes the older experiments below.
+Inline-link Hover is enabled in all styles. Focused also accepts Hyperlinks directly under Group at most 24 logical
+px tall, fully contained in a parent at least twice their height. This uses existing metadata, not content reads
+or CSS matching; it is a heuristic and can admit compact button-like links. Quiet remains inline-only.
+Other links and dropdown options are Everything-only.
+Dwell is 30 ms for small controls and 50 ms for all tabs or targets at least 56 logical px tall or 48 by 48.
+Slider size means thumb size; missing bounds use 50 ms. Fresh geometry may extend, never shorten a visit's dwell.
+Checkbox hover stays disabled, but Everything restores
+toggle-button Hover (including formatting buttons and Teams app-rail buttons). Live rail metadata exposed
+toggle Buttons and Image parts; direct Text/Image parts now share their immediate Button/Hyperlink owner's
+identity and restrictive safety flags without a second parent read. By the subsequent user decision on 2026-11-04,
+taskbar buttons return in Everything only via a bounded background geometry scan; Quiet/Focused still reject
+shell hosts before UIA. Everything uses the existing 25/s dense ceiling without increasing intensity or bypassing dwell.
+Teams and Figma captures showed why dropdown Buttons cannot be classified reliably from their class names or geometry:
+those are implementation details, while `HasDropdown` also appears on ordinary commands. Focused therefore uses
+explicit UIA menu and split-control roles rather than app-specific Button exceptions. Real chevrons exposed only as
+generic Buttons may remain silent; Everything remains available for broader hover coverage.
+
 ## 1. The whole project hinges on one sentence in the docs
 
 `InputHapticsManager` *"triggers haptic feedback on the input device that most recently delivered input to the
@@ -157,10 +175,10 @@ richer waveforms (Align, Success, Error) are reserved for apps that actually *kn
 pipe. The generic layer still never fakes outcomes.
 
 **Choosiness rules, in order of payoff:**
-1. *Land, don't pass.* Entering a control while moving faster than the landing speed is a pass, so it's held as a
-   pending arrival. It fires if the pointer slows down or dwells (80 ms) on it, and is dropped (`passed-through`) if it
-   leaves first. A stopped pointer sends no input, so the interpreter needs a clock (`OnTick`). The landing speed adapts
-   to 2.5× the median speed just before your last clicks (clamped to 400–2500 px/s): fast users get a higher bar.
+1. *Land, don't pass.* Every style now requires 50 ms continuously inside a target, regardless of approach speed.
+   Leaving before completion cancels it; returning to the same identity rearms after an unsampled departure.
+   A stopped pointer sends no input, so the interpreter needs a clock (`OnTick`). A valid delayed lookup can finish
+   an already elapsed dwell through the same containment/freshness checks. Speed learning no longer gates hover.
 2. *Group first.* Entering a toolbar, ribbon group, menu, or tab strip you haven't been in for 1.5 s is a Step. It
    orients you before any land. Moving within the group refreshes the memory, so working in one toolbar doesn't
    re-detent.
@@ -169,14 +187,14 @@ pipe. The generic layer still never fakes outcomes.
 4. *Size in logical px.* Big targets (≥56 logical px tall, or ≥48 both ways: Office's large ribbon buttons) land with
    Click; tiny ones (<10 logical px) are silent. Physical pixels would make every 150% display "big".
 5. *Edges.* Leaving a toolbar or tab strip off its long-axis end is a Collide: "end of the line".
-6. *Thin out in busy apps.* N lands within 2 s from one app (10 by default, 6 for browsers, chat, and IDEs) thins
-   its lands to N per 2 s, evenly spaced, for 4 s. Structure (detents, edges) is never thinned. This used to *pause*
-   lands for 4 s, making the app "Quiet" exactly when it was too dense, but the taskbar is all lands and no
-   structure: sweeping across it ticked, then stopped, and felt broken (2026-10). Thinning never goes silent.
-7. *Skip inline links* (Hyperlink inside Document/Text/Edit): a paragraph of links would be a rattle.
+6. *No app-specific hover thinning by default.* Earlier revisions thinned busy apps after N landings.
+   Current defaults disable this in every style so a confirmed dwell behaves consistently across applications;
+   global rate limits and same-target cooldown still protect against noise.
+7. *Skip inline links* (Hyperlink inside Document/Text/Edit) in Quiet/Everything. Focused excludes all hyperlinks after
+   the user found the initial link-hover experiment too noisy.
 
-**Styles replaced profiles.** Quiet (structure only), Focused (default), Everything (no landing filter, no density
-limit, looser rate caps; for demos). One question, "how much do you want?", instead of a matrix of knobs.
+**Styles replaced profiles.** Quiet (structure only), Focused (default), Everything (more control roles and looser
+rate caps). All share the same dwell rule; Everything no longer means every fly-by.
 
 **Touchpad boost.** The haptics API has no x/y, so a touchpad pulse is the whole pad, and it feels lighter than the
 mouse at the same intensity. We multiply intensity by 1.3 for touchpad controllers (tray option).
@@ -200,6 +218,74 @@ Expected filesystem and native startup failures are reported at the operation bo
 blanket dispatcher handler. Failed engine startup deauthorizes and disposes its uncommitted pipeline, turns the
 switch off, and reports the error. Comparison artifacts are created before changing the style or hiding controls.
 Unexpected programming errors still propagate.
+
+## 13. Focused becomes selective (2026-10-28; revised 2026-11-02)
+
+Current rule: Quiet is a subset of Focused, so radio/group/strip cues cannot return in Quiet when Focused suppresses
+them. Quiet keeps eligible tab detents and slider steps/limits. Focused also includes hyperlink and slider hover
+after 50 ms; slider drag cancels pending hover but preserves detents/limits. Tray and Showcase use this shared policy.
+
+Latest evaluation removes Close, ordinary toolbar commands, recognized browser toolbar commands and leaf open-menu
+choices from Focused. Tabs, pickers/options, menu launchers, click-confirmed toggles and slider steps/limits remain.
+The removed command roles stay available in Everything. Close is off in the local apps, awaiting a replacement.
+Universal 50 ms dwell replaces speed-dependent landing in all styles and fixes same-identity re-entry after an
+unsampled pass-through. Per-app density thinning is disabled by default. The following records earlier iterations.
+
+The user first paused taskbar and Close hover to prioritize performance, then restored only the lightweight
+original Close rule: UIA Button directly under TitleBar with right edges within 2 logical pixels.
+Local Close hover is now On; taskbar hover remains Off. The live pipeline never enables native caption probing,
+even when Close hover is On. Unsupported custom caption layouts stay silent instead of using extra native queries.
+The earlier native implementation remains available to explicit worker diagnostics and authored replays.
+The subsequent command-versus-content filter uses the existing one-parent metadata and defaults to silence.
+Tabs require a Tab parent; toolbar buttons/split buttons require ToolBar; menu items require a menu parent.
+Explicit ComboBox pickers/options and the verified browser commands remain eligible. Expand/collapse capability
+alone no longer promotes content cards or ambiguous buttons to navigation; menu launchers require toolbar/menu
+context. This deliberately trades some custom-navigation coverage for less noise, without Teams-specific rules,
+extra tree scans or content reads. Semantic evidence records the qualifying rule. Authored people-card regressions
+do not establish the actual Teams participant provider shape; live coverage remains to be confirmed.
+
+User-directed local tuning: Focused keeps deliberate landings on window Close (not minimize/maximize), taskbar app
+icons, toolbar navigation/commands, unselected tabs, and dropdown/menu targets. Group entries and inferred strip exits
+are silent in this style. Slider detents and endpoint limits keep their existing quantization (10 in the demo).
+Checkboxes and toggle buttons no longer land in Focused: a mouse-associated, observed change in either direction
+(Off-to-On or On-to-Off) emits one Step. Unknown/indeterminate state, keyboard/programmatic changes without a mouse
+click, and failed clicks are silent. Per the November 2 revision, toolbar commands, tabs and dropdown/menu targets
+always use Hover, even when large. Tabs now share landing cooldown and density rules instead of detent rules.
+The later tuning removes browser density throttling and reduces the default fast-crossing dwell from 80 to 50 ms.
+The same-target cooldown and global safety caps remain; deliberate browser tab sweeps no longer slow down after six lands.
+Quiet/Everything keep the original vocabulary and rules; Focused taskbar buttons retain the DPI-aware large-target
+Click rule. Close retains main's single light Hover and its default-on Close hover setting, never a large-target Click.
+Native caption classification takes precedence over geometric fallback.
+
+This requires read-only toggle state and dropdown-capability metadata, approved by the user. We use property
+identifiers, not action-pattern objects; the forbidden-type scanner still bans TogglePattern and ExpandCollapsePattern.
+The hovered toggle is refreshed to keep a recent pre-click state, with bounded faster observation after release.
+Refreshes preserve the originating input route and interaction generation without advancing raw-input freshness.
+Device/input-class changes and explicit invalidation cancel click confirmation.
+A click can correlate with a state change, not prove its cause; this is never evidence of application success.
+Caption identification uses bounded WM_NCHITTEST / WM_GETTITLEBARINFOEX queries in the UIA worker, using the reported
+button kind or Close rectangle rather than assuming Close is the rightmost button. Unknown custom chrome/navigation layouts
+remain silent rather than using labels, screenshots or broad content-row heuristics.
+
+The initial hyperlink-hover refinement was too noisy in use; the user chose to turn all hyperlink hover off.
+The extra text/image-to-link parent normalization was removed too. Live Chrome metadata exposed Downloads as `PinnedActionToolbarButton`, a toggle
+under a Pane, while other toolbar commands exposed dropdown capability. An exact native-host/role/class allowlist treats
+these recognized browser commands as Hover-only navigation, not preference toggles. Taskbar preview probes returned
+empty shell hosts or underlying app elements; the user deferred preview support rather than guessing from popup geometry.
+
+Earlier Close probing showed why UIA-role gating is insufficient: Chrome can supply native caption hit codes without any
+accessible caption buttons. The retained native path checks caption identity independently of UIA type and retains native
+availability plus observed sensitive/disabled flags. When no usable rectangle is reported, the window/button identity
+remains stable and dwell requires fresh confirmation at the current point rather than an invented hit box.
+Later probes found Explorer returning HTCLIENT over valid caption rectangles, and Copilot's separate
+`GitHubCopilotCaptionHost` returning HTTRANSPARENT while its same-process Tauri owner reports the real button kind.
+A loose DWM caption region enables the reported-rectangle fallback without messaging every hovered window.
+Only the observed helper/owner class pair, with matching PID, can use owner resolution. The DWM region never identifies
+an individual button. Taskbar discovery now filters interactive roles with a geometry-only cache, then refreshes the
+chosen target's safety/identity metadata rather than acquiring every property and pattern for every descendant.
+Warm taskbar lookups still cost several milliseconds, so per-pixel reads can occupy the worker continuously.
+Same-icon Focused queries now coalesce to one per 16 ms with a latest-request timer, without delaying arrival on
+another icon or changing raw-input timestamps, foreground/device generations, or hover filtering.
 
 **Things we chose not to do:** per-pixel "texture" while moving (the device can't localize it, and it reads as
 vibration); Grow on drag (we can't tell a drag from a selection reliably without reading content); scroll texture
