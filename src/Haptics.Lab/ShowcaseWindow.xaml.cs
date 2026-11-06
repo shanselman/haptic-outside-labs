@@ -9,7 +9,6 @@ using Haptics.Core;
 using Haptics.Lab.Experiments;
 using Haptics.Windows;
 using Application = System.Windows.Forms.Application;
-using SystemColors = System.Drawing.SystemColors;
 using WpfControls = System.Windows.Controls;
 
 namespace Haptics.Lab;
@@ -33,11 +32,6 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     private readonly ConcurrentQueue<PipelineEvent> _events = new();
     private readonly ObservableCollection<string> _activity = [];
     private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 100 };
-    private readonly ListView _inspector = NewList(("t (ms)", 80), ("Event", 140), ("Control", 110), ("Outcome", 90), ("Reason", 240), ("Waveform", 80), ("Detail", 360));
-    private readonly Label _stats = new() { Dock = DockStyle.Top, Height = 32, Font = Ui.Mono, Padding = new Padding(6, 6, 0, 0), Text = "The Showcase engine is not running." };
-    private readonly ListView _gates = NewList(("Gate", 330), ("State", 190), ("Detail", 560));
-    private readonly ListView _experiments = NewList(("Id", 80), ("Title", 360), ("Mode", 80), ("Impl", 50), ("Latest (this machine)", 150), ("Summary", 420));
-    private readonly ListView _runs = NewList(("When (UTC)", 130), ("Experiment", 90), ("Status", 120), ("Class", 90), ("Explanation", 680));
     private readonly bool _startCompare;
     private ObservationPipeline? _pipeline;
     private CooperativeServer? _cooperation;
@@ -55,7 +49,6 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     private bool _visualDemo;
     private OutputOwnership? _outputOwnership;
     private bool? _compact;
-    private Color _embeddedBackground;
     private EffectProfile _selectedStyle = EffectProfile.Focused;
 
     public ShowcaseWindow(bool startCompare = false)
@@ -114,8 +107,25 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         BuildVocabulary();
         DemoContent.Content = new ShowcaseDemo();
         ActivityList.ItemsSource = _activity;
-        InspectorHost.Child = InspectorPanel();
-        LabHost.Child = LabPanel();
+        RunExperimentButton.Click += (_, _) =>
+        {
+            if (ExperimentsList.SelectedItem is GridRow row)
+            {
+                StartChild(["run", row.Cells[0]], row.Cells[0]);
+            }
+        };
+        OpenFixtureButton.Click += (_, _) => StartChild(["fixture"], null);
+        WriteReportButton.Click += (_, _) => Process.Start(new ProcessStartInfo(Report.Write().Html) { UseShellExecute = true });
+        RunsList.MouseDoubleClick += (_, e) =>
+        {
+            if (e.OriginalSource is DependencyObject source &&
+                System.Windows.Controls.ItemsControl.ContainerFromElement(RunsList, source) is System.Windows.Controls.ListViewItem { DataContext: GridRow { Directory: { } dir } })
+            {
+                var summary = Path.Combine(dir, "summary.md");
+                OpenRunPath(File.Exists(summary) ? summary : dir);
+            }
+        };
+        RefreshLab();
         SizeChanged += (_, _) => UpdateLayoutForWidth();
         ActivityCard.SizeChanged += (_, _) => UpdateActivityHeight();
         PreviewMouseMove += (_, _) => PrimeFromPointer();
@@ -135,6 +145,9 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     public string? ResultPath { get; private set; }
 
     internal Action<string, string> ReportOperationError { get; set; }
+
+    internal Action<string> OpenRunPath { get; set; } =
+        path => Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
 
     private double Intensity => IntensitySlider.Value / 10.0;
 
@@ -157,8 +170,6 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         _rippleOverlay = null;
         _outputOwnership?.Dispose();
         _outputOwnership = null;
-        InspectorHost.Dispose();
-        LabHost.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -268,62 +279,6 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     private void UpdateActivityHeight() =>
         ActivityBody.MaxHeight = _compact == true ? 110 : Math.Max(100, ActivityCard.ActualHeight - 112);
 
-    private static ListView NewList(params (string Name, int Width)[] cols)
-    {
-        var lv = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, BorderStyle = BorderStyle.None, Font = Ui.Body };
-        foreach (var (name, width) in cols)
-        {
-            lv.Columns.Add(name, width);
-        }
-
-        return lv;
-    }
-
-    private Control InspectorPanel()
-    {
-        var panel = new Panel { Dock = DockStyle.Fill };
-        panel.Controls.Add(_inspector);
-        panel.Controls.Add(_stats);
-        return panel;
-    }
-
-    private Control LabPanel()
-    {
-        var inner = new TabControl { Dock = DockStyle.Fill };
-        var gates = new TabPage("Gates");
-        gates.Controls.Add(_gates);
-        var exps = new TabPage("Experiments");
-        var bar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(0, 4, 0, 8) };
-        var run = new System.Windows.Forms.Button { Text = "Run selected (separate window)", AutoSize = true };
-        run.Click += (_, _) =>
-        {
-            if (_experiments.SelectedItems.Count > 0)
-            {
-                StartChild(["run", _experiments.SelectedItems[0].Text], _experiments.SelectedItems[0].Text);
-            }
-        };
-        var fixture = new System.Windows.Forms.Button { Text = "Open fixture", AutoSize = true };
-        fixture.Click += (_, _) => StartChild(["fixture"], null);
-        var report = new System.Windows.Forms.Button { Text = "Write report", AutoSize = true };
-        report.Click += (_, _) => Process.Start(new ProcessStartInfo(Report.Write().Html) { UseShellExecute = true });
-        bar.Controls.AddRange([run, fixture, report]);
-        exps.Controls.Add(_experiments);
-        exps.Controls.Add(bar);
-        var results = new TabPage("Results");
-        _runs.DoubleClick += (_, _) =>
-        {
-            if (_runs.SelectedItems.Count > 0 && _runs.SelectedItems[0].Tag is string dir)
-            {
-                var summary = Path.Combine(dir, "summary.md");
-                Process.Start(new ProcessStartInfo(File.Exists(summary) ? summary : dir) { UseShellExecute = true });
-            }
-        };
-        results.Controls.Add(_runs);
-        inner.TabPages.AddRange([gates, exps, results]);
-        RefreshLab();
-        return inner;
-    }
-
     private void OnShownCore()
     {
         if (_started)
@@ -368,7 +323,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             _pipeline = null;
             _cooperation?.Dispose();
             _cooperation = null;
-            _stats.Text = "The Showcase engine is not running.";
+            InspectorStats.Text = "The Showcase engine is not running.";
             _outputOwnership?.Dispose();
             _outputOwnership = null;
             _pausedForOtherOwner = false;
@@ -460,7 +415,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
         _syncing = false;
         EngineSwitch.IsEnabled = true;
         _rippleOverlay?.Hide();
-        _stats.Text = "The Showcase engine is not running.";
+        InspectorStats.Text = "The Showcase engine is not running.";
         UpdateStatus();
     }
 
@@ -525,7 +480,7 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
                 _syncing = true;
                 EngineSwitch.IsChecked = false;
                 _syncing = false;
-                _stats.Text = "The Showcase engine is not running.";
+                InspectorStats.Text = "The Showcase engine is not running.";
                 UpdateStatus();
             }
 
@@ -637,14 +592,12 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
 
     private void Drain()
     {
-        RefreshEmbeddedTheme();
         if (_pipeline is not null)
         {
             var s = _pipeline.Stats();
-            _stats.Text = $"raw {s.RawEvents} (bg {s.BackgroundRawEvents})  uia p50 {s.LookupP50:0.0}/p95 {s.LookupP95:0.0}ms  emit {s.Emits} supp {s.Suppressed}  sent {s.ApiAccepted} rejected {s.ApiRejected} late {s.Expired}  dwell small {_pipeline.Interpreter.Config.SmallTargetDwellMs:0}ms / tabs+large {_pipeline.Interpreter.Config.LandingDwellMs:0}ms";
+            InspectorStats.Text = $"raw {s.RawEvents} (bg {s.BackgroundRawEvents})  uia p50 {s.LookupP50:0.0}/p95 {s.LookupP95:0.0}ms  emit {s.Emits} supp {s.Suppressed}  sent {s.ApiAccepted} rejected {s.ApiRejected} late {s.Expired}  dwell small {_pipeline.Interpreter.Config.SmallTargetDwellMs:0}ms / tabs+large {_pipeline.Interpreter.Config.LandingDwellMs:0}ms";
         }
 
-        _inspector.BeginUpdate();
         var n = 0;
         while (n++ < 300 && _events.TryDequeue(out var e))
         {
@@ -694,16 +647,14 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
             }
         }
 
-        while (_inspector.Items.Count > 500)
+        while (InspectorList.Items.Count > 500)
         {
-            _inspector.Items.RemoveAt(_inspector.Items.Count - 1);
+            InspectorList.Items.RemoveAt(InspectorList.Items.Count - 1);
         }
-
-        _inspector.EndUpdate();
     }
 
     private void Row(double at, string a, string b, string c, string d, string? w, string detail) =>
-        _inspector.Items.Insert(0, new ListViewItem([$"{at - _startMs:0}", a, b, c, d, w ?? "", detail]));
+        InspectorList.Items.Insert(0, new GridRow([$"{at - _startMs:0}", a, b, c, d, w ?? "", detail]));
 
     private void Felt(string text, bool quiet = false)
     {
@@ -1049,62 +1000,29 @@ public partial class ShowcaseWindow : Wpf.Ui.Controls.FluentWindow, IExperimentF
     private void RefreshLab()
     {
         var results = EvidenceLedger.Load();
-        _gates.BeginUpdate();
-        _gates.Items.Clear();
+        GatesList.Items.Clear();
         foreach (var g in EvidenceLedger.Gates(results, _fp))
         {
-            _gates.Items.Add(new ListViewItem([g.Gate, g.State, g.Detail]));
+            GatesList.Items.Add(new GridRow([g.Gate, g.State, g.Detail]));
         }
 
-        _gates.EndUpdate();
-        _experiments.BeginUpdate();
-        _experiments.Items.Clear();
+        ExperimentsList.Items.Clear();
         foreach (var e in ExperimentCatalog.All)
         {
             var latest = EvidenceLedger.Latest(results, e.Id, _fp)?.Result.Status.ToString() ?? "NOT_RUN";
-            _experiments.Items.Add(new ListViewItem([e.Id, e.Title, e.Mode, e.Implemented ? "yes" : "no", latest, e.Summary]));
+            ExperimentsList.Items.Add(new GridRow([e.Id, e.Title, e.Mode, e.Implemented ? "yes" : "no", latest, e.Summary]));
         }
 
-        _experiments.EndUpdate();
-        _runs.BeginUpdate();
-        _runs.Items.Clear();
+        RunsList.Items.Clear();
         foreach (var r in results.AsEnumerable().Reverse())
         {
-            _runs.Items.Add(new ListViewItem([$"{r.Result.EndedAtUtc:yyyy-MM-dd HH:mm:ss}", r.Result.ExperimentId, r.Result.Status.ToString(), r.Result.EvidenceClass.ToString(), r.Result.Explanation]) { Tag = r.Directory });
+            RunsList.Items.Add(new GridRow([$"{r.Result.EndedAtUtc:yyyy-MM-dd HH:mm:ss}", r.Result.ExperimentId, r.Result.Status.ToString(), r.Result.EvidenceClass.ToString(), r.Result.Explanation], r.Directory));
         }
-
-        _runs.EndUpdate();
     }
 
-    private void RefreshEmbeddedTheme()
+    internal sealed record GridRow(string[] Cells, string? Directory = null)
     {
-        var back = ThemeColor("ApplicationBackgroundBrush", SystemColors.Window);
-        if (_embeddedBackground == back)
-        {
-            return;
-        }
-
-        _embeddedBackground = back;
-        var fore = ThemeColor("TextFillColorPrimaryBrush", SystemColors.WindowText);
-        foreach (var root in new[] { InspectorHost.Child, LabHost.Child })
-        {
-            Paint(root!);
-        }
-
-        void Paint(Control control)
-        {
-            control.BackColor = back;
-            control.ForeColor = fore;
-            foreach (Control child in control.Controls)
-            {
-                Paint(child);
-            }
-        }
-
-        Color ThemeColor(string resource, Color fallback) =>
-            TryFindResource(resource) is System.Windows.Media.SolidColorBrush brush
-                ? Color.FromArgb(brush.Color.R, brush.Color.G, brush.Color.B)
-                : fallback;
+        public override string ToString() => string.Join(" ", Cells);
     }
 
     private sealed class CompareRun(List<EffectProfile> order, ExperimentSession session)

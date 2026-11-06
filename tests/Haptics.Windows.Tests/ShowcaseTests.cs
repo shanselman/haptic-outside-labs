@@ -14,6 +14,46 @@ namespace Haptics.Windows.Tests;
 public class ShowcaseTests
 {
     [Fact]
+    public void InspectorAndLabUseWpfGridsWithMica() => OnStaThread(() =>
+    {
+        using var window = new ShowcaseWindow();
+        Assert.Equal("Mica", window.WindowBackdropType.ToString());
+        Assert.Equal(7, Assert.IsType<WpfControls.GridView>(window.InspectorList.View).Columns.Count);
+        Assert.Equal(3, Assert.IsType<WpfControls.GridView>(window.GatesList.View).Columns.Count);
+        Assert.Equal(6, Assert.IsType<WpfControls.GridView>(window.ExperimentsList.View).Columns.Count);
+        Assert.Equal(5, Assert.IsType<WpfControls.GridView>(window.RunsList.View).Columns.Count);
+        Assert.NotEmpty(window.GatesList.Items);
+        Assert.NotEmpty(window.ExperimentsList.Items);
+        window.ExperimentsList.SelectedIndex = 0;
+        Assert.IsType<ShowcaseWindow.GridRow>(window.ExperimentsList.SelectedItem);
+        Assert.Equal("The Showcase engine is not running.", window.InspectorStats.Text);
+    });
+
+    [Fact]
+    public void DoubleClickingRunOpensItsDirectoryWhenSummaryIsMissing() => OnStaThread(() =>
+    {
+        using var window = new ShowcaseWindow();
+        string? opened = null;
+        window.OpenRunPath = path => opened = path;
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var row = new ShowcaseWindow.GridRow(["time", "EXP-000", "PASS", "BUILD", "detail"], directory);
+        ((WpfControls.TabItem)window.LabTabs.Items[2]).Content = null;
+        var host = new System.Windows.Window { Content = window.RunsList, Width = 800, Height = 400 };
+        window.RunsList.Items.Add(row);
+        host.Show();
+        host.UpdateLayout();
+        var item = Assert.IsType<WpfControls.ListViewItem>(window.RunsList.ItemContainerGenerator.ContainerFromItem(row));
+        window.RunsList.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0,
+            System.Windows.Input.MouseButton.Left)
+        {
+            RoutedEvent = WpfControls.Control.MouseDoubleClickEvent,
+            Source = item,
+        });
+        Assert.Equal(directory, opened);
+        host.Close();
+    });
+
+    [Fact]
     public void EvaluationKeepsCloseOffAcrossSettingsChanges() => OnStaThread(() =>
     {
         using var window = new ShowcaseWindow();
@@ -81,8 +121,8 @@ public class ShowcaseTests
             Assert.Equal("Stage", window.StageTab.Header);
             Assert.False(window.VisualDemoSwitch.IsChecked);
             Assert.Contains(text, t => t.Contains("Turn on Visual demo", StringComparison.Ordinal));
-            Assert.NotNull(window.InspectorHost.Child);
-            Assert.NotNull(window.LabHost.Child);
+            Assert.NotNull(window.InspectorList);
+            Assert.NotNull(window.LabTabs);
             Assert.Null(window.ResultPath);
         });
     }
