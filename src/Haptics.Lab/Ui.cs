@@ -27,6 +27,25 @@ internal static class Ui
         return l;
     }
 
+    /// <summary>
+    /// Panel sizes are written in 96-DPI pixels but fonts follow display scaling, so let WinForms scale the layout
+    /// to match (issue #37). Call before adding controls.
+    /// </summary>
+    public static void BeginDpiScaledLayout(Form form)
+    {
+        form.SuspendLayout();
+        form.AutoScaleDimensions = new SizeF(96f, 96f);
+        form.AutoScaleMode = AutoScaleMode.Dpi;
+    }
+
+    /// <summary>Applies the DPI scale, then places the scaled panel in the primary work area's bottom-right corner.</summary>
+    public static void EndDpiScaledLayoutAtBottomRight(Form form)
+    {
+        form.ResumeLayout(true);
+        var wa = Screen.PrimaryScreen!.WorkingArea;
+        form.Location = new Point(wa.Right - form.Width - 16, wa.Bottom - form.Height - 16);
+    }
+
     public static Label Text(string text, Font? font = null, int width = 0) => new()
     {
         Text = text,
@@ -62,6 +81,7 @@ internal sealed class RatingPanel : Form
 
     public RatingPanel(string title, Action<int, int> onRated)
     {
+        Ui.BeginDpiScaledLayout(this);
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         TopMost = true;
@@ -69,14 +89,13 @@ internal sealed class RatingPanel : Form
         BackColor = Color.FromArgb(32, 32, 40);
         ForeColor = Color.White;
         Size = new Size(470, 190);
-        var wa = Screen.PrimaryScreen!.WorkingArea;
-        Location = new Point(wa.Right - Width - 16, wa.Bottom - Height - 16);
         var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(8), FlowDirection = FlowDirection.LeftToRight };
         flow.Controls.Add(new Label { Text = title, AutoSize = true, MaximumSize = new Size(450, 0), Font = new Font("Segoe UI Semibold", 10.5f), ForeColor = Color.White });
         flow.SetFlowBreak(flow.Controls[^1], true);
         Row(flow, "Helpful?", v => _helpful = v);
         Row(flow, "Annoying?", v => _annoying = v);
         Controls.Add(flow);
+        Ui.EndDpiScaledLayoutAtBottomRight(this);
 
         void Row(FlowLayoutPanel f, string label, Action<int> set)
         {
@@ -148,20 +167,20 @@ internal sealed class AnswerPanel : Form
 
     public AnswerPanel(Action<TrialAnswer> onAnswer, Action onAbort)
     {
+        Ui.BeginDpiScaledLayout(this);
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(32, 32, 40);
         Size = new Size(460, 160);
-        var wa = Screen.PrimaryScreen!.WorkingArea;
-        Location = new Point(wa.Right - Width - 16, wa.Bottom - Height - 16);
         _buttons.Controls.Add(Ui.Choice("Felt it", Color.FromArgb(16, 124, 16), (_, _) => onAnswer(TrialAnswer.FeltYes), 105));
         _buttons.Controls.Add(Ui.Choice("Not felt", Color.FromArgb(96, 96, 96), (_, _) => onAnswer(TrialAnswer.FeltNo), 105));
         _buttons.Controls.Add(Ui.Choice("Unsure", Color.FromArgb(0, 90, 158), (_, _) => onAnswer(TrialAnswer.Uncertain), 105));
         _buttons.Controls.Add(Ui.Choice("Stop", Color.FromArgb(140, 40, 30), (_, _) => onAbort(), 90));
         Controls.Add(_buttons);
         Controls.Add(_message);
+        Ui.EndDpiScaledLayoutAtBottomRight(this);
         SetAnswersEnabled(false);
     }
 
