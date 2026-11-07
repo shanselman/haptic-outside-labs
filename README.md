@@ -17,10 +17,12 @@ changed a toggle or crossed a slider tick; an edge tells you that you reached a 
 
 ## Get it
 
-**New in 0.6:** a **Visual demo** in the Showcase that shows a ripple wherever a haptic would play (no haptic
-hardware needed), an optional **Show ripples** for the tray so screen recordings show what you feel, and taskbar
-buttons that tick reliably instead of eventually silencing everything. This remains a proof-of-concept tester
-build; the [validation checklist](docs/AUTOMATIC_PRIMING_TEST_PLAN.md) records the known results and remaining checks.
+**New in 0.8.1:** the Showcase Inspector and Lab tables are native grids that stay readable in light and dark
+themes while keeping Mica. 0.8 made Quiet and Focused more selective and consistent across tray and Showcase, with
+taskbar Hover in Everything; 0.7 added experimental single-pen support (off by default); 0.6 added the **Visual
+demo** and tray **Show ripples**, which show where a haptic would play without haptic hardware. This remains a
+proof-of-concept tester build; the [validation checklist](docs/AUTOMATIC_PRIMING_TEST_PLAN.md) records the known
+results and remaining checks.
 
 Download `HapticsEverywhere-<version>-win-arm64.zip` (Snapdragon Surfaces) or `-win-x64.zip` from
 [**Releases**](https://github.com/shanselman/haptic-outside-labs/releases). It's self-contained, so no .NET install is

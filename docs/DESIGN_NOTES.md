@@ -208,8 +208,9 @@ EXP-090 (blind style comparison) is the first experiment about *taste* rather th
 **The Showcase gets the tray's Fluent shell (2026-10).** `ShowcaseWindow` uses the same WPF-UI 4.3.0 theme,
 rounded cards, typography and shared icon as the tray; light/dark changes follow Windows. The demo now uses real
 WPF menus, toolbars, groups, tabs, options and a RangeValue slider, rather than painted stand-ins. The silent row
-retains disabled/tiny targets, a password control and a deliberately non-interactive painted surface. Inspector
-and Lab tables remain embedded WinForms surfaces, and experiment/fixture windows and CLI runners are unchanged.
+retains disabled/tiny targets, a password control and a deliberately non-interactive painted surface. Since 0.8.1,
+Inspector and Lab tables are native WPF grids that stay readable over Mica in light and dark themes (they were
+embedded WinForms surfaces before). Experiment/fixture windows and CLI runners are unchanged.
 The WinForms message loop hosts the WPF shell, retaining real-pointer priming on the same UI thread and the
 existing per-device controller bank. No routing or policy changes were needed. A running tray still pauses the
 Showcase engine. During blind comparisons, settings, live decisions and Inspector are hidden; Stop and Engine
