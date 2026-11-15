@@ -17,7 +17,7 @@ changed a toggle or crossed a slider tick; an edge tells you that you reached a 
 
 ## Get it
 
-**What's new:** 0.8.1 makes the Showcase tables easier to read in light and dark themes. 0.8 made the Quiet and
+**What's new:** 0.8.2 scales the blind-trial rating panels correctly on high-DPI displays. 0.8.1 makes the Showcase tables easier to read in light and dark themes. 0.8 made the Quiet and
 Focused styles more consistent and added taskbar buttons to Everything. Earlier releases added experimental pen
 support (off by default) and a **Visual demo** that shows where a haptic would play. This is still a
 proof-of-concept tester build; the [validation checklist](docs/AUTOMATIC_PRIMING_TEST_PLAN.md) tracks what has
